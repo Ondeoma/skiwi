@@ -1,0 +1,11 @@
+target/
+node_modules/
+.bsp/
+.idea/
+.metals/
+.bloop/
+dist/
+frontend/public/excalidraw/
+frontend/test-results/
+frontend/playwright-report/
+.DS_Store

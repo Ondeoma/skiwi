@@ -1,0 +1,308 @@
+:root {
+  /* 色付きブロック（セル背景・パネル）の色: 背景 / 枠 */
+  --c-gray: #f1f1ef; --c-gray-line: #d3d3cf; --c-brown: #f4eeee; --c-brown-line: #d9c6c1;
+  --c-orange: #fbecdd; --c-orange-line: #f0c39a; --c-yellow: #fbf3db; --c-yellow-line: #e8cf78;
+  --c-green: #edf3ec; --c-green-line: #a8cfa4; --c-blue: #e7f3f8; --c-blue-line: #9ec9e0;
+  --c-purple: #f6f3f9; --c-purple-line: #c9b7e0; --c-pink: #faf1f5; --c-pink-line: #e5b6cb;
+  --c-red: #fdebec; --c-red-line: #f0a9ab;
+  --bg: #fff; --fg: #1f2328; --muted: #6b7280; --line: #e5e7eb; --side: #f7f7f5; --accent: #2563eb; --hover: #ececea; --danger: #dc2626;
+  font-family: "M PLUS Rounded 1c", system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-gray: #2f2f2f; --c-gray-line: #4a4a4a; --c-brown: #43302a; --c-brown-line: #6b4a3d;
+    --c-orange: #4f3523; --c-orange-line: #8a5a32; --c-yellow: #4b3f26; --c-yellow-line: #8a7034;
+    --c-green: #263a2c; --c-green-line: #3f6a4a; --c-blue: #233a57; --c-blue-line: #3d6aa0;
+    --c-purple: #35284a; --c-purple-line: #614680; --c-pink: #43283a; --c-pink-line: #7a4560;
+    --c-red: #4a2a27; --c-red-line: #844640;
+  }
+  :root { --bg: #191919; --fg: #e6e6e6; --muted: #9ca3af; --line: #2f2f2f; --side: #202020; --accent: #60a5fa; --hover: #2a2a2a; --danger: #ef4444; }
+}
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); line-height: 1.7; }
+button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 6px; padding: 2px 8px; }
+button:hover { background: var(--hover); }
+input { font: inherit; color: inherit; }
+select, textarea { font-family: inherit; }
+a { color: var(--accent); }
+
+/* 共通ユーティリティ（各コンポーネントは差分のプロパティだけを scoped で足す） */
+.muted { color: var(--muted); }
+.small { font-size: .75rem; }
+.note { font-size: .78rem; color: var(--muted); }
+.error, .err { color: var(--danger); }
+/* button:hover の背景より優先させるため :hover も並べる */
+.primary, .primary:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* データベースの選択肢の色（DatabaseView・DbCell の .tag に付ける） */
+.c-gray { background: rgba(120,120,120,.18); }
+.c-red { background: rgba(239,68,68,.2); }
+.c-orange { background: rgba(249,115,22,.22); }
+.c-yellow { background: rgba(234,179,8,.25); }
+.c-green { background: rgba(34,197,94,.22); }
+.c-blue { background: rgba(59,130,246,.2); }
+.c-purple { background: rgba(168,85,247,.2); }
+.c-pink { background: rgba(236,72,153,.2); }
+
+/* エディタ共通 */
+.ProseMirror { outline: none; min-height: 50vh; padding-bottom: 30vh; }
+/* ファイルをドラッグしている間: 落とせる場所（編集中の本文）を示す */
+body.dragging-files .ProseMirror[contenteditable="true"] { outline: 2px dashed var(--accent); outline-offset: 6px; border-radius: 6px; }
+.ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--muted); float: left; height: 0; pointer-events: none; }
+.ProseMirror h1 { font-size: 1.9em; margin: 1.2em 0 .4em; }
+.ProseMirror h2 { font-size: 1.5em; margin: 1.1em 0 .4em; }
+.ProseMirror h3 { font-size: 1.25em; margin: 1em 0 .3em; }
+.ProseMirror blockquote { border-left: 3px solid var(--line); margin: .5em 0; padding-left: 1em; color: var(--muted); }
+.ProseMirror pre { background: var(--side); border-radius: 6px; padding: .8em 1em; overflow-x: auto; }
+.ProseMirror code { background: var(--side); border-radius: 4px; padding: .1em .3em; font-size: .92em; }
+.ProseMirror pre code { background: transparent; padding: 0; }
+.collaboration-carets__caret { position: relative; margin-left: -1px; margin-right: -1px; border-left: 1px solid; border-right: 1px solid; word-break: normal; pointer-events: none; }
+.collaboration-carets__label { position: absolute; top: -1.5em; left: -1px; font-size: 12px; line-height: 1.4; color: #fff; padding: 0 4px; border-radius: 3px 3px 3px 0; white-space: nowrap; user-select: none; }
+
+/* ---- ブロック ---- */
+.ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: .2em; }
+.ProseMirror ul[data-type="taskList"] li { display: flex; gap: .45em; align-items: flex-start; }
+/* チェックボックスの箱を1行目の文字の高さの中央に揃える（行の高さ = 1.7em） */
+.ProseMirror ul[data-type="taskList"] li > label { flex: none; display: flex; align-items: center; height: 1.7em; margin: 0; user-select: none; }
+.ProseMirror ul[data-type="taskList"] li > label input { margin: 0; width: 1em; height: 1em; cursor: pointer; }
+.ProseMirror ul[data-type="taskList"] li > label span { display: none; }
+.ProseMirror ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
+.ProseMirror ul[data-type="taskList"] li > div > p { margin: 0; }
+.ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--muted); text-decoration: line-through; }
+.ProseMirror .details { display: flex; gap: .2em; margin: .6em 0; border: 1px solid var(--line); border-radius: 8px; padding: .35em .6em .35em .3em; }
+.ProseMirror .details > button { border: none; padding: 0 .3em; height: 1.7em; color: var(--muted); flex: none; }
+.ProseMirror .details > button::before { content: '▸'; display: inline-block; transition: transform .15s; }
+.ProseMirror .details.is-open > button::before { transform: rotate(90deg); }
+.ProseMirror .details > div { flex: 1; min-width: 0; }
+.ProseMirror .details summary { list-style: none; font-weight: 600; }
+.ProseMirror .details summary::-webkit-details-marker { display: none; }
+.ProseMirror .details:not(.is-open) > div > [data-type="detailsContent"] { display: none; }
+.ProseMirror .details.is-open > div > [data-type="detailsContent"] { border-top: 1px solid var(--line); margin-top: .35em; padding-top: .2em; }
+.ProseMirror summary.is-empty::before { content: attr(data-placeholder); color: var(--muted); font-weight: 400; pointer-events: none; float: left; height: 0; }
+.ProseMirror table { border-collapse: collapse; width: 100%; margin: .8em 0; table-layout: fixed; overflow: hidden; }
+.ProseMirror td, .ProseMirror th { border: 1px solid var(--line); padding: .35em .6em; vertical-align: top; position: relative; min-width: 3em; }
+.ProseMirror td > p, .ProseMirror th > p { margin: .15em 0; }
+.ProseMirror th { background: var(--side); font-weight: 600; text-align: left; }
+.ProseMirror .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(37,99,235,.12); pointer-events: none; }
+.ProseMirror .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: 0; width: 4px; background: var(--accent); pointer-events: none; }
+.ProseMirror .tableWrapper { overflow-x: auto; }
+.ProseMirror.resize-cursor { cursor: col-resize; }
+.ProseMirror img { max-width: 100%; height: auto; border-radius: 4px; }
+.ProseMirror img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.ProseMirror .file-block { display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: .5em .8em; margin: .5em 0; }
+.ProseMirror .file-block a { color: inherit; text-decoration: none; font-weight: 500; }
+.ProseMirror .file-size { color: var(--muted); font-size: .85em; }
+.ProseMirror .embed-block iframe { width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+.ProseMirror .ProseMirror-selectednode.file-block, .ProseMirror .ProseMirror-selectednode.embed-block { outline: 2px solid var(--accent); }
+.ProseMirror hr { border: none; border-top: 1px solid var(--line); margin: 1.5em 0; }
+.ProseMirror mark { background: #fde68a; color: inherit; border-radius: 2px; padding: 0 .1em; }
+.ProseMirror a { color: var(--accent); }
+.ProseMirror .tiptap-mathematics-render { cursor: pointer; }
+.ProseMirror [data-type="block-math"] { text-align: center; margin: .8em 0; }
+/* シンタックスハイライト（lowlight / highlight.js クラス） */
+.hljs-comment, .hljs-quote { color: #8b949e; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #cf222e; }
+.hljs-string, .hljs-attr, .hljs-template-tag { color: #0a3069; }
+.hljs-number, .hljs-literal { color: #0550ae; }
+.hljs-title, .hljs-section, .hljs-function { color: #8250df; }
+.hljs-type, .hljs-class { color: #953800; }
+@media (prefers-color-scheme: dark) {
+  .hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #ff7b72; }
+  .hljs-string, .hljs-attr, .hljs-template-tag { color: #a5d6ff; }
+  .hljs-number, .hljs-literal { color: #79c0ff; }
+  .hljs-title, .hljs-section, .hljs-function { color: #d2a8ff; }
+  .hljs-type, .hljs-class { color: #ffa657; }
+  .ProseMirror mark { background: #854d0e; }
+}
+/* 検索スニペット */
+.snippet .keyword { background: #fde68a; color: #1f2328; border-radius: 2px; }
+/* 画像のサイズ変更ハンドル（Tiptap ResizableNodeView） */
+.ProseMirror [data-resize-container] { max-width: 100%; margin: .5em 0; }
+.ProseMirror [data-resize-wrapper] { max-width: 100%; }
+.ProseMirror [data-resize-wrapper] img { display: block; width: 100%; height: 100%; }
+.ProseMirror [data-resize-handle] { opacity: 0; transition: opacity .15s; background: var(--accent); border-radius: 3px; z-index: 2; }
+.ProseMirror[contenteditable="true"] [data-resize-container]:hover [data-resize-handle],
+.ProseMirror[contenteditable="true"] [data-resize-container][data-resize-state="true"] [data-resize-handle] { opacity: .85; }
+.ProseMirror[contenteditable="false"] [data-resize-handle] { display: none; }
+.ProseMirror [data-resize-handle="left"], .ProseMirror [data-resize-handle="right"] { width: 6px; top: 25% !important; bottom: 25% !important; cursor: ew-resize; }
+.ProseMirror [data-resize-handle="left"] { left: -3px !important; }
+.ProseMirror [data-resize-handle="right"] { right: -3px !important; }
+.ProseMirror [data-resize-handle="bottom-right"], .ProseMirror [data-resize-handle="bottom-left"] { width: 12px; height: 12px; }
+.ProseMirror [data-resize-handle="bottom-right"] { right: -4px !important; bottom: -4px !important; cursor: nwse-resize; }
+.ProseMirror [data-resize-handle="bottom-left"] { left: -4px !important; bottom: -4px !important; cursor: nesw-resize; }
+.ProseMirror [data-resize-container].ProseMirror-selectednode img { outline: 2px solid var(--accent); }
+
+/* ---- 色（セル背景・パネル・色見本）: data-bg / data-color に色名 ---- */
+[data-bg="gray"], [data-color="gray"] { --tint: var(--c-gray); --tint-line: var(--c-gray-line); }
+[data-bg="brown"], [data-color="brown"] { --tint: var(--c-brown); --tint-line: var(--c-brown-line); }
+[data-bg="orange"], [data-color="orange"] { --tint: var(--c-orange); --tint-line: var(--c-orange-line); }
+[data-bg="yellow"], [data-color="yellow"] { --tint: var(--c-yellow); --tint-line: var(--c-yellow-line); }
+[data-bg="green"], [data-color="green"] { --tint: var(--c-green); --tint-line: var(--c-green-line); }
+[data-bg="blue"], [data-color="blue"] { --tint: var(--c-blue); --tint-line: var(--c-blue-line); }
+[data-bg="purple"], [data-color="purple"] { --tint: var(--c-purple); --tint-line: var(--c-purple-line); }
+[data-bg="pink"], [data-color="pink"] { --tint: var(--c-pink); --tint-line: var(--c-pink-line); }
+[data-bg="red"], [data-color="red"] { --tint: var(--c-red); --tint-line: var(--c-red-line); }
+.ProseMirror td[data-bg], .ProseMirror th[data-bg] { background: var(--tint); }
+.swatch[data-color] { background: var(--tint); border-color: var(--tint-line) !important; }
+
+/* ---- パネル（情報・注意など） ---- */
+.ProseMirror .panel { display: flex; gap: .55em; background: var(--tint); border: 1px solid var(--tint-line); border-radius: 8px; padding: .55em .9em .55em .6em; margin: .7em 0; }
+.ProseMirror .panel-icon { position: relative; flex: none; }
+.ProseMirror .panel-icon-btn { border: none; padding: 0 .15em; font-size: 1.15em; line-height: 1.5; border-radius: 4px; background: transparent; }
+.ProseMirror .panel-icon-btn.ro { cursor: default; }
+.ProseMirror .panel-icon-btn.ro:hover { background: transparent; }
+.ProseMirror .panel-icon-btn.empty { color: var(--muted); font-size: .9em; opacity: .5; }
+.ProseMirror .panel-body { flex: 1; min-width: 0; }
+.ProseMirror .panel-body > :first-child { margin-top: 0; }
+.ProseMirror .panel-body > :last-child { margin-bottom: 0; }
+.ProseMirror .panel-body p { margin: .3em 0; }
+.panel-colors { display: flex; gap: 4px; align-items: center; margin-bottom: .5rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line); }
+.panel-colors .swatch { width: 22px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 5px; }
+.panel-colors .swatch.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+.panel-colors .unwrap { margin-left: auto; font-size: .78rem; color: var(--muted); }
+
+/* ---- コードブロック（言語選択・コピー） ---- */
+.ProseMirror .code-block { position: relative; margin: .7em 0; }
+.ProseMirror .code-block pre { margin: 0; padding-top: 2em; }
+.ProseMirror .code-head { position: absolute; top: .3em; right: .4em; left: .6em; display: flex; justify-content: flex-end; align-items: center; gap: .3em; font-size: .75rem; user-select: none; }
+.ProseMirror .code-head select { font: inherit; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0 .2em; }
+.ProseMirror .code-head select:hover, .ProseMirror .code-head select:focus { border-color: var(--line); color: var(--fg); }
+.ProseMirror .code-head .lang { color: var(--muted); }
+.ProseMirror .code-head .copy { font-size: inherit; border: none; color: var(--muted); padding: 0 .4em; opacity: 0; }
+.ProseMirror .code-block:hover .copy { opacity: 1; }
+
+/* ---- 目次 ---- */
+.ProseMirror .toc { border-left: 3px solid var(--line); padding: .2em 0 .2em .9em; margin: .8em 0; }
+.ProseMirror[contenteditable="true"] .toc.selected { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.ProseMirror .toc-head { display: flex; align-items: center; gap: .6em; font-weight: 600; font-size: .9em; color: var(--muted); user-select: none; }
+.ProseMirror .toc-head select { font: inherit; font-weight: 400; font-size: .9em; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 4px; }
+.ProseMirror .toc ul { list-style: none; margin: .2em 0 0; padding: 0; }
+.ProseMirror .toc li { margin: .1em 0; display: flex; }
+.ProseMirror .toc li::before { content: '•'; flex: none; width: 1em; color: var(--muted); }
+.ProseMirror .toc li[data-level="1"]::before { content: '◦'; }
+.ProseMirror .toc li[data-level="2"]::before { content: '▪'; font-size: .8em; line-height: 2.1; }
+.ProseMirror .toc a { text-decoration: none; }
+.ProseMirror .toc a:hover { text-decoration: underline; }
+.ProseMirror .toc-empty { color: var(--muted); font-size: .88em; margin: .2em 0; }
+/* 画像の寄せ方向（data-align）。サイズ変更用のコンテナは横幅いっぱいの flex なので、その中で寄せる */
+.ProseMirror [data-resize-container]:has(img[data-align="center"]) { justify-content: center; }
+.ProseMirror [data-resize-container]:has(img[data-align="right"]) { justify-content: flex-end; }
+.ProseMirror > img[data-align="center"] { display: block; margin-inline: auto; }
+.ProseMirror > img[data-align="right"] { display: block; margin-left: auto; }
+
+/* ページへのリンク（タイトルは表示時に最新のものを出す） */
+.ProseMirror .page-link-wrap { white-space: nowrap; }
+.ProseMirror a.page-link { display: inline-flex; align-items: baseline; gap: .2em; padding: 0 .3em; margin: 0 .05em; border-radius: 4px; text-decoration: none; color: var(--accent); background: var(--c-blue, rgba(37,99,235,.08)); cursor: pointer; font-weight: 500; }
+.ProseMirror a.page-link:hover { text-decoration: underline; }
+.ProseMirror a.page-link .pl-icon { font-size: .9em; }
+.ProseMirror a.page-link.denied { color: var(--muted); background: var(--hover); cursor: default; text-decoration: none; font-weight: 400; }
+.ProseMirror a.page-link.loading { opacity: .6; }
+.ProseMirror .ProseMirror-selectednode > a.page-link, .ProseMirror a.page-link.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+
+/* ホワイトボード */
+.ProseMirror .wb { margin: 1em 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow: hidden; position: relative; }
+.ProseMirror .wb.selected, .ProseMirror .wb.ProseMirror-selectednode { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ProseMirror .wb-bar { display: flex; align-items: center; gap: .4rem; padding: .25rem .5rem; border-bottom: 1px solid var(--line); background: var(--side); font-size: .8rem; user-select: none; }
+.ProseMirror .wb-title { font-weight: 600; cursor: grab; }
+.ProseMirror .wb-hint { flex: 1; color: var(--muted); font-size: .72rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ProseMirror .wb-bar button { font-size: .75rem; padding: 1px 8px; }
+.ProseMirror .wb-bar .danger:hover { color: var(--danger); }
+.ProseMirror .wb-host { position: relative; width: 100%; }
+.ProseMirror .wb-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: .85rem; }
+.ProseMirror .wb-resize { height: 8px; cursor: ns-resize; background: linear-gradient(var(--line), var(--line)) center / 40px 3px no-repeat; }
+.ProseMirror .wb-resize:hover { background-color: var(--hover); }
+.ProseMirror .wb.full { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; display: flex; flex-direction: column; }
+.ProseMirror .wb.full .wb-host { flex: 1; height: auto; }
+.ProseMirror .wb .excalidraw { --zIndex-modal: 1100; }
+.ProseMirror .whiteboard-static { padding: 1em; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); }
+@media print { .ProseMirror .wb-bar, .ProseMirror .wb-resize { display: none; } }
+
+/* 狭い画面 */
+@media (max-width: 768px) {
+  .ProseMirror { font-size: 15px; }
+  .ProseMirror .wb-hint { display: none; }
+  .ProseMirror pre { font-size: 12px; }
+  .ProseMirror img { max-width: 100%; height: auto; }
+}
+
+/* メンション・コメントを付けた範囲 */
+.ProseMirror .mention { color: var(--accent); background: rgba(37,99,235,.10); border-radius: 4px; padding: 0 .15em; font-weight: 500; white-space: nowrap; }
+.ProseMirror .comment-mark { background: rgba(234,179,8,.22); border-bottom: 2px solid rgba(234,179,8,.7); cursor: pointer; }
+.ProseMirror .comment-mark.flash { background: rgba(234,179,8,.55); transition: background .3s; }
+
+/* 同期ブロック */
+.ProseMirror .synced-block { border: 1px solid rgba(124,58,237,.45); border-radius: 8px; margin: .8em 0; padding: 0 .8em .4em; position: relative; }
+.ProseMirror .sb-bar, .ProseMirror .sr-bar { display: flex; align-items: center; gap: .5rem; font-size: .75rem; color: #7c3aed; padding: .3rem 0; user-select: none; }
+.ProseMirror .sb-hint { flex: 1; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ProseMirror .sb-bar button, .ProseMirror .sr-bar button { font-size: .72rem; padding: 0 6px; }
+.ProseMirror .synced-ref { border: 1px dashed rgba(124,58,237,.55); border-radius: 8px; margin: .8em 0; padding: 0 .8em .4em; background: rgba(124,58,237,.04); }
+.ProseMirror .synced-ref.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.ProseMirror .sr-bar { cursor: grab; }
+.ProseMirror .sr-src { flex: 1; color: #7c3aed; text-decoration: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ProseMirror .sr-body .ProseMirror { min-height: 0; padding-bottom: 0; }
+.ProseMirror .sr-body .muted { color: var(--muted); font-size: .85rem; margin: .3em 0; }
+.ProseMirror .synced-block.flash, .ProseMirror .synced-ref.flash { box-shadow: 0 0 0 3px rgba(124,58,237,.35); }
+@media print { .ProseMirror .sb-bar, .ProseMirror .sr-bar button { display: none; } }
+
+/* ToDo の期限 */
+.ProseMirror .due-date { position: relative; display: inline-block; font-size: .85em; padding: 0 .4em; border-radius: 4px; background: var(--hover); color: var(--muted); white-space: nowrap; cursor: pointer; vertical-align: 1px; }
+.ProseMirror .due-date.soon { color: #b45309; background: rgba(217,119,6,.14); }
+.ProseMirror .due-date.overdue { color: var(--danger); background: rgba(220,38,38,.12); font-weight: 600; }
+.ProseMirror .due-date.done { text-decoration: line-through; }
+.ProseMirror .due-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* 段組み */
+.ProseMirror .columns-wrap { margin: .8em 0; position: relative; }
+.ProseMirror .columns { display: grid; gap: 1.2rem; }
+.ProseMirror .column { min-width: 0; }
+.ProseMirror .column > :first-child { margin-top: 0; }
+.ProseMirror .column > :last-child { margin-bottom: 0; }
+.ProseMirror .columns-wrap.editing .column { outline: 1px dashed var(--line); outline-offset: 4px; border-radius: 2px; }
+.ProseMirror .columns-wrap.editing .column:focus-within { outline-color: var(--accent); }
+.ProseMirror .columns-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-size: .75rem; color: var(--muted); margin-bottom: .5rem; opacity: .55; transition: opacity .15s; user-select: none; }
+.ProseMirror .columns-wrap:hover .columns-bar, .ProseMirror .columns-wrap:focus-within .columns-bar { opacity: 1; }
+.ProseMirror .cb-handle { cursor: grab; font-weight: 600; }
+.ProseMirror .columns-bar select { font: inherit; padding: 0 .2rem; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: inherit; }
+.ProseMirror .cb-presets { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.ProseMirror .columns-bar button { font-size: .72rem; padding: 0 6px; border-radius: 4px; }
+.ProseMirror .columns-bar button.on { border-color: var(--accent); color: var(--accent); }
+.ProseMirror .cb-del { margin-left: auto; border: none; }
+@media (max-width: 768px) { .ProseMirror .columns { grid-template-columns: 1fr !important; } }
+@media print { .ProseMirror .columns-bar { display: none; } .ProseMirror .columns-wrap.editing .column { outline: none; } }
+
+/* 画像のキャプション（編集中は入力欄、表示中は文字） */
+.ProseMirror figure.img-figure { margin: .5em 0; }
+.ProseMirror figure.img-figure [data-resize-container] { margin: 0; }
+.ProseMirror figure.img-figure figcaption { font-size: .85em; color: var(--muted); margin-top: .3em; }
+.ProseMirror figure.img-figure[data-align="center"] figcaption { text-align: center; }
+.ProseMirror figure.img-figure[data-align="right"] figcaption { text-align: right; }
+.ProseMirror .img-caption-input { width: 100%; border: none; background: transparent; color: inherit; font: inherit; padding: 0; outline: none; text-align: inherit; }
+.ProseMirror[contenteditable="false"] .img-caption-input { display: none; }
+.ProseMirror[contenteditable="true"] .img-caption-text { display: none; }
+.ProseMirror[contenteditable="true"] figure.img-figure:not(.has-caption):not(:hover):not(.ProseMirror-selectednode) .img-caption-input:not(:focus) { opacity: 0; }
+
+/* 文字の色・背景色（色名で保存。ライト/ダークで見やすい色に） */
+:root { --t-gray: #787774; --t-brown: #9f6b53; --t-orange: #d9730d; --t-yellow: #cb912f; --t-green: #448361; --t-blue: #337ea9; --t-purple: #9065b0; --t-pink: #c14c8a; --t-red: #d44c47; }
+@media (prefers-color-scheme: dark) {
+  :root { --t-gray: #9b9b9b; --t-brown: #ba856f; --t-orange: #c77d48; --t-yellow: #ca9849; --t-green: #529e72; --t-blue: #5e87c9; --t-purple: #9d68d3; --t-pink: #d15796; --t-red: #df5452; }
+}
+[data-text-color="gray"] { color: var(--t-gray); } [data-text-color="brown"] { color: var(--t-brown); } [data-text-color="orange"] { color: var(--t-orange); }
+[data-text-color="yellow"] { color: var(--t-yellow); } [data-text-color="green"] { color: var(--t-green); } [data-text-color="blue"] { color: var(--t-blue); }
+[data-text-color="purple"] { color: var(--t-purple); } [data-text-color="pink"] { color: var(--t-pink); } [data-text-color="red"] { color: var(--t-red); }
+[data-text-bg] { border-radius: 3px; padding: 0 .1em; }
+[data-text-bg="gray"] { background: var(--c-gray); } [data-text-bg="brown"] { background: var(--c-brown); } [data-text-bg="orange"] { background: var(--c-orange); }
+[data-text-bg="yellow"] { background: var(--c-yellow); } [data-text-bg="green"] { background: var(--c-green); } [data-text-bg="blue"] { background: var(--c-blue); }
+[data-text-bg="purple"] { background: var(--c-purple); } [data-text-bg="pink"] { background: var(--c-pink); } [data-text-bg="red"] { background: var(--c-red); }
+
+/* ブロックへのリンクで開いたとき */
+.ProseMirror .block-flash { animation: block-flash 1.6s ease; border-radius: 4px; }
+@keyframes block-flash { 0% { background: rgba(250,204,21,.45); } 100% { background: transparent; } }
+
+/* トグル見出し（開閉ブロックのタイトルを見出しの大きさに） */
+.ProseMirror .details[data-level="1"] > summary, .ProseMirror .details[data-level="1"] [data-type="detailsSummary"] { font-size: 1.9em; font-weight: 700; }
+.ProseMirror .details[data-level="2"] > summary, .ProseMirror .details[data-level="2"] [data-type="detailsSummary"] { font-size: 1.45em; font-weight: 700; }
+.ProseMirror .details[data-level="3"] > summary, .ProseMirror .details[data-level="3"] [data-type="detailsSummary"] { font-size: 1.2em; font-weight: 700; }
+
+/* 全幅表示のページ */
+.page.full-width { max-width: none !important; }

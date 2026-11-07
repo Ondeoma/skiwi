@@ -1,0 +1,22 @@
+# /etc/systemd/system/skiwi.service
+[Unit]
+Description=skiwi application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=skiwi
+Group=skiwi
+EnvironmentFile=/etc/skiwi/skiwi.env
+ExecStart=/usr/bin/java -Xms512m -Xmx1g -cp '/opt/skiwi/current/lib/*' skiwi.app.Main
+# 停止時はクラスタ登録を消してから終わる（他ノードが即座に引き継ぐ）
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

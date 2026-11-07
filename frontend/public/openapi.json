@@ -1,0 +1,2618 @@
+{
+ "openapi": "3.0.3",
+ "info": {
+  "title": "skiwi API",
+  "version": "1.0",
+  "description": "skiwi の REST API。認証は `Authorization: Bearer <APIトークン>`（サイドバー下部の「APIトークン」で発行）か、ログイン中のブラウザのCookie。\n\n- 権限のないページ・ワークスペースは、存在を隠すため 404 を返す。閲覧はできるが編集できない場合は 403。\n- 読み取り専用のトークンでは、書き込み（POST・PUT・PATCH・DELETE）は 403。\n- 時刻は ISO 8601（UTC）。エラーは `{ \"error\": \"…\" }`。"
+ },
+ "servers": [
+  {
+   "url": "/"
+  }
+ ],
+ "components": {
+  "securitySchemes": {
+   "bearer": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "APIトークン"
+   },
+   "cookie": {
+    "type": "apiKey",
+    "in": "cookie",
+    "name": "skiwi_session"
+   }
+  },
+  "schemas": {
+   "Error": {
+    "type": "object",
+    "properties": {
+     "error": {
+      "type": "string"
+     }
+    }
+   },
+   "Page": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "parentId": {
+      "type": "string",
+      "format": "uuid",
+      "nullable": true
+     },
+     "position": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "icon": {
+      "type": "string",
+      "nullable": true
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "view",
+       "edit"
+      ]
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "published": {
+      "type": "boolean"
+     },
+     "labels": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "ownerId": {
+      "type": "string",
+      "format": "uuid",
+      "nullable": true
+     },
+     "ownerName": {
+      "type": "string",
+      "nullable": true
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "draft",
+       "review",
+       "published",
+       "deprecated"
+      ],
+      "nullable": true
+     },
+     "database": {
+      "type": "boolean"
+     },
+     "locked": {
+      "type": "boolean"
+     }
+    }
+   },
+   "Workspace": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "name": {
+      "type": "string"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "view",
+       "edit"
+      ]
+     },
+     "favorite": {
+      "type": "boolean"
+     }
+    }
+   },
+   "Content": {
+    "type": "object",
+    "properties": {
+     "content": {
+      "type": "object",
+      "description": "本文（Tiptap / ProseMirror の JSON）"
+     },
+     "text": {
+      "type": "string",
+      "description": "平文"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "Version": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "label": {
+      "type": "string",
+      "nullable": true
+     },
+     "createdBy": {
+      "type": "string",
+      "nullable": true
+     },
+     "authors": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "SearchResult": {
+    "type": "object",
+    "properties": {
+     "page": {
+      "$ref": "#/components/schemas/Page"
+     },
+     "snippet": {
+      "type": "string",
+      "nullable": true,
+      "description": "一致箇所を含む抜粋（HTML。キーワードのみ装飾）"
+     },
+     "fuzzy": {
+      "type": "boolean"
+     }
+    }
+   },
+   "Comment": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "threadId": {
+      "type": "string",
+      "format": "uuid",
+      "nullable": true
+     },
+     "anchor": {
+      "type": "string",
+      "nullable": true
+     },
+     "quote": {
+      "type": "string",
+      "nullable": true
+     },
+     "body": {
+      "type": "string"
+     },
+     "authorId": {
+      "type": "string",
+      "format": "uuid",
+      "nullable": true
+     },
+     "authorName": {
+      "type": "string",
+      "nullable": true
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "resolvedAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     }
+    }
+   },
+   "AclEntry": {
+    "type": "object",
+    "properties": {
+     "principalType": {
+      "type": "string",
+      "enum": [
+       "user",
+       "group"
+      ]
+     },
+     "principalId": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "view",
+       "edit"
+      ]
+     },
+     "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true,
+      "description": "権限の期限（過ぎると自動で外れる）"
+     }
+    }
+   },
+   "Task": {
+    "type": "object",
+    "properties": {
+     "pageId": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "workspaceName": {
+      "type": "string"
+     },
+     "pageTitle": {
+      "type": "string"
+     },
+     "seq": {
+      "type": "integer"
+     },
+     "text": {
+      "type": "string"
+     },
+     "checked": {
+      "type": "boolean"
+     },
+     "due": {
+      "type": "string",
+      "format": "date",
+      "nullable": true
+     }
+    }
+   },
+   "DbProp": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "text",
+       "number",
+       "select",
+       "multi_select",
+       "date",
+       "person",
+       "checkbox",
+       "url",
+       "relation",
+       "rollup"
+      ]
+     },
+     "options": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        },
+        "color": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "target": {
+      "type": "string",
+      "format": "uuid",
+      "description": "relation: 関連先のデータベース"
+     },
+     "relation": {
+      "type": "string",
+      "description": "rollup: 関連の列のID"
+     },
+     "fn": {
+      "type": "string",
+      "enum": [
+       "count",
+       "count_values",
+       "sum",
+       "avg",
+       "min",
+       "max",
+       "checked"
+      ]
+     },
+     "prop": {
+      "type": "string",
+      "description": "rollup: 関連先の列のID"
+     }
+    }
+   },
+   "Database": {
+    "type": "object",
+    "properties": {
+     "pageId": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "props": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DbProp"
+      }
+     },
+     "views": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      }
+     },
+     "rows": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "page": {
+         "$ref": "#/components/schemas/Page"
+        },
+        "values": {
+         "type": "object",
+         "description": "列のID → 値"
+        }
+       }
+      }
+     },
+     "users": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string"
+      }
+     },
+     "canEdit": {
+      "type": "boolean"
+     }
+    }
+   },
+   "Attachment": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid"
+     },
+     "url": {
+      "type": "string"
+     },
+     "filename": {
+      "type": "string"
+     },
+     "contentType": {
+      "type": "string"
+     },
+     "size": {
+      "type": "integer"
+     }
+    }
+   },
+   "BulkResult": {
+    "type": "object",
+    "properties": {
+     "done": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     "skipped": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     "failed": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string",
+         "format": "uuid"
+        },
+        "title": {
+         "type": "string",
+         "nullable": true
+        },
+        "error": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "security": [
+  {
+   "bearer": []
+  },
+  {
+   "cookie": []
+  }
+ ],
+ "tags": [
+  {
+   "name": "ユーザー"
+  },
+  {
+   "name": "ワークスペース"
+  },
+  {
+   "name": "ページ"
+  },
+  {
+   "name": "権限"
+  },
+  {
+   "name": "検索"
+  },
+  {
+   "name": "コメント"
+  },
+  {
+   "name": "添付"
+  },
+  {
+   "name": "ToDo"
+  },
+  {
+   "name": "データベース"
+  },
+  {
+   "name": "点検"
+  },
+  {
+   "name": "連携"
+  },
+  {
+   "name": "APIトークン"
+  }
+ ],
+ "paths": {
+  "/api/me": {
+   "get": {
+    "tags": [
+     "ユーザー"
+    ],
+    "summary": "自分の情報",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "name": {
+           "type": "string"
+          },
+          "email": {
+           "type": "string",
+           "nullable": true
+          },
+          "groups": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "isAdmin": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/directory": {
+   "get": {
+    "tags": [
+     "ユーザー"
+    ],
+    "summary": "ユーザー・グループの検索",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "description": "名前・メール（ひらがな/カタカナ・全角/半角の違いは無視）",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "principalType": {
+            "type": "string"
+           },
+           "id": {
+            "type": "string",
+            "format": "uuid"
+           },
+           "name": {
+            "type": "string"
+           },
+           "detail": {
+            "type": "string",
+            "nullable": true
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/workspaces": {
+   "get": {
+    "tags": [
+     "ワークスペース"
+    ],
+    "summary": "見られるワークスペースの一覧",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Workspace"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "ワークスペース"
+    ],
+    "summary": "ワークスペースを作る",
+    "parameters": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Workspace"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/workspaces/{wsId}/pages": {
+   "get": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "ワークスペースのページ一覧（閲覧できるもの）",
+    "parameters": [
+     {
+      "name": "wsId",
+      "in": "path",
+      "required": true,
+      "description": "ワークスペースID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Page"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "ページを作る",
+    "parameters": [
+     {
+      "name": "wsId",
+      "in": "path",
+      "required": true,
+      "description": "ワークスペースID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "description": "本文は、作ったあとに POST /api/pages/{id}/content（Markdown）で入れる。",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "title": {
+          "type": "string"
+         },
+         "parentId": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": true
+         },
+         "afterId": {
+          "type": "string",
+          "format": "uuid"
+         },
+         "placement": {
+          "type": "string",
+          "enum": [
+           "first",
+           "last"
+          ]
+         },
+         "icon": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}": {
+   "get": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "ページの情報",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "タイトル・アイコン・所有者・状態を変える",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "description": "項目を省くと変えない。null で外す。",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "title": {
+          "type": "string"
+         },
+         "icon": {
+          "type": "string",
+          "nullable": true
+         },
+         "ownerId": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": true
+         },
+         "status": {
+          "type": "string",
+          "nullable": true
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "ゴミ箱へ移す（子ページも）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/move": {
+   "post": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "移動する（並べ替え・親の変更・別のワークスペースへ）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "parentId": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": true
+         },
+         "afterId": {
+          "type": "string",
+          "format": "uuid"
+         },
+         "placement": {
+          "type": "string"
+         },
+         "workspaceId": {
+          "type": "string",
+          "format": "uuid"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/content": {
+   "get": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "本文（JSON と平文）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Content"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "本文を Markdown で書き換える",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "description": "replace は本文をすべて、replace_section は見出しから同じか上の階層の次の見出しの手前までを置き換える。append は末尾に足す。置き換える前の本文は版として残る。replace_section で見出しが見つからなければ 404。",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "mode": {
+          "type": "string",
+          "enum": [
+           "replace",
+           "append",
+           "replace_section"
+          ]
+         },
+         "markdown": {
+          "type": "string"
+         },
+         "heading": {
+          "type": "string",
+          "description": "replace_section: 置き換える節の見出しの文字"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "pageId": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "mode": {
+           "type": "string"
+          },
+          "removed": {
+           "type": "integer"
+          },
+          "added": {
+           "type": "integer"
+          },
+          "blocks": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/versions": {
+   "get": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "版の一覧",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Version"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/backlinks": {
+   "get": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "このページへリンクしているページ",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Page"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/labels": {
+   "put": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "ラベルを置き換える",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "labels": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "labels": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/bulk": {
+   "post": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "まとめて操作する（移動・削除・ラベル・所有者・状態）",
+    "parameters": [],
+    "description": "ページごとに権限を確かめる。できなかったものは failed に理由が入る。",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "ids": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          }
+         },
+         "action": {
+          "type": "string",
+          "enum": [
+           "move",
+           "delete",
+           "labels",
+           "owner",
+           "status"
+          ]
+         },
+         "parentId": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": true
+         },
+         "workspaceId": {
+          "type": "string",
+          "format": "uuid"
+         },
+         "addLabels": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         },
+         "removeLabels": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         },
+         "ownerId": {
+          "type": "string",
+          "format": "uuid",
+          "nullable": true
+         },
+         "status": {
+          "type": "string",
+          "nullable": true
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BulkResult"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/watch": {
+   "get": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "ウォッチの状態",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "watching": {
+           "type": "boolean"
+          },
+          "edits": {
+           "type": "boolean"
+          },
+          "comments": {
+           "type": "boolean"
+          },
+          "subtree": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "ウォッチの設定",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "watching": {
+          "type": "boolean"
+         },
+         "edits": {
+          "type": "boolean"
+         },
+         "comments": {
+          "type": "boolean"
+         },
+         "subtree": {
+          "type": "boolean"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/acl": {
+   "get": {
+    "tags": [
+     "権限"
+    ],
+    "summary": "ページの共有設定（編集者のみ）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "inherit": {
+           "type": "boolean"
+          },
+          "entries": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/AclEntry"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "権限"
+    ],
+    "summary": "ページの共有設定を置き換える",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "inherit": {
+          "type": "boolean"
+         },
+         "entries": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/AclEntry"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/lock": {
+   "get": {
+    "tags": [
+     "権限"
+    ],
+    "summary": "ページの保護の状態",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "locked": {
+           "type": "boolean"
+          },
+          "reason": {
+           "type": "string",
+           "nullable": true
+          },
+          "canEdit": {
+           "type": "boolean"
+          },
+          "canChange": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "権限"
+    ],
+    "summary": "ページを保護する（保護した人・所有者・指定した人だけが編集できる）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "reason": {
+          "type": "string"
+         },
+         "editors": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "権限"
+    ],
+    "summary": "保護を解除する",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/search": {
+   "get": {
+    "tags": [
+     "検索"
+    ],
+    "summary": "ページを検索する",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": true,
+      "description": "検索語（空白区切りでAND）",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "workspaceId",
+      "in": "query",
+      "required": false,
+      "description": "ワークスペースで絞る",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "label",
+      "in": "query",
+      "required": false,
+      "description": "ラベル",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "days",
+      "in": "query",
+      "required": false,
+      "description": "この日数以内に更新",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "description": "状態（none=状態なし）",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/SearchResult"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/comments": {
+   "get": {
+    "tags": [
+     "コメント"
+    ],
+    "summary": "コメントの一覧",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Comment"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "コメント"
+    ],
+    "summary": "コメントする（threadId で返信）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "body": {
+          "type": "string"
+         },
+         "threadId": {
+          "type": "string",
+          "format": "uuid"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Comment"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/attachments": {
+   "post": {
+    "tags": [
+     "添付"
+    ],
+    "summary": "ファイルを添付する（multipart/form-data の file）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Attachment"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/attachments/{id}": {
+   "get": {
+    "tags": [
+     "添付"
+    ],
+    "summary": "添付ファイルを取得する",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "添付ID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/tasks": {
+   "get": {
+    "tags": [
+     "ToDo"
+    ],
+    "summary": "自分に割り当てられたToDo",
+    "parameters": [
+     {
+      "name": "done",
+      "in": "query",
+      "required": false,
+      "description": "完了したものも含める",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Task"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/database": {
+   "get": {
+    "tags": [
+     "データベース"
+    ],
+    "summary": "データベースの列・ビュー・項目",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Database"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "データベース"
+    ],
+    "summary": "データベースにする・列とビューを変える",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "props": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/DbProp"
+          }
+         },
+         "views": {
+          "type": "array",
+          "items": {
+           "type": "object"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Database"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/database/rows": {
+   "post": {
+    "tags": [
+     "データベース"
+    ],
+    "summary": "項目を追加する",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "title": {
+          "type": "string"
+         },
+         "values": {
+          "type": "object"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/database/rows/bulk": {
+   "post": {
+    "tags": [
+     "データベース"
+    ],
+    "summary": "項目をまとめて追加する（最大2000件）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "rows": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "title": {
+             "type": "string"
+            },
+            "values": {
+             "type": "object"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "created": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/{id}/props": {
+   "get": {
+    "tags": [
+     "データベース"
+    ],
+    "summary": "項目の値（親のデータベースの列と一緒に）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "データベース"
+    ],
+    "summary": "項目の値を変える（null で消す）",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "description": "ページID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "values": {
+          "type": "object",
+          "description": "列のID → 値"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/workspaces/{wsId}/health": {
+   "get": {
+    "tags": [
+     "点検"
+    ],
+    "summary": "ページの被リンク数・最終更新（孤立・古いページの確認）",
+    "parameters": [
+     {
+      "name": "wsId",
+      "in": "path",
+      "required": true,
+      "description": "ワークスペースID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/workspaces/{wsId}/broken-links": {
+   "get": {
+    "tags": [
+     "点検"
+    ],
+    "summary": "リンク切れ",
+    "parameters": [
+     {
+      "name": "wsId",
+      "in": "path",
+      "required": true,
+      "description": "ワークスペースID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/workspaces/{wsId}/webhooks": {
+   "get": {
+    "tags": [
+     "連携"
+    ],
+    "summary": "外部への通知（Webhook）の一覧",
+    "parameters": [
+     {
+      "name": "wsId",
+      "in": "path",
+      "required": true,
+      "description": "ワークスペースID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/workspaces/{wsId}/automations": {
+   "get": {
+    "tags": [
+     "連携"
+    ],
+    "summary": "自動化ルールの一覧",
+    "parameters": [
+     {
+      "name": "wsId",
+      "in": "path",
+      "required": true,
+      "description": "ワークスペースID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/hooks/{token}": {
+   "post": {
+    "tags": [
+     "連携"
+    ],
+    "summary": "受信用の Webhook（認証不要。URL のトークンで判断）",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "description": "受信用 URL のトークン",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "description": "ワークスペースの「📥 受信用の Webhook」で作った URL。作った人の権限で動く。1分に60件まで。",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "title": {
+          "type": "string"
+         },
+         "text": {
+          "type": "string",
+          "description": "本文（改行で段落）。comment ではコメント"
+         },
+         "values": {
+          "type": "object",
+          "description": "row: 列名または列ID → 値"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "pageId": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "url": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    },
+    "security": []
+   }
+  },
+  "/api/tokens": {
+   "get": {
+    "tags": [
+     "APIトークン"
+    ],
+    "summary": "自分のAPIトークン",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object"
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  }
+ }
+}
