@@ -36,7 +36,7 @@ skawau の管理者が、skiwi をクライアントとして登録する（環�
 - 許可: `302 {redirect_uri}?code=…&state=…`。拒否: `302 {redirect_uri}?error=access_denied&state=…`。
 - `client_id`・`redirect_uri` が不正なときは、リダイレクトせずに skawau の画面でエラーを表示する。
 - 認可コードはランダム・60秒・一度だけ。`client_id`・`redirect_uri`・ユーザー・`code_challenge` に結び付ける。
-- 許可画面のフォームの CSP に `form-action` を付けない（送信後のリダイレクトの連鎖にも効き、別 origin の `redirect_uri` へ戻れなくなる）。
+- 許可画面のフォームの CSP で `form-action` を使うときは、`redirect_uri` の origin も含める（送信後のリダイレクトの連鎖にも効くため、含めないと別 origin の `redirect_uri` へ戻れなくなる）。
 
 ### 3. `POST /oauth/token`
 

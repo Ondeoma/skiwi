@@ -67,7 +67,7 @@ summary: 管理者の権限、監査ログ、公開中のページ、定期バ�
 
 ## draw.io のエディタ
 
-[draw.io の図](/help/blocks#drawio-の図) の編集には、既定で diagrams.net のエディタ（`https://embed.diagrams.net`）を使います。エディタはブラウザの中で動き、図のデータは skiwi のサーバーにだけ保存されます（diagrams.net には送りません）。
+[draw.io の図](/help/blocks#drawio-の図) の編集には、既定で diagrams.net のエディタ（`https://embed.diagrams.net`）を使います。エディタはブラウザの中で動きます。skiwi は図のデータを skiwi のサーバーに保存し、diagrams.net へは送りません（エディタのプログラムは diagrams.net から読み込みます）。
 
 - 社外のサイトにつなげない環境や、社内のものを使いたいときは、draw.io（`jgraph/drawio` の Docker イメージなど）を社内に置き、サーバーの環境変数 `DRAWIO_URL` にその URL を設定します。
 - `DRAWIO_URL` を空にすると、図を編集できなくなります（表示はできます）。
