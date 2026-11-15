@@ -1,5 +1,7 @@
 # skiwi
 
+<p align="center"><img src="frontend/public/logo.svg" width="128" height="128" alt="skiwi のロゴ"></p>
+
 skiwi は、チーム向けの Wiki です（ブロックエディタ、同時編集、OIDC認証）。設計は [docs/design.md](docs/design.md)。ライセンス: MIT
 
 ## 構成
