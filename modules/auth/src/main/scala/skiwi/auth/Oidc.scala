@@ -39,6 +39,13 @@ object Crypto:
 
   def pkceChallenge(verifier: String): String = b64.encodeToString(sha256(verifier))
 
+  /** 時間が内容に依存しない比較（秘密の値・CSRF トークンの照合用） */
+  def constantTimeEquals(a: String, b: String): Boolean =
+    MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8))
+
+  /** 時間が内容に依存しない比較（ハッシュ同士） */
+  def constantTimeEquals(a: Array[Byte], b: Array[Byte]): Boolean = MessageDigest.isEqual(a, b)
+
 object IdToken:
 
   /** JWTのペイロードを取り出す（署名は検証しない）。

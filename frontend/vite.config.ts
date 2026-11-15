@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: {
       '/api': backend,
       '/auth': backend,
+      '/oauth': backend,
       '/ws': { target: backend.replace(/^http/, 'ws'), ws: true },
     },
   },

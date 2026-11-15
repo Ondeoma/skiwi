@@ -64,6 +64,10 @@ export SCIM_TOKEN=$(openssl rand -base64 32)
 # export UNFURL_ALLOW_PRIVATE=true
 # draw.io の図のエディタ（既定 https://embed.diagrams.net）。社内に置いた draw.io（jgraph/drawio）を使うときに指定。空にすると図の編集を止める
 # export DRAWIO_URL=https://drawio.example.com
+# 外部サービスのトークンを暗号化する鍵（32バイトを base64。全ノードで同じ値）。未設定なら skea・skawau 連携は使えない
+# export ENCRYPTION_KEY=$(openssl rand -base64 32)
+# skea → skiwi の連携のクライアントの初期登録（任意。管理画面でも登録できる。まだ登録されていないときだけ使う）
+# export OAUTH_CLIENT_ID=skea OAUTH_CLIENT_SECRET=$(openssl rand -base64 24) OAUTH_CLIENT_REDIRECT_URI=https://skea.example.com/api/integrations/skiwi/callback
 sbt app/run
 ```
 
@@ -296,6 +300,20 @@ Markdown風の入力（`# `、`- `、`1. `、`[] `、`> `、```` ``` ````）に�
     作成時に一度だけ表示する秘密の値による署名を確かめられる（`X-Skiwi-Event`・`X-Skiwi-Delivery` も付く）。
 - 個別に権限を絞ったページ（「親の権限を引き継がない」にしたページとその下）の出来事は送らない。送信時点でも確かめ直す。
 - 送れなかったものは間隔を空けて再送する（4xx は再送しない）。「テスト送信」と、最後の送信結果を設定画面で確認できる。送り先は https のみ（`WEBHOOK_ALLOW_HTTP=true` で http も可）。
+
+## skea・skawau 連携（タスクID・ファイルのリンクの表示）
+本文中の skea のタスクID（`SKEA-123` など）をリンクにしてタイトルと状態を横に出し、skawau のファイル・フォルダのリンク（`…/view/{ID}` など）にファイル名を出す。
+取り決めは [docs/skea-integration.md](docs/skea-integration.md)・[docs/skawau-integration.md](docs/skawau-integration.md)。どちらも同じ仕組み（`IntegrationRoutes`。サービスごとの違いは `LinkedService`）。
+- **設定（管理者）**: サイドバー下部「外部連携」（`/admin/integrations`）で、連携先ごとに URL・client_id・client_secret（skea は対象のプロジェクトキーも）を入れる。画面に出る redirect_uri（`${PUBLIC_URL}/api/integrations/{skea|skawau}/callback`）を相手側に登録する。`ENCRYPTION_KEY`（32バイトの base64）が未設定なら機能は使えない（503）。
+- **連携（各ユーザー）**: サイドバー下部「🔗 skea と連携」「🔗 skawau と連携」→ 相手の許可画面（OAuth 2.0 認可コード + PKCE S256）→ 戻ると、読み取り専用のトークンを AES-GCM で暗号化して保存する（`integration_connection`）。state と code_verifier は DB に10分保存（複数ノード対応）。解除は相手の `/oauth/revoke` を呼んでから削除。
+- **表示**: ProseMirror の decoration だけで行い、本文は書き換えない（`frontend/src/editor/SkeaTasks.ts`・`SkawauFiles.ts`、共通部分は `linkedDecorations.ts`）。コードブロック・インラインコードの中は対象外。閲覧中はクリックで開き、編集中は Ctrl/⌘+クリックか、横の表示のクリックで新しいタブに開く。skawau は、貼り付けたままの URL を閲覧中は隠して「📄 ファイル名」だけにし、文字を付けたリンクは文字のまま（マウスを乗せると名前）。未連携の人には何も足さない（skea はリンクだけ）。ゲスト向けの公開ページ・版のプレビューでは何もしない。
+- **取得**: `POST /api/integrations/{skea|skawau}/lookup {keys}`（100件まで）で本人のトークンを使い、skea の `/api/tasks/lookup`・skawau の `/api/files/lookup` を呼ぶ。(サービス, ユーザー, キー) ごとに60秒キャッシュ。相手が 401 を返したら連携を消して `connected:false`。
+
+### 逆向き: skea → skiwi（skea にページのタイトルを出す）
+skiwi が OAuth 2.0 の認可サーバーになり、skea のタスクに書いた skiwi のページのリンクにタイトルを出す（取り決めは [docs/skea-integration.md](docs/skea-integration.md) の後半）。
+- **登録（管理者）**: 同じ画面の「skea → skiwi」で client_id・client_secret（ハッシュだけ保存）・redirect_uri（完全一致）・表示名を入れる。環境変数 `OAUTH_CLIENT_ID`・`OAUTH_CLIENT_SECRET`・`OAUTH_CLIENT_REDIRECT_URI`・`OAUTH_CLIENT_NAME` でも登録できる（未登録のときだけ。`scripts/dev-up.sh` は開発用の値を入れる）。
+- **認可**: `GET /oauth/authorize`（許可の画面。未ログインならログイン後に戻る。PKCE S256 のみ）→ `POST /oauth/token`（Basic 認証）。発行するのはそのユーザーの読み取り専用の API トークン「skea 連携」（期限なし。「APIトークン」の画面から解除できる。許可し直すと前のトークンは失効）。`POST /oauth/revoke`（RFC 7009）。
+- **参照**: `POST /api/pages/lookup {ids}`（100件まで）。見られるページの id・workspaceId・title・icon だけを返す。読み取り専用のトークンでも使える。
 
 ## ページの複製
 サイドバーのページの「⋯」（右クリック）→「⧉ 複製…」、またはページ右上の「⤓ 書き出し」→「複製」。

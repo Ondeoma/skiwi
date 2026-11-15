@@ -16,6 +16,7 @@ export const router = createRouter({
     { path: '/help/:chapter?', component: () => import('./views/HelpView.vue'), props: true },
     { path: '/admin/audit', ...scalactive('audit') },
     { path: '/admin/shares', component: () => import('./views/AdminSharesView.vue') },
+    { path: '/admin/integrations', component: () => import('./views/AdminIntegrationsView.vue') },
     {
       path: '/w/:wid',
       component: () => import('./views/WorkspaceView.vue'),

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nodeViewProps, NodeViewWrapper } from '@tiptap/vue-3'
 import { onMounted, ref, watch } from 'vue'
+import { isDark } from '../ui/theme'
 
 const props = defineProps(nodeViewProps)
 const svg = ref('')
@@ -11,8 +12,7 @@ let seq = 0
 
 async function render(code: string) {
   const mermaid = (await import('mermaid')).default
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches
-  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' })
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: isDark.value ? 'dark' : 'default' })
   try {
     const out = await mermaid.render(`mmd-${Math.random().toString(36).slice(2)}-${++seq}`, code)
     svg.value = out.svg
@@ -23,7 +23,7 @@ async function render(code: string) {
 }
 
 onMounted(() => render(props.node.attrs.code))
-watch(() => props.node.attrs.code, (c) => render(c))
+watch([() => props.node.attrs.code, isDark], ([c]) => render(c))
 
 function startEdit() {
   if (!props.editor.isEditable) return

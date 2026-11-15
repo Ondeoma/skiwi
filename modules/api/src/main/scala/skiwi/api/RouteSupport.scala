@@ -18,6 +18,12 @@ def parseOrNull(s: String): Json = io.circe.parser.parse(s).getOrElse(Json.Null)
 def decodeYdoc(b64: String): Option[Array[Byte]] =
   Either.catchNonFatal(Base64.getDecoder.decode(b64)).toOption.filter(_.nonEmpty)
 
+/** 戻り先は同じサイトの相対パスだけ（外部サイトへのリダイレクトに使わせない）。省略は "/"、不正なものは None。 */
+def safeReturnTo(raw: Option[String]): Option[String] = raw.map(_.trim).filter(_.nonEmpty) match
+  case None => Some("/")
+  case Some(p) =>
+    Option.when(p.startsWith("/") && !p.startsWith("//") && !p.contains('\\') && !p.exists(_ < ' ') && p.length <= 2000)(p)
+
 /** 1分あたりの回数をキーごとに制限する。上限内なら記録して true。 */
 def perMinute[K](rate: Ref[IO, Map[K, List[Long]]], key: K, limit: Int): IO[Boolean] =
   IO.realTime.map(_.toMillis).flatMap { now =>

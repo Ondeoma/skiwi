@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { isDark } from '../ui/theme'
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
 import { useEditable } from './useEditable'
 import { useHandleOnlyDrag } from './dragHandle'
@@ -19,9 +20,7 @@ const state = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const full = ref(false)
 let board: BoardHandle | null = null
 
-const media = window.matchMedia('(prefers-color-scheme: dark)')
-const dark = ref(media.matches)
-const onScheme = () => { dark.value = media.matches; board?.setDark(media.matches) }
+watch(isDark, (d) => board?.setDark(d))
 
 const height = computed(() => Number(props.node.attrs.height) || 520)
 
@@ -46,7 +45,7 @@ async function load() {
       id: String(props.node.attrs.id),
       snapshot: parseSnapshot(props.node.attrs.snapshot),
       editable: editable.value,
-      dark: dark.value,
+      dark: isDark.value,
       ydoc: opts.value.ydoc,
       awareness: opts.value.awareness,
       user: opts.value.user ?? undefined,
@@ -64,13 +63,11 @@ async function load() {
 // 画面に入ってから読み込む（ページに多数あっても重くならないように）
 let io: IntersectionObserver | undefined
 onMounted(() => {
-  media.addEventListener('change', onScheme)
   io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io?.disconnect(); void load() } }, { rootMargin: '200px' })
   if (host.value) io.observe(host.value)
 })
 onBeforeUnmount(() => {
   io?.disconnect()
-  media.removeEventListener('change', onScheme)
   clearTimeout(saveTimer)
   board?.destroy()
   document.removeEventListener('keydown', onEsc, true)

@@ -486,3 +486,35 @@ export const formApi = {
   update: (id: string, b: SaveForm) => request<DbFormDef>('PUT', `/api/forms/${id}`, b),
   remove: (id: string) => request<void>('DELETE', `/api/forms/${id}`),
 }
+
+// ---------------------------------------------------------------- 外部サービスとの連携（docs/skea-integration.md・docs/skawau-integration.md）
+export type ServiceName = 'skea' | 'skawau'
+/** enabled: 管理者が設定済み。connected: 自分が連携済み。projectKeys は skea だけ */
+export interface IntegrationStatus { enabled: boolean; url: string | null; projectKeys: string[]; connected: boolean }
+/** skea のタスク */
+export interface SkeaTask { key: string; title: string; status: { name: string; category: string; color: string }; url: string }
+/** skawau のファイル・フォルダ（key はファイルの ID） */
+export interface SkawauFile { key: string; name: string; isDir: boolean; mimeType: string | null }
+/** 管理者の設定（client_secret は返らない。設定済みかどうかだけ） */
+export interface IntegrationSettings { url: string; clientId: string; clientSecretSet: boolean; projectKeys: string[]; redirectUri: string; connections: number }
+export const integrationApi = (svc: ServiceName) => ({
+  status: () => request<IntegrationStatus>('GET', `/api/integrations/${svc}`, undefined, NO_REDIRECT),
+  /** 許可画面へ（ブラウザで開く）。returnTo: 戻り先（同じサイトの相対パス） */
+  connectUrl: (returnTo: string) => `/api/integrations/${svc}/connect?returnTo=${encodeURIComponent(returnTo)}`,
+  disconnect: () => request<void>('DELETE', `/api/integrations/${svc}/connection`),
+  lookup: <T>(keys: string[]) => request<{ connected: boolean; items: T[] }>('POST', `/api/integrations/${svc}/lookup`, { keys }, NO_REDIRECT),
+  settings: () => request<IntegrationSettings>('GET', `/api/admin/integrations/${svc}`),
+  /** clientSecret: 空なら今の値のまま */
+  saveSettings: (b: { url: string; clientId: string; clientSecret?: string; projectKeys?: string[] }) =>
+    request<IntegrationSettings>('PUT', `/api/admin/integrations/${svc}`, b),
+})
+
+/** skea → skiwi: skiwi に登録する skea（OAuth のクライアント）。client_secret は返らない。connections: 連携しているユーザーの数 */
+export interface OAuthClientSettings { clientId: string; clientSecretSet: boolean; redirectUri: string; name: string; connections: number }
+export const oauthClientApi = {
+  get: () => request<OAuthClientSettings>('GET', '/api/admin/integrations/skea/client'),
+  /** clientSecret: 空なら今の値のまま（新しく登録するときは必須） */
+  save: (b: { clientId: string; clientSecret?: string; redirectUri: string; name: string }) =>
+    request<OAuthClientSettings>('PUT', '/api/admin/integrations/skea/client', b),
+  remove: () => request<void>('DELETE', '/api/admin/integrations/skea/client'),
+}

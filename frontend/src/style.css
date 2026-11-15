@@ -8,16 +8,16 @@
   --bg: #fff; --fg: #1f2328; --muted: #6b7280; --line: #e5e7eb; --side: #f7f7f5; --accent: #2563eb; --hover: #ececea; --danger: #dc2626;
   font-family: "M PLUS Rounded 1c", system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --c-gray: #2f2f2f; --c-gray-line: #4a4a4a; --c-brown: #43302a; --c-brown-line: #6b4a3d;
-    --c-orange: #4f3523; --c-orange-line: #8a5a32; --c-yellow: #4b3f26; --c-yellow-line: #8a7034;
-    --c-green: #263a2c; --c-green-line: #3f6a4a; --c-blue: #233a57; --c-blue-line: #3d6aa0;
-    --c-purple: #35284a; --c-purple-line: #614680; --c-pink: #43283a; --c-pink-line: #7a4560;
-    --c-red: #4a2a27; --c-red-line: #844640;
-  }
-  :root { --bg: #191919; --fg: #e6e6e6; --muted: #9ca3af; --line: #2f2f2f; --side: #202020; --accent: #60a5fa; --hover: #2a2a2a; --danger: #ef4444; }
+:root.dark {
+  --c-gray: #2f2f2f; --c-gray-line: #4a4a4a; --c-brown: #43302a; --c-brown-line: #6b4a3d;
+  --c-orange: #4f3523; --c-orange-line: #8a5a32; --c-yellow: #4b3f26; --c-yellow-line: #8a7034;
+  --c-green: #263a2c; --c-green-line: #3f6a4a; --c-blue: #233a57; --c-blue-line: #3d6aa0;
+  --c-purple: #35284a; --c-purple-line: #614680; --c-pink: #43283a; --c-pink-line: #7a4560;
+  --c-red: #4a2a27; --c-red-line: #844640;
 }
+:root.dark { --bg: #191919; --fg: #e6e6e6; --muted: #9ca3af; --line: #2f2f2f; --side: #202020; --accent: #60a5fa; --hover: #2a2a2a; --danger: #ef4444; }
+:root { color-scheme: light; }
+:root.dark { color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); line-height: 1.7; }
@@ -107,14 +107,12 @@ body.dragging-files .ProseMirror[contenteditable="true"] { outline: 2px dashed v
 .hljs-number, .hljs-literal { color: #0550ae; }
 .hljs-title, .hljs-section, .hljs-function { color: #8250df; }
 .hljs-type, .hljs-class { color: #953800; }
-@media (prefers-color-scheme: dark) {
-  .hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #ff7b72; }
-  .hljs-string, .hljs-attr, .hljs-template-tag { color: #a5d6ff; }
-  .hljs-number, .hljs-literal { color: #79c0ff; }
-  .hljs-title, .hljs-section, .hljs-function { color: #d2a8ff; }
-  .hljs-type, .hljs-class { color: #ffa657; }
-  .ProseMirror mark { background: #854d0e; }
-}
+.dark .hljs-keyword, .dark .hljs-selector-tag, .dark .hljs-built_in { color: #ff7b72; }
+.dark .hljs-string, .dark .hljs-attr, .dark .hljs-template-tag { color: #a5d6ff; }
+.dark .hljs-number, .dark .hljs-literal { color: #79c0ff; }
+.dark .hljs-title, .dark .hljs-section, .dark .hljs-function { color: #d2a8ff; }
+.dark .hljs-type, .dark .hljs-class { color: #ffa657; }
+.dark .ProseMirror mark { background: #854d0e; }
 /* 検索スニペット */
 .snippet .keyword { background: #fde68a; color: #1f2328; border-radius: 2px; }
 /* 画像のサイズ変更ハンドル（Tiptap ResizableNodeView） */
@@ -228,6 +226,19 @@ body.dragging-files .ProseMirror[contenteditable="true"] { outline: 2px dashed v
 
 /* メンション・コメントを付けた範囲 */
 .ProseMirror .mention { color: var(--accent); background: rgba(37,99,235,.10); border-radius: 4px; padding: 0 .15em; font-weight: 500; white-space: nowrap; }
+/* 外部サービスの項目（表示の飾り。src/editor/linkedDecorations.ts）。閲覧中はクリック、編集中は Ctrl/⌘+クリックで開く */
+:root { --linked-chip-bg: #f1f5f9; --linked-chip-fg: #334155; --linked-chip-line: #e2e8f0; }
+:root.dark { --linked-chip-bg: #1e293b; --linked-chip-fg: #cbd5e1; --linked-chip-line: #334155; }
+.ProseMirror .skea-key { color: var(--accent); text-decoration: underline dotted; text-underline-offset: 2px; }
+.ProseMirror[contenteditable="false"] [data-linked-url] { cursor: pointer; }
+.ProseMirror a.linked-chip { display: inline-flex; align-items: center; gap: .3em; max-width: 24em; margin: 0 .15em 0 .25em; padding: 0 .35em; border: 1px solid var(--linked-chip-line); border-radius: 4px; background: var(--linked-chip-bg); color: var(--linked-chip-fg); font-size: .82em; line-height: 1.5; text-decoration: none; vertical-align: baseline; cursor: pointer; user-select: none; }
+.ProseMirror a.linked-chip:hover { border-color: var(--accent); }
+.ProseMirror a.linked-chip.icon { padding: 0 .25em; color: var(--muted); }
+.ProseMirror a.linked-chip .linked-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ProseMirror a.skea-chip .skea-status { flex: none; padding: 0 .45em; border-radius: 999px; background: var(--muted); color: #fff; font-size: .9em; font-weight: 600; }
+/* skawau: 閲覧中は、名前の分かった URL の文字を隠して名前だけ出す（編集中は URL の後ろに添える） */
+.ProseMirror[contenteditable="false"] .skawau-link.named { display: none; }
+.ProseMirror[contenteditable="false"] a.skawau-chip { margin-left: 0; font-size: .92em; }
 .ProseMirror .comment-mark { background: rgba(234,179,8,.22); border-bottom: 2px solid rgba(234,179,8,.7); cursor: pointer; }
 .ProseMirror .comment-mark.flash { background: rgba(234,179,8,.55); transition: background .3s; }
 
@@ -284,9 +295,7 @@ body.dragging-files .ProseMirror[contenteditable="true"] { outline: 2px dashed v
 
 /* 文字の色・背景色（色名で保存。ライト/ダークで見やすい色に） */
 :root { --t-gray: #787774; --t-brown: #9f6b53; --t-orange: #d9730d; --t-yellow: #cb912f; --t-green: #448361; --t-blue: #337ea9; --t-purple: #9065b0; --t-pink: #c14c8a; --t-red: #d44c47; }
-@media (prefers-color-scheme: dark) {
-  :root { --t-gray: #9b9b9b; --t-brown: #ba856f; --t-orange: #c77d48; --t-yellow: #ca9849; --t-green: #529e72; --t-blue: #5e87c9; --t-purple: #9d68d3; --t-pink: #d15796; --t-red: #df5452; }
-}
+:root.dark { --t-gray: #9b9b9b; --t-brown: #ba856f; --t-orange: #c77d48; --t-yellow: #ca9849; --t-green: #529e72; --t-blue: #5e87c9; --t-purple: #9d68d3; --t-pink: #d15796; --t-red: #df5452; }
 [data-text-color="gray"] { color: var(--t-gray); } [data-text-color="brown"] { color: var(--t-brown); } [data-text-color="orange"] { color: var(--t-orange); }
 [data-text-color="yellow"] { color: var(--t-yellow); } [data-text-color="green"] { color: var(--t-green); } [data-text-color="blue"] { color: var(--t-blue); }
 [data-text-color="purple"] { color: var(--t-purple); } [data-text-color="pink"] { color: var(--t-pink); } [data-text-color="red"] { color: var(--t-red); }

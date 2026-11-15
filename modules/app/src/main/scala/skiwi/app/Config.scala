@@ -1,8 +1,9 @@
 package skiwi.app
 
 import cats.effect.IO
-import skiwi.api.ApiConfig
-import skiwi.auth.OidcConfig
+import cats.syntax.all.*
+import skiwi.api.{ApiConfig, SaveOAuthClientReq}
+import skiwi.auth.{OidcConfig, SecretBox}
 import skiwi.db.DbConfig
 import skiwi.collab.ClusterConfig
 import skiwi.notify.SmtpConfig
@@ -29,7 +30,12 @@ final case class AppConfig(
     /** リンクのカード表示で、社内（プライベート）のアドレスにも接続する */
     unfurlAllowPrivate: Boolean = false,
     /** draw.io（diagrams.net）のエディタの URL。社内に置いたものを使うときに指定する。空にすると図を編集できない（表示はできる） */
-    drawioUrl: String = AppConfig.DefaultDrawioUrl
+    drawioUrl: String = AppConfig.DefaultDrawioUrl,
+    /** 外部サービスのトークンなどを暗号化する鍵（ENCRYPTION_KEY）。なければ skea・skawau 連携は使えない */
+    secretBox: Option[SecretBox] = None,
+    /** skea → skiwi の連携のクライアントの初期登録（OAUTH_CLIENT_ID・OAUTH_CLIENT_SECRET・OAUTH_CLIENT_REDIRECT_URI・OAUTH_CLIENT_NAME）。
+      * まだ登録されていないときだけ使う（管理画面での変更を優先する） */
+    oauthClientSeed: Option[SaveOAuthClientReq] = None
 )
 object AppConfig:
   val DefaultTrashRetentionDays = 30
@@ -58,6 +64,8 @@ object Config:
       cid    <- required("OIDC_CLIENT_ID")
       secret <- required("OIDC_CLIENT_SECRET")
       pub    <- required("PUBLIC_URL")
+      // 設定されているのに読めない鍵は起動時にエラーにする（黙って連携が使えなくなるのを防ぐ）
+      box    <- opt("ENCRYPTION_KEY").traverse(SecretBox.fromBase64)
     yield
       val base = pub.stripSuffix("/")
       // SCIM: 設定するとSCIMエンドポイントを有効化し、グループ所属はSCIMを正とする（16文字以上を推奨）
@@ -116,7 +124,10 @@ object Config:
         webhookAllowHttp = enabled("WEBHOOK_ALLOW_HTTP"),
         unfurlAllowPrivate = enabled("UNFURL_ALLOW_PRIVATE"),
         // 空にすると図を編集できない（空のまま使う）
-        drawioUrl = sys.env.get("DRAWIO_URL").map(_.trim.stripSuffix("/")).getOrElse(AppConfig.DefaultDrawioUrl)
+        drawioUrl = sys.env.get("DRAWIO_URL").map(_.trim.stripSuffix("/")).getOrElse(AppConfig.DefaultDrawioUrl),
+        secretBox = box,
+        oauthClientSeed = (opt("OAUTH_CLIENT_ID"), opt("OAUTH_CLIENT_SECRET"), opt("OAUTH_CLIENT_REDIRECT_URI")).mapN((id, sec, uri) =>
+          SaveOAuthClientReq(id, Some(sec), uri, opt("OAUTH_CLIENT_NAME").getOrElse("skea")))
       )
     ).left.map(msg => new IllegalArgumentException(msg))
   )

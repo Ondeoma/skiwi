@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useEventListener } from './composables'
+import { isDark } from './theme'
 
 /**
  * 任意のHTMLを、サンドボックス化した iframe の中で表示する（ゲスト向けの本文の上下）。
@@ -14,7 +15,7 @@ const height = ref(0)
 const key = Math.random().toString(36).slice(2)
 
 const srcdoc = computed(() => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<base target="_top"><meta name="color-scheme" content="light dark">
+<base target="_top"><meta name="color-scheme" content="${isDark.value ? 'dark' : 'light'}">
 <style>html,body{margin:0;padding:0;background:transparent;font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;}img,video{max-width:100%;height:auto}</style>
 </head><body>${props.html}
 <script>(function(){var k=${JSON.stringify(key)};function s(){parent.postMessage({skiwiFrame:k,h:Math.ceil(document.documentElement.getBoundingClientRect().height)},'*')}

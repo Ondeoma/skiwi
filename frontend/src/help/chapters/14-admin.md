@@ -1,7 +1,7 @@
 ---
 title: 管理者向け
 icon: 🛡️
-summary: 管理者の権限、監査ログ、公開中のページ、定期バックアップ、draw.io のエディタ
+summary: 管理者の権限、監査ログ、公開中のページ、定期バックアップ、skea・skawau 連携、draw.io のエディタ
 ---
 # 管理者向け
 
@@ -26,6 +26,40 @@ summary: 管理者の権限、監査ログ、公開中のページ、定期バ�
 **ZIP の中身**: 書き出しの ZIP と同じ形（フォルダ構成の Markdown・添付ファイル・ホワイトボード）で、そのまま [取り込み](/help/io#取り込む) で戻せます。ページの親子・本文の元データ・ラベル・データベースの定義と値は `skiwi-backup.json` に入っています。
 
 > バックアップにはすべてのページが入るため、管理者だけが扱えます。ダウンロードしたファイルの扱いに注意してください。
+
+## skea 連携の設定
+
+サイドメニュー下の「外部連携」。本文の skea のタスクIDを、タイトルと状態付きのリンクにします（使い方は [skea のタスクを表示する](/help/automation#skeaのタスクを表示するskea連携)）。
+
+1. 画面に出る **redirect_uri** を、skea の管理者に伝えて、skiwi をクライアントとして登録してもらいます。
+2. skea で決めた client_id・client_secret と、skea の URL を入れます。
+3. 対象のプロジェクトキーを `SKEA, DEMO` のようにカンマ区切りで並べて「保存」。ここにあるキーのタスクIDだけをリンクにします（`UTF-8` のような文字を誤ってタスクIDと見なさないため）。
+
+- client_secret は保存すると表示されません（変えるときだけ入れ直します）。
+- skea の URL か client_id を変えると、全員の連携が外れます（各自で連携し直します）。
+- サーバーの環境変数 `ENCRYPTION_KEY` が設定されていないと、この機能は使えません（トークンを暗号化して保存するため）。
+- 設定の変更と、各ユーザーの連携・解除は監査ログに残ります。
+
+## skawau 連携の設定
+
+同じ「外部連携」の画面の「skiwi → skawau」。本文の skawau のファイルのリンクに、ファイル名を出します（使い方は [skawau のファイル名を表示する](/help/automation#skawauのファイル名を表示するskawau連携)）。
+
+1. 画面に出る **redirect_uri** を、skawau の管理者に伝えて、skiwi をクライアントとして登録してもらいます。
+2. skawau で決めた client_id・client_secret と、skawau の URL を入れて「保存」。
+
+- client_secret・URL・client_id の扱い、`ENCRYPTION_KEY`、監査ログは skea 連携と同じです。
+
+### skea → skiwi（ページのタイトルの表示）
+
+同じ画面の下の段で、skea を skiwi のクライアントとして登録すると、skea のタスクに書いた skiwi のページのリンクにタイトルが出ます。
+
+1. skea の管理者と、client_id・client_secret（16文字以上のランダムな文字列）を決めます。
+2. client_id・client_secret・redirect_uri（skea の URL + `/api/integrations/skiwi/callback`）・表示名（`skea`）を入れて「保存」。
+
+- 各ユーザーが skea の個人設定から連携すると、skiwi の許可の画面が出ます。許可すると、その人の読み取り専用の API トークン（「skea 連携」）が作られ、本人が見られるページのタイトルだけが skea に出ます。
+- 連携は各ユーザーの「APIトークン」の画面に出て、そこからいつでも解除できます。
+- client_id を変えるか「登録を消す」と、連携している全員のトークンが失効します。
+- サーバーの環境変数 `OAUTH_CLIENT_ID`・`OAUTH_CLIENT_SECRET`・`OAUTH_CLIENT_REDIRECT_URI`（・`OAUTH_CLIENT_NAME`）でも登録できます（まだ登録されていないときだけ使います）。
 
 ## ユーザーとグループ
 

@@ -38,6 +38,8 @@ import { LinkCard, UrlPaste } from './LinkCard'
 import { DatabaseBlock } from './DatabaseBlock'
 import { Drawio } from './Drawio'
 import NodeRange from '@tiptap/extension-node-range'
+import { SkawauFiles } from './SkawauFiles'
+import { SkeaTasks } from './SkeaTasks'
 
 export interface EditorDeps {
   ydoc: Y.Doc
@@ -228,6 +230,9 @@ export function buildExtensions(d: EditorDeps): AnyExtension[] {
     EmojiSuggest,
     NodeRange,
     UrlPaste,
+    // skea のタスクID・skawau のファイルのリンクの表示（ログイン中のエディタだけ。ゲスト向けの表示には入れない）
+    SkeaTasks,
+    SkawauFiles,
     Collaboration.configure({ document: d.ydoc }),
     CollaborationCaret.configure({ provider: d.provider, user: d.user }),
   ]

@@ -10,6 +10,7 @@ import SandboxedHtml from '../ui/SandboxedHtml.vue'
 import { groupByParent } from '../ui/pageTree'
 import { normalizeForSearch } from '../util/text'
 import { useDebouncedSearch, useSideMenu, useStoredRef } from '../ui/composables'
+import ThemeToggle from '../ui/ThemeToggle.vue'
 
 /** ゲスト向けの公開ページ（ログイン不要・閲覧のみ）。公開範囲のページを左に一覧する。 */
 const props = defineProps<{ token: string; pid?: string }>()
@@ -200,7 +201,10 @@ function onAreaClick(e: MouseEvent) {
   <div class="guest" :class="{ 'no-header': hideHeader }">
     <header v-if="!hideHeader" class="bar" data-testid="guest-header">
       <span class="badge" data-testid="guest-badge">🌐 公開ページ（閲覧のみ）</span>
-      <a class="login" href="/" title="メンバーはログインすると編集できます">ログイン</a>
+      <span class="bar-right">
+        <ThemeToggle />
+        <a class="login" href="/" title="メンバーはログインすると編集できます">ログイン</a>
+      </span>
     </header>
     <div class="layout" :class="{ single: !hasSidebar || !sideOpen || narrow }">
       <button v-if="hasSidebar && !sideOpen" class="side-open" title="ページの一覧を開く" data-testid="guest-side-open" @click="sideOpen = true">☰<span> ページ一覧</span></button>
@@ -272,6 +276,7 @@ function onAreaClick(e: MouseEvent) {
 .bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; padding: .5rem 1rem; border-bottom: 1px solid var(--line); background: var(--side); font-size: .85rem; }
 .badge { color: var(--muted); }
 .login { color: var(--accent); text-decoration: none; }
+.bar-right { display: flex; align-items: center; gap: .6rem; }
 .layout { display: grid; grid-template-columns: 270px 1fr; position: relative; }
 .layout.single { grid-template-columns: 1fr; }
 .guest.no-header .side { top: 0; max-height: 100vh; min-height: 100vh; }

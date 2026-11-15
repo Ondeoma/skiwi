@@ -3,7 +3,7 @@
  "info": {
   "title": "skiwi API",
   "version": "1.0",
-  "description": "skiwi の REST API。認証は `Authorization: Bearer <APIトークン>`（サイドバー下部の「APIトークン」で発行）か、ログイン中のブラウザのCookie。\n\n- 権限のないページ・ワークスペースは、存在を隠すため 404 を返す。閲覧はできるが編集できない場合は 403。\n- 読み取り専用のトークンでは、書き込み（POST・PUT・PATCH・DELETE）は 403。\n- 時刻は ISO 8601（UTC）。エラーは `{ \"error\": \"…\" }`。"
+  "description": "skiwi の REST API。認証は `Authorization: Bearer <APIトークン>`（サイドバー下部の「APIトークン」で発行）か、ログイン中のブラウザのCookie。\n\n- 権限のないページ・ワークスペースは、存在を隠すため 404 を返す。閲覧はできるが編集できない場合は 403。\n- 読み取り専用のトークンでは、書き込み（POST・PUT・PATCH・DELETE）は 403（読むだけの POST /api/pages/lookup は使える）。\n- 時刻は ISO 8601（UTC）。エラーは `{ \"error\": \"…\" }`。"
  },
  "servers": [
   {
@@ -2579,6 +2579,308 @@
      }
     },
     "security": []
+   }
+  },
+  "/api/integrations/{service}": {
+   "get": {
+    "tags": [
+     "連携"
+    ],
+    "summary": "外部サービス（skea・skawau）との連携の状態",
+    "parameters": [
+     {
+      "name": "service",
+      "in": "path",
+      "required": true,
+      "description": "連携先（skea・skawau）",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "skea",
+        "skawau"
+       ]
+      }
+     }
+    ],
+    "description": "enabled: 管理者が設定済み（サーバーに ENCRYPTION_KEY があるときだけ）。connected: 自分が連携済み。projectKeys は skea だけ。連携（許可）はブラウザで GET /api/integrations/{service}/connect から行う。",
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "enabled": {
+           "type": "boolean"
+          },
+          "url": {
+           "type": "string",
+           "nullable": true
+          },
+          "projectKeys": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "connected": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/integrations/{service}/lookup": {
+   "post": {
+    "tags": [
+     "連携"
+    ],
+    "summary": "skea のタスク・skawau のファイルをまとめて読む",
+    "parameters": [
+     {
+      "name": "service",
+      "in": "path",
+      "required": true,
+      "description": "連携先（skea・skawau）",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "skea",
+        "skawau"
+       ]
+      }
+     }
+    ],
+    "description": "自分の権限で読む（見られないものは返らない）。60秒キャッシュする。連携していない・連携が切れたときは connected=false。",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "keys": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "description": "skea: タスクID（例: SKEA-123。設定したプロジェクトキーのものだけ使う）。skawau: ファイルの ID（小文字の UUID）。100件まで"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "connected": {
+           "type": "boolean"
+          },
+          "items": {
+           "type": "array",
+           "items": {
+            "oneOf": [
+             {
+              "type": "object",
+              "properties": {
+               "key": {
+                "type": "string"
+               },
+               "title": {
+                "type": "string"
+               },
+               "status": {
+                "type": "object",
+                "properties": {
+                 "name": {
+                  "type": "string"
+                 },
+                 "category": {
+                  "type": "string"
+                 },
+                 "color": {
+                  "type": "string",
+                  "description": "#RRGGBB など"
+                 }
+                }
+               },
+               "url": {
+                "type": "string",
+                "description": "{skea の URL}/tasks/{key}"
+               }
+              }
+             },
+             {
+              "type": "object",
+              "properties": {
+               "key": {
+                "type": "string",
+                "format": "uuid",
+                "description": "ファイルの ID（小文字）"
+               },
+               "name": {
+                "type": "string"
+               },
+               "isDir": {
+                "type": "boolean"
+               },
+               "mimeType": {
+                "type": "string",
+                "nullable": true
+               }
+              }
+             }
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/integrations/{service}/connection": {
+   "delete": {
+    "tags": [
+     "連携"
+    ],
+    "summary": "外部サービスとの連携を解除する",
+    "parameters": [
+     {
+      "name": "service",
+      "in": "path",
+      "required": true,
+      "description": "連携先（skea・skawau）",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "skea",
+        "skawau"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "成功"
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/pages/lookup": {
+   "post": {
+    "tags": [
+     "ページ"
+    ],
+    "summary": "ページのタイトルをまとめて読む",
+    "parameters": [],
+    "description": "見られるページだけを返す（削除済み・存在しない・権限のないものは区別せず返さない）。読み取り専用のトークンでも使える。skea → skiwi の連携（skea が OAuth 2.0 の GET /oauth/authorize・POST /oauth/token・POST /oauth/revoke で受け取ったトークン）で使う。",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "ids": {
+          "type": "array",
+          "items": {
+           "type": "string",
+           "format": "uuid"
+          },
+          "description": "ページID。100件まで（超えると 400）"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "pages": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "workspaceId": {
+              "type": "string",
+              "format": "uuid"
+             },
+             "title": {
+              "type": "string"
+             },
+             "icon": {
+              "type": "string",
+              "nullable": true
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
    }
   },
   "/api/tokens": {

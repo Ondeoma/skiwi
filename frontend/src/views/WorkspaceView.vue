@@ -24,6 +24,8 @@ import GuestHtmlDialog from '../components/GuestHtmlDialog.vue'
 import { alertError, confirmDialog, promptDialog } from '../ui/dialog'
 import { isMac } from '../util/text'
 import { useDebouncedSearch, useEventListener, useSideMenu, useStoredRef } from '../ui/composables'
+import ThemeToggle from '../ui/ThemeToggle.vue'
+import IntegrationConnect from '../components/IntegrationConnect.vue'
 const importPage = (wid: string, parent: string | null) => import('../ui/importer').then((m) => m.importPage(wid, parent))
 
 const props = defineProps<{ wid: string }>()
@@ -362,6 +364,7 @@ async function logout() {
         <button v-if="store.current?.role === 'edit'" class="new-page" data-testid="new-page" @click="newRoot">＋ 新規ページ</button>
         <div class="me">
           <span class="user" :title="store.me?.email ? `${store.me?.name}（${store.me.email}）` : store.me?.name">👤 {{ store.me?.name }}</span>
+          <ThemeToggle />
           <button class="logout" @click="logout">ログアウト</button>
         </div>
         <div class="links">
@@ -370,6 +373,8 @@ async function logout() {
           <router-link to="/settings/api">API の説明書</router-link>
           <router-link v-if="store.me?.isAdmin" to="/admin/audit">監査ログ</router-link>
           <router-link v-if="store.me?.isAdmin" to="/admin/shares">公開中のページ</router-link>
+          <router-link v-if="store.me?.isAdmin" to="/admin/integrations" data-testid="admin-integrations">外部連携</router-link>
+          <IntegrationConnect />
         </div>
       </div>
       <GuestHtmlDialog v-if="wsGuestHtmlOpen && store.current" kind="workspace" :id="store.current.id" :title="store.current.name" @close="wsGuestHtmlOpen = false" />

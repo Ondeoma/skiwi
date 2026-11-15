@@ -28,6 +28,10 @@ case object ReadOnlyTokenError extends Exception("this API token is read-only")
 final class SessionAuth(store: Store, ops: OpsStore, cfg: ApiConfig):
 
   private val safeMethods = Set(Method.GET, Method.HEAD, Method.OPTIONS)
+  /** POST だが読むだけのもの（読み取り専用のトークンでも使える） */
+  private val readOnlyPosts = Set("/api/pages/lookup")
+  private def isRead(req: Request[IO]) =
+    safeMethods.contains(req.method) || (req.method == Method.POST && readOnlyPosts.contains(req.uri.path.renderString))
 
   private def isAdmin(gs: List[Group]) = gs.exists(g => cfg.adminGroups.contains(g.externalId))
 
@@ -37,7 +41,7 @@ final class SessionAuth(store: Store, ops: OpsStore, cfg: ApiConfig):
         ops.findToken(Crypto.sha256(token), Instant.now()).flatMap {
           case None => IO.pure(None)
           case Some((u, gs, tid, ro)) =>
-            if ro && !safeMethods.contains(req.method) then IO.raiseError(ReadOnlyTokenError)
+            if ro && !isRead(req) then IO.raiseError(ReadOnlyTokenError)
             else IO.pure(Some(AuthSession(u, gs, isAdmin(gs), AuthVia.Token(tid, ro))))
         }
       case None =>

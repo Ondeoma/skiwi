@@ -95,6 +95,31 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
       .query[ApiToken].option
   )
 
+  // ---------------------------------------------------------------- OAuth で発行した API トークン（skea 連携）
+
+  /** そのユーザーにそのクライアントが以前に発行したトークンを失効させ、新しいトークン（期限なし）を登録する */
+  def replaceOAuthToken(userId: UUID, clientId: String, name: String, hash: Array[Byte], scope: String): IO[ApiToken] = tx(
+    sql"update api_token set revoked_at = now() where user_id = $userId and oauth_client = $clientId and revoked_at is null".update.run *>
+      (fr"""insert into api_token (user_id, name, token_hash, scope, oauth_client)
+            values ($userId, $name, $hash, $scope, $clientId) returning""" ++ tokenCols).query[ApiToken].unique
+  )
+
+  /** そのクライアントが発行したトークンなら失効させる（なければ何もしない）。失効させたトークン */
+  def revokeOAuthToken(hash: Array[Byte], clientId: String): IO[Option[(UUID, ApiToken)]] = tx(
+    (fr"update api_token set revoked_at = now() where token_hash = $hash and oauth_client = $clientId and revoked_at is null returning user_id," ++ tokenCols)
+      .query[(UUID, ApiToken)].option
+  )
+
+  /** そのクライアントが発行したトークンをすべて失効させる（クライアントの登録を変えた・消したとき） */
+  def revokeAllOAuthTokens(clientId: String): IO[Int] = tx(
+    sql"update api_token set revoked_at = now() where oauth_client = $clientId and revoked_at is null".update.run
+  )
+
+  /** そのクライアントが発行した有効なトークンの数（連携しているユーザーの数） */
+  def countOAuthTokens(clientId: String): IO[Int] = tx(
+    sql"select count(*)::int from api_token where oauth_client = $clientId and revoked_at is null".query[Int].unique
+  )
+
   /** トークンから (ユーザー, グループ, トークンID, 読み取り専用か)。無効・期限切れ・失効・無効ユーザーは None。 */
   def findToken(hash: Array[Byte], now: Instant): IO[Option[(User, List[Group], UUID, Boolean)]] = tx {
     sql"""select t.id, t.scope, u.id, u.oidc_sub, u.email, u.name

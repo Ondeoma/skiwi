@@ -114,17 +114,18 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
     sql"delete from session where expires_at <= $now".update.run
   )
 
-  def saveLoginState(state: String, verifier: String, nonce: String, now: Instant): IO[Unit] = tx {
+  /** returnTo: ログイン後の戻り先（同じサイトの相対パス。確認済みのものだけ渡す） */
+  def saveLoginState(state: String, verifier: String, nonce: String, now: Instant, returnTo: Option[String] = None): IO[Unit] = tx {
     val cutoff = now.minusSeconds(600)
     sql"delete from oidc_login where created_at < $cutoff".update.run *>
-      sql"insert into oidc_login (state, code_verifier, nonce) values ($state, $verifier, $nonce)".update.run.void
+      sql"insert into oidc_login (state, code_verifier, nonce, return_to) values ($state, $verifier, $nonce, $returnTo)".update.run.void
   }
 
-  /** state を1回だけ消費して (verifier, nonce) を返す。 */
-  def takeLoginState(state: String, now: Instant): IO[Option[(String, String)]] = tx {
+  /** state を1回だけ消費して (verifier, nonce, 戻り先) を返す。 */
+  def takeLoginState(state: String, now: Instant): IO[Option[(String, String, Option[String])]] = tx {
     val cutoff = now.minusSeconds(600)
     sql"""delete from oidc_login where state = $state and created_at >= $cutoff
-          returning code_verifier, nonce""".query[(String, String)].option
+          returning code_verifier, nonce, return_to""".query[(String, String, Option[String])].option
   }
 
   // ---------------------------------------------------------------- workspaces

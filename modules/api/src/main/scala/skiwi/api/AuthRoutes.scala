@@ -22,10 +22,12 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
-    case GET -> Root / "auth" / "login" =>
+    // returnTo: ログイン後の戻り先（同じサイトの相対パスだけ。/oauth/authorize などサーバーの画面へ戻るため）
+    case req @ GET -> Root / "auth" / "login" =>
       val state, verifier, nonce = Crypto.randomToken()
+      val back = safeReturnTo(req.uri.query.params.get("returnTo")).filter(_ != "/")
       for
-        _   <- store.saveLoginState(state, verifier, nonce, Instant.now())
+        _   <- store.saveLoginState(state, verifier, nonce, Instant.now(), back)
         uri <- oidc.authorizationUri(state, verifier, nonce)
       yield redirect(uri.renderString)
 
@@ -36,7 +38,7 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
         case (Some(state), Some(code), _) =>
           store.takeLoginState(state, Instant.now()).flatMap {
             case None => BadRequest("invalid or expired login state")
-            case Some((verifier, nonce)) =>
+            case Some((verifier, nonce, back)) =>
               oidc.authenticate(code, verifier, nonce, Instant.now()).attempt.flatMap {
                 case Left(e) =>
                   IO.println(s"[auth] login rejected: ${e.getMessage}") *> Forbidden("login rejected")
@@ -51,7 +53,7 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
                           _      <- if scimManagesGroups then IO.unit else store.syncGroups(user.id, id.groups)
                           cookie <- sessions.issue(user)
                           _      <- audit.user(user, "session", "auth.login")
-                        yield redirect("/").addCookie(cookie)
+                        yield redirect(back.flatMap(b => safeReturnTo(Some(b))).getOrElse("/")).addCookie(cookie)
                     }
                   }
               }

@@ -16,7 +16,7 @@ import skiwi.auth.OidcClient
 import skiwi.collab.{ClusterManager, Collab, CollabConfig}
 import doobie.implicits.*
 import org.http4s.jdkhttpclient.JdkWSClient
-import skiwi.db.{Periodic, AccessRequestStore, AttachmentStore, ClusterStore, Database, DocStore, OpsStore, CommentStore, PgBus, ScimStore, SearchStore, ShareStore, Store, WebhookStore, DatabaseStore, AutomationStore, InboundStore, BackupStore}
+import skiwi.db.{Periodic, AccessRequestStore, AttachmentStore, ClusterStore, Database, DocStore, OpsStore, CommentStore, PgBus, ScimStore, SearchStore, ShareStore, Store, WebhookStore, DatabaseStore, AutomationStore, InboundStore, BackupStore, IntegrationStore}
 import skiwi.notify.{Notifier, SmtpMailer}
 import skiwi.storage.S3BlobStore
 
@@ -77,6 +77,11 @@ object Main extends IOApp.Simple:
         formR   = new FormRoutes(store, dbSt, sess, audit, cfg.publicUrl, formRate, Some(hooks), Some(autos))
         unfurlCache <- Resource.eval(Ref.of[IO, Map[String, (Long, UnfurlDto)]](Map.empty))
         unfurlR = new UnfurlRoutes(sess, cfg.unfurlAllowPrivate, unfurlCache)
+        integCache <- Resource.eval(Ref.of[IO, Map[(String, java.util.UUID, String), (Long, Option[io.circe.Json])]](Map.empty))
+        integSt = new IntegrationStore(xa)
+        integR  = new IntegrationRoutes(LinkedService.all, integSt, sess, audit, http, cfg.publicUrl, cfg.secretBox, integCache)
+        oauthR  = new OAuthProviderRoutes(integSt, ops, store, sess, audit, cfg.api.cookieSecure)
+        _      <- Resource.eval(cfg.oauthClientSeed.traverse_(oauthR.seed))
         inboundR = new InboundRoutes(store, new InboundStore(xa), dbSt, docs, commentSt, ops, sess, audit, cfg.publicUrl, Some(mentions), Some(hooks), Some(autos), inRate)
         lockR   = new LockRoutes(store, sess, audit, collab.accessChanged)
         backupSt = new BackupStore(xa)
@@ -99,7 +104,7 @@ object Main extends IOApp.Simple:
                     .withHttpWebSocketApp { wsb =>
                       val rest =
                         health <+> new AuthRoutes(oidc, store, sess, audit, cfg.api.scimManagesGroups).routes <+> api.routes <+> opsR.routes <+>
-                          search.routes <+> new ContentEditRoutes(store, docs, ops, sess, audit, collab.injectUpdate).routes <+> attach.routes <+> shareR.routes <+> trash.routes <+> extra.routes <+> commentR.routes <+> cssR.routes <+> copyR.routes <+> bulkR.routes <+> lockR.routes <+> autoR.routes <+> inboundR.routes <+> formR.routes <+> unfurlR.routes <+> backupR.routes <+> hookR.routes <+> dbR.routes <+> collab.routes(wsb) <+> scim.fold(HttpRoutes.empty[IO])(_.routes)
+                          search.routes <+> new ContentEditRoutes(store, docs, ops, sess, audit, collab.injectUpdate).routes <+> attach.routes <+> shareR.routes <+> trash.routes <+> extra.routes <+> commentR.routes <+> cssR.routes <+> copyR.routes <+> bulkR.routes <+> lockR.routes <+> autoR.routes <+> inboundR.routes <+> formR.routes <+> unfurlR.routes <+> integR.routes <+> oauthR.routes <+> backupR.routes <+> hookR.routes <+> dbR.routes <+> collab.routes(wsb) <+> scim.fold(HttpRoutes.empty[IO])(_.routes)
                       // MCP（/mcp）。ツールは REST API を同じトークンで内部から呼ぶ
                       val backend = rest <+> new McpRoutes(rest, sess, cfg.publicUrl).routes
                       val all = cfg.staticDir.fold(backend)(d => backend <+> spa(d, shareR))
@@ -144,7 +149,8 @@ object Main extends IOApp.Simple:
   private def startupNotes(cfg: AppConfig): IO[Unit] =
     (if cfg.smtp.isEmpty then IO.println("[skiwi] WARNING: SMTP_HOST not set; email notifications are disabled") else IO.unit) *>
       (if cfg.scimToken.isEmpty then IO.println("[skiwi] SCIM is disabled (SCIM_TOKEN not set); groups are synced from the OIDC claim at login")
-       else IO.println("[skiwi] SCIM enabled at /scim/v2 (group membership is managed by SCIM)"))
+       else IO.println("[skiwi] SCIM enabled at /scim/v2 (group membership is managed by SCIM)")) *>
+      IO.whenA(cfg.secretBox.isEmpty)(IO.println("[skiwi] ENCRYPTION_KEY not set; the skea/skawau integrations are disabled"))
 
   private val handler: PartialFunction[Throwable, IO[Response[IO]]] = {
     case ReadOnlyTokenError => Forbidden(ErrorDto("this API token is read-only"))

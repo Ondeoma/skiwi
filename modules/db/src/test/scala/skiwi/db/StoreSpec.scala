@@ -63,7 +63,7 @@ class StoreSpec extends DbSuite:
         a <- store.takeLoginState(st, Instant.now())
         b <- store.takeLoginState(st, Instant.now())
       yield
-        assertEquals(a, Some(("ver", "non")))
+        assertEquals(a, Some(("ver", "non", None)))
         assertEquals(b, None)
     }
   }
