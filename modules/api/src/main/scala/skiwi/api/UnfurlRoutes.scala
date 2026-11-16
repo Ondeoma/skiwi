@@ -5,7 +5,7 @@ import io.circe.Encoder
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 
-import java.net.{InetAddress, URI}
+import java.net.URI
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.time.Duration
 import scala.concurrent.duration.*
@@ -26,12 +26,7 @@ final class UnfurlRoutes(protected val sessions: SessionAuth, allowPrivate: Bool
     val scheme = Option(u.getScheme).map(_.toLowerCase)
     if !scheme.exists(Set("http", "https")) || Option(u.getHost).forall(_.isEmpty) then IO.pure(false)
     else if allowPrivate then IO.pure(true)
-    else IO.blocking(InetAddress.getAllByName(u.getHost).toList).attempt.map {
-      case Left(_)      => false
-      case Right(addrs) => addrs.nonEmpty && addrs.forall(a => !(a.isLoopbackAddress || a.isSiteLocalAddress || a.isLinkLocalAddress || a.isAnyLocalAddress || a.isMulticastAddress ||
-                             // IPv6 のユニークローカル（fc00::/7）
-                             (a.getAddress.length == 16 && (a.getAddress()(0) & 0xfe) == 0xfc)))
-    }
+    else NetGuard.publicHost(u.getHost)
 
   private def fetch(u: URI, hops: Int = 0): IO[Option[(URI, String)]] =
     allowed(u).flatMap {
@@ -64,15 +59,16 @@ final class UnfurlRoutes(protected val sessions: SessionAuth, allowPrivate: Bool
 
   /** <meta property|name="key" content="…"> */
   private def meta(html: String, keys: String*): Option[String] =
-    val tags = """<meta\s[^>]*>""".r.findAllIn(html).toList
+    // 属性の正規表現を長い（壊れた）タグに使わない
+    val tags = Html.tags(html, Set("meta")).filter(_.length <= 4000)
     def attr(tag: String, a: String) = s"""(?i)\\b$a\\s*=\\s*(?:"([^"]*)"|'([^']*)')""".r.findFirstMatchIn(tag).map(m => Option(m.group(1)).getOrElse(m.group(2)))
     keys.iterator.flatMap(k => tags.find(t => attr(t, "property").orElse(attr(t, "name")).exists(_.equalsIgnoreCase(k))).flatMap(attr(_, "content"))).map(unescape).find(_.nonEmpty)
 
   private def parseHtml(u: URI, html: String): UnfurlDto =
     val head = html.take(200000)
-    val title = meta(head, "og:title", "twitter:title").orElse("""(?is)<title[^>]*>(.*?)</title>""".r.findFirstMatchIn(head).map(m => unescape(m.group(1).replaceAll("\\s+", " "))))
+    val title = meta(head, "og:title", "twitter:title").orElse(Html.firstElementText(head, "title").map(t => unescape(t.replaceAll("\\s+", " "))))
     val abs = (x: String) => scala.util.Try(u.resolve(x.trim).toString).toOption.filter(s => s.startsWith("https://") || s.startsWith("http://"))
-    val icon = """<link\s[^>]*rel\s*=\s*["'][^"']*icon[^"']*["'][^>]*>""".r.findFirstIn(head)
+    val icon = Html.tags(head, Set("link")).filter(_.length <= 4000).find(t => """(?i)\brel\s*=\s*["'][^"']*icon""".r.findFirstIn(t).isDefined)
       .flatMap(t => """\bhref\s*=\s*["']([^"']+)["']""".r.findFirstMatchIn(t).map(_.group(1))).flatMap(abs)
       .orElse(abs("/favicon.ico"))
     UnfurlDto(u.toString, title.map(_.take(300)), meta(head, "og:description", "twitter:description", "description").map(_.take(500)),

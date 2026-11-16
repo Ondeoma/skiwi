@@ -27,6 +27,7 @@ final case class AppConfig(
     taskTimezone: String = AppConfig.DefaultTimezone,
     /** Webhook の送り先に http:// を許す（開発用。既定は https のみ） */
     webhookAllowHttp: Boolean = false,
+    webhookAllowPrivate: Boolean = false,
     /** リンクのカード表示で、社内（プライベート）のアドレスにも接続する */
     unfurlAllowPrivate: Boolean = false,
     /** draw.io（diagrams.net）のエディタの URL。社内に置いたものを使うときに指定する。空にすると図を編集できない（表示はできる） */
@@ -68,14 +69,20 @@ object Config:
       box    <- opt("ENCRYPTION_KEY").traverse(SecretBox.fromBase64)
     yield
       val base = pub.stripSuffix("/")
-      // SCIM: 設定するとSCIMエンドポイントを有効化し、グループ所属はSCIMを正とする（16文字以上を推奨）
-      val scimToken = opt("SCIM_TOKEN")
+      // 秘密値: 短いもの・テンプレートのまま（change-me）のものは起動時にエラーにする
+      def secretOpt(name: String, min: Int): Option[String] = opt(name).map { v =>
+        if v.length < min || v.toLowerCase.contains("change-me") then
+          throw new IllegalArgumentException(s"$name must be at least $min random characters (not the template value)")
+        v
+      }
+      // SCIM: 設定するとSCIMエンドポイントを有効化し、グループ所属はSCIMを正とする
+      val scimToken = secretOpt("SCIM_TOKEN", 24)
       // 3ノード構成: NODE_URL（他ノードから届くこのノードのURL）を設定すると有効。CLUSTER_SECRET は全ノード共通の秘密値
       val cluster = opt("NODE_URL").map { url =>
         ClusterConfig(
           nodeId = opt("NODE_ID").getOrElse(java.net.InetAddress.getLocalHost.getHostName),
           internalUrl = url.stripSuffix("/"),
-          secret = sys.env.get("CLUSTER_SECRET").filter(_.length >= 16)
+          secret = secretOpt("CLUSTER_SECRET", 16)
             .getOrElse(throw new IllegalArgumentException("CLUSTER_SECRET (16+ chars) is required when NODE_URL is set"))
         )
       }
@@ -122,6 +129,7 @@ object Config:
         trashRetentionDays = int("TRASH_RETENTION_DAYS").filter(_ > 0).getOrElse(AppConfig.DefaultTrashRetentionDays),
         taskTimezone = opt("TASK_TIMEZONE").getOrElse(AppConfig.DefaultTimezone),
         webhookAllowHttp = enabled("WEBHOOK_ALLOW_HTTP"),
+        webhookAllowPrivate = enabled("WEBHOOK_ALLOW_PRIVATE"),
         unfurlAllowPrivate = enabled("UNFURL_ALLOW_PRIVATE"),
         // 空にすると図を編集できない（空のまま使う）
         drawioUrl = sys.env.get("DRAWIO_URL").map(_.trim.stripSuffix("/")).getOrElse(AppConfig.DefaultDrawioUrl),

@@ -77,6 +77,8 @@ object IdToken:
         j.asString.map(List(_)).orElse(j.asArray.map(_.toList.flatMap(_.asString))).toRight("invalid aud")
       }
       _   <- Either.cond(aud.contains(cfg.clientId), (), "audience mismatch")
+      // aud が複数のときは、azp（受け取る相手）が自分であること（OIDC Core 3.1.3.7）
+      _   <- Either.cond(aud.size == 1 || c.get[String]("azp").toOption.contains(cfg.clientId), (), "azp mismatch")
       exp <- c.get[Long]("exp").leftMap(_ => "missing exp")
       _   <- Either.cond(Instant.ofEpochSecond(exp).plusSeconds(60).isAfter(now), (), "id_token expired")
       non <- c.get[String]("nonce").leftMap(_ => "missing nonce")
@@ -107,7 +109,11 @@ final class OidcClient private (cfg: OidcConfig, http: Client[IO], meta: Ref[IO,
           a    <- Uri.fromString(auth).leftMap(e => io.circe.DecodingFailure(e.message, Nil))
           t    <- Uri.fromString(tok).leftMap(e => io.circe.DecodingFailure(e.message, Nil))
         yield ProviderMetadata(iss, a, t)
-        IO.fromEither(res).flatTap(m => meta.set(Some(m)))
+        IO.fromEither(res)
+          // discovery の issuer が設定した OIDC_ISSUER と同じであること（OIDC Discovery 4.3）
+          .flatTap(m => IO.raiseUnless(m.issuer.stripSuffix("/") == cfg.issuer.stripSuffix("/"))(
+            new IllegalStateException(s"OIDC issuer mismatch: discovery=${m.issuer} config=${cfg.issuer}")))
+          .flatTap(m => meta.set(Some(m)))
       }
   }
 

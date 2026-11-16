@@ -28,6 +28,8 @@ final case class CollabConfig(
     compactIdle: FiniteDuration = 5.seconds,
     compactTimeout: FiniteDuration = 30.seconds,
     maxUpdateBytes: Int = 8 * 1024 * 1024,
+    /** カーソル・在席（awareness）の1通の上限。閲覧だけの人も送れるので小さく抑える */
+    maxAwarenessBytes: Int = 64 * 1024,
     /** 状態断片がこれより多ければ接続時に圧縮してまとめる。 */
     maxParts: Int = 4,
     /** 版履歴を自動で残す最小間隔。 */
@@ -403,6 +405,7 @@ final class Collab(
             Wire.parse(data) match
               case Wire.Inbound.Update(p) =>
                 if canEdit && p.size <= cfg.maxUpdateBytes then onUpdate(room, conn, p) else IO.unit
+              case Wire.Inbound.Awareness if data.size > cfg.maxAwarenessBytes => IO.unit
               case Wire.Inbound.Awareness =>
                 aware.update(m => Wire.awarenessClients(data).foldLeft(m) { case (acc, (c, clock, removed)) =>
                   if removed then acc - c else acc + (c -> clock)

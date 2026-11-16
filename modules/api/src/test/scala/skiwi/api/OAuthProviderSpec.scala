@@ -256,8 +256,8 @@ class OAuthProviderSpec extends DbSuite:
         _        = assertEquals(j8.hcursor.get[String]("error"), Right("invalid_grant"))
         ts      <- env.ops.listTokens(u.id)
         _        = assertEquals(ts.map(t => (t.name, t.scope, t.expiresAt)), List(("skea 連携", "read", None)))
-        (m1, _) <- call(None, Method.GET, "/api/workspaces", bearer = Some(t1)) // 普通の API トークンとして使える
-        _        = assertEquals(m1.status, Status.Ok)
+        (m1, _) <- call(None, Method.GET, "/api/workspaces", bearer = Some(t1)) // ページの一括参照にしか使えない
+        _        = assertEquals(m1.status, Status.Unauthorized)
         // 許可し直すと前のトークンは失効する
         t2      <- token(ut)
         (o1, _) <- call(None, Method.POST, "/api/pages/lookup", Some(Json.obj("ids" -> Json.arr())), bearer = Some(t1))
@@ -295,7 +295,7 @@ class OAuthProviderSpec extends DbSuite:
     }
   }
 
-  test("lookup: only visible pages (trashed and others' pages excluded), max 100 ids, read-only token cannot write") {
+  test("lookup: only visible pages (trashed and others' pages excluded), max 100 ids, the token works only for lookup") {
     run {
       for
         _        <- register
@@ -323,9 +323,11 @@ class OAuthProviderSpec extends DbSuite:
         _         = assertEquals(r3.status, Status.BadRequest)
         (r4, _)  <- call(None, Method.POST, "/api/pages/lookup", Some(Json.obj("x" -> 1.asJson)), bearer = Some(ta))
         _         = assertEquals(r4.status, Status.BadRequest)
-        // 発行したトークンは読み取り専用（書き込みは 403）
+        // 発行したトークンはページの一括参照専用（ほかの API は読むだけでも 401）
         (w1, _)  <- call(None, Method.POST, s"/api/workspaces/${ws.id}/pages", Some(Json.obj("title" -> "x".asJson)), bearer = Some(ta))
-        _         = assertEquals(w1.status, Status.Forbidden)
+        _         = assertEquals(w1.status, Status.Unauthorized)
+        (g1, _)  <- call(None, Method.GET, s"/api/pages/${p1.id}", None, bearer = Some(ta))
+        _         = assertEquals(g1.status, Status.Unauthorized)
         // 無効なトークンは 401
         (r5, _)  <- call(None, Method.POST, "/api/pages/lookup", Some(ids), bearer = Some("skiwi_bogus"))
         _         = assertEquals(r5.status, Status.Unauthorized)

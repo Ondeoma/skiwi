@@ -51,7 +51,7 @@ object TextExtract:
       case Kind.Pptx => zipXml(file, n => n.matches("ppt/(slides/slide|notesSlides/notesSlide)\\d+\\.xml"), ooxmlText)
       case Kind.Xlsx => xlsx(file)
       case Kind.Odf  => zipXml(file, n => n == "content.xml", odfText)
-      case Kind.Html => stripHtml(decode(readLimited(file)))
+      case Kind.Html => Html.toText(decode(readLimited(file)))
       case Kind.Text => decode(readLimited(file))
     clean(raw)
 
@@ -89,13 +89,6 @@ object TextExtract:
         val lenient = new String(b, StandardCharsets.UTF_8)
         if lenient.count(_ == '�') <= 2 then lenient else new String(b, java.nio.charset.Charset.forName("windows-31j"))
 
-  def stripHtml(html: String): String =
-    Html.unescape(
-      html
-        .replaceAll("(?is)<(script|style|head)[^>]*>.*?</\\1>", " ")
-        .replaceAll("(?i)<(br|/p|/div|/li|/tr|/h[1-6])\\b[^>]*>", "\n")
-        .replaceAll("(?s)<[^>]*>", " ")
-    )
 
 
   // ------------------------------------------------------------ ZIP の中の XML（Office・OpenDocument）
@@ -193,12 +186,13 @@ object TextExtract:
         val out = scala.collection.mutable.ArrayBuffer.empty[String]
         val cur = new StringBuilder
         var inT = false
-        while r.hasNext do
+        var total = 0 // 取り出す文字数の上限（小さな文字列を大量に作らせてメモリを使い切らせない）
+        while r.hasNext && total <= MaxChars do
           r.next() match
             case XMLStreamConstants.START_ELEMENT if r.getLocalName == "si" => cur.clear()
             case XMLStreamConstants.START_ELEMENT if r.getLocalName == "t"  => inT = true
             case XMLStreamConstants.END_ELEMENT if r.getLocalName == "t"    => inT = false
-            case XMLStreamConstants.END_ELEMENT if r.getLocalName == "si"   => out += cur.toString
+            case XMLStreamConstants.END_ELEMENT if r.getLocalName == "si"   => out += cur.toString; total += cur.length + 1
             case XMLStreamConstants.CHARACTERS | XMLStreamConstants.CDATA if inT => cur.append(r.getText)
             case _ =>
         out.toVector

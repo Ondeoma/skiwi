@@ -3,6 +3,7 @@ import { nodeViewProps, NodeViewWrapper } from '@tiptap/vue-3'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { alertDialog, alertError } from '../ui/dialog'
 import { useEditable } from './useEditable'
+import { fetchAttachment } from '../util/url'
 import { dataUrlToFile, drawioFileName, drawioUrl, editorSrc, labelsOf, urlToDataUrl } from './drawioUtil'
 
 /** draw.io の図: ふだんは PNG を表示し、編集は diagrams.net のエディタ（埋め込みモード）を全画面で開いて行う */
@@ -41,7 +42,7 @@ async function load() {
   const a = props.node.attrs
   try {
     // 取り込んだ図は XML を正とする（表示用の PNG に図が埋め込まれていないことがある）
-    if (a.xmlSrc) post({ action: 'load', xml: await (await fetch(a.xmlSrc, { credentials: 'same-origin' })).text(), autosave: 0, title: a.title ?? '' })
+    if (a.xmlSrc) post({ action: 'load', xml: await (await fetchAttachment(a.xmlSrc)).text(), autosave: 0, title: a.title ?? '' })
     else if (a.src) post({ action: 'load', xmlpng: await urlToDataUrl(a.src), autosave: 0, title: a.title ?? '' })
     else post({ action: 'load', xml: '', autosave: 0 })
   } catch {

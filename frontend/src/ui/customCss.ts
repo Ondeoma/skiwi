@@ -31,18 +31,25 @@ function splitSelectors(sel: string): string[] {
   return out.map((s) => s.trim()).filter(Boolean)
 }
 
-function scopeSelector(sel: string, scope: string): string {
-  return splitSelectors(sel).map((s) => {
+/** 範囲の外に効くセレクタ（「body ~ *」のような兄弟の指定）は取り除く。全部取り除いたら null */
+function scopeSelector(sel: string, scope: string, warn: (w: string) => void): string | null {
+  const out = splitSelectors(sel).flatMap((s) => {
     const m = /^(:root|html|body)(?![\w-])/i.exec(s)
-    if (m) return (scope + s.slice(m[0].length)).trim()
-    return `${scope} ${s}`
-  }).join(', ')
+    if (!m) return [`${scope} ${s}`]
+    const rest = s.slice(m[0].length)
+    if (/^\s*[~+]/.test(rest)) { warn(`${s}: 表示エリアの外に効く指定は使えません`); return [] }
+    return [(scope + rest).trim()]
+  })
+  return out.length ? out.join(', ') : null
 }
 
 function sanitizeStyle(style: CSSStyleDeclaration, warn: (w: string) => void, mapUrl?: (u: string) => string) {
   for (const prop of Array.from(style)) {
     const value = style.getPropertyValue(prop)
-    if (prop === 'position' && /fixed/i.test(value)) { style.removeProperty(prop); warn('position: fixed は使えません（画面全体を覆えるため）'); continue }
+    // var() で値を後から入れられると検査をすり抜けるので、position には使わせない
+    if (prop === 'position' && /fixed|var\(/i.test(value)) { style.removeProperty(prop); warn('position: fixed は使えません（画面全体を覆えるため）'); continue }
+    // image-set("https://…") や src("…") は url() を書かずに外部を読み込めるので使わせない
+    if (/image-set\(|(^|[^\w-])src\(/i.test(value)) { style.removeProperty(prop); warn(`${prop}: image-set() と src() は使えません（url() で添付ファイルを指定してください）`); continue }
     if (/url\(/i.test(value)) {
       const urls = [...value.matchAll(URL_RE)].map((m) => m[2])
       if (urls.some((u) => !urlAllowed(u))) { style.removeProperty(prop); warn(`${prop}: 外部の url() は使えません（添付ファイルと data:image のみ）`); continue }
@@ -56,8 +63,12 @@ function processRules(rules: CSSRuleList, scope: string, out: string[], warn: (w
     if (rule instanceof CSSStyleRule) {
       sanitizeStyle(rule.style, warn, mapUrl)
       if (rule.cssRules?.length) processRules(rule.cssRules, scope, [], warn, mapUrl, true) // 入れ子のルールは中身だけ安全にする
-      if (!nested) rule.selectorText = scopeSelector(rule.selectorText, scope)
-      if (!nested) out.push(rule.cssText)
+      if (!nested) {
+        const sel = scopeSelector(rule.selectorText, scope, warn)
+        if (sel === null) continue
+        rule.selectorText = sel
+        out.push(rule.cssText)
+      }
     } else if (typeof CSSGroupingRule !== 'undefined' && rule instanceof CSSGroupingRule && !(rule instanceof CSSStyleRule)) {
       // @media / @supports / @container / @layer { … }
       processRules(rule.cssRules, scope, [], warn, mapUrl, nested)

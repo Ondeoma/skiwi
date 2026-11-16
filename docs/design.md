@@ -125,6 +125,13 @@
   - ログイン時のクレームは補助とし、SCIMを正とします。
 - **APIトークン**：ユーザーが発行します。`Bearer` で認証し、権限はユーザーに準じます。操作は監査ログに記録します。
 - **認可**：ページ単位に、ユーザーとそのグループのACLをマージして判定します。WSの各メッセージでも検証します。
+  - 親ページの削除・完全削除は、いっしょに消える子孫をすべて編集できる人だけが行えます。元の親が削除済みのページをゴミ箱から戻す（直下に移る）には、ワークスペースの直下に作れる権限が要ります。
+- **全体の防御**（`Security.scala`）：
+  - CSRF：Cookie で認証する更新系のリクエストは、`Origin`（なければ `Sec-Fetch-Site`）が同じオリジンのものだけを受け付けます。ログインの `state` はブラウザの Cookie にも結び付けます。
+  - 本文の大きさ：`/api` は16MB、取り込みは64MB、それ以外（`/auth`・`/oauth`・`/scim`）は1MBまで。添付ファイルは各ルートの上限（100MB）。JSON の入れ子は256段まで。
+  - ヘッダ：`X-Content-Type-Options: nosniff`・`Referrer-Policy: strict-origin-when-cross-origin`・`X-Frame-Options: SAMEORIGIN`、https なら HSTS。
+  - サーバーから外への接続（リンクのカード・Webhook）は、社内・特殊用途のアドレスへは行いません（`NetGuard`。`UNFURL_ALLOW_PRIVATE`・`WEBHOOK_ALLOW_PRIVATE` で許可）。
+  - 本文の属性に入った URL（埋め込み・リンクカード・ファイル・図）は、画面に出す直前に検査します（`frontend/src/util/url.ts`）。同時編集では属性を好きな値にできるためです。
 
 ## 6. 検索（日本語）
 

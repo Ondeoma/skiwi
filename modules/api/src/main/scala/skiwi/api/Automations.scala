@@ -133,7 +133,7 @@ final class Automations(
           case (Some(db), Some(prop)) =>
             val offset = t.get[Int]("offset").toOption.getOrElse(0)
             val unless = (t.get[String]("unlessProp").toOption, t.get[String]("unlessValue").toOption).tupled
-            rules.datedRows(db, prop).flatMap(_.flatTraverse { (rowId, _, date, values) =>
+            rules.datedRows(r.workspaceId, db, prop).flatMap(_.flatTraverse { (rowId, _, date, values) =>
               Either.catchNonFatal(LocalDate.parse(date)).toOption match
                 case None => IO.pure(Nil)
                 case Some(d) =>
@@ -202,6 +202,12 @@ final class AutomationRoutes(protected val store: Store, rules: AutomationStore,
 
   private def dto(r: AutomationRule) = AutomationDto(r.id, r.name, r.enabled, parseOrNull(r.trigger), parseOrNull(r.action), r.createdBy, r.createdAt, r.lastRunAt, r.lastError, r.runCount)
 
+  /** きっかけで指定したページ（データベース・配下の起点）が、このワークスペースにあり、作る人が見られること */
+  private def targetsOk(s: AuthSession, wsId: UUID, trigger: Json): IO[Boolean] =
+    List("database", "under").flatMap(k => trigger.hcursor.get[String](k).toOption.flatMap(uuidOpt)).forallM { id =>
+      store.pageAccess(id, s).map(_.exists((p, _) => p.workspaceId == wsId))
+    }
+
   private def withRule(req: Request[IO], id: UUID)(f: (AuthSession, AutomationRule) => IO[Response[IO]]) =
     withWsItem(req, rules.get(id), "rule")(_.workspaceId)((s, _, r) => f(s, r))
 
@@ -216,9 +222,11 @@ final class AutomationRoutes(protected val store: Store, rules: AutomationStore,
             (AutomationSchema.trigger(t) *> AutomationSchema.action(a)) match
               case Left(m) => err(Status.BadRequest, m)
               case Right(_) =>
+                targetsOk(s, wsId, t).ifM(
                 rules.create(wsId, name.trim, t.noSpaces, a.noSpaces, s.user.id).flatMap { r =>
                   audit.log(s, "automation.create", "workspace", wsId, Json.obj("name" -> r.name.asJson, "trigger" -> t, "action" -> a)) *> Created(dto(r))
-                }
+                },
+                err(Status.BadRequest, "trigger: このワークスペースの見られるページを指定してください"))
           case _ => err(Status.BadRequest, "name, trigger and action are required")
         }
       }
@@ -231,11 +239,13 @@ final class AutomationRoutes(protected val store: Store, rules: AutomationStore,
             (b.trigger.traverse_(AutomationSchema.trigger) *> b.action.traverse_(AutomationSchema.action)) match
               case Left(m) => err(Status.BadRequest, m)
               case Right(_) =>
+                b.trigger.forallM(targetsOk(s, r.workspaceId, _)).ifM(
                 rules.update(id, b.name.map(_.trim), b.enabled, b.trigger.map(_.noSpaces), b.action.map(_.noSpaces)).flatMap {
                   case None => err(Status.NotFound, "rule not found")
                   case Some(nr) =>
                     audit.log(s, "automation.update", "workspace", r.workspaceId, Json.obj("name" -> nr.name.asJson, "enabled" -> nr.enabled.asJson)) *> Ok(dto(nr))
-                }
+                },
+                err(Status.BadRequest, "trigger: このワークスペースの見られるページを指定してください"))
         }
       }
 

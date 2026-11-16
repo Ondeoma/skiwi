@@ -476,6 +476,20 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
   }
 
   /** ページと子孫をゴミ箱へ移す（ソフトデリート）。削除件数を返す。まとめて消したページは deleted_root で復元する。 */
+  /** 削除（inTrash=false）・完全削除（inTrash=true）でいっしょに消える子孫（自身は除く） */
+  def subtreeIds(id: UUID, inTrash: Boolean): IO[List[UUID]] = tx(
+    (if inTrash then
+       sql"""with recursive sub as (
+               select id from page where id = $id
+               union all select p.id from page p join sub s on p.parent_id = s.id where p.deleted_at is not null)
+             select id from sub where id <> $id"""
+     else
+       sql"""with recursive sub as (
+               select id, deleted_at from page where id = $id
+               union all select p.id, p.deleted_at from page p join sub s on p.parent_id = s.id)
+             select id from sub where id <> $id and deleted_at is null""").query[UUID].to[List]
+  )
+
   def deletePage(id: UUID, by: Option[UUID] = None): IO[Int] = tx(
     sql"""with recursive sub as (
             select id from page where id = $id
@@ -561,6 +575,14 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
           left join app_user u on u.id = p.deleted_by
           where p.workspace_id = $wsId and w.deleted_at is null and p.deleted_at is not null and p.deleted_root = p.id
           order by p.deleted_at desc limit 500""".query[TrashedPage].to[List]
+  )
+
+  /** ゴミ箱から戻すと、元の親がもう無い（削除済み）ためにワークスペース直下へ移るか */
+  def restoreMovesToRoot(id: UUID): IO[Boolean] = tx(
+    getPageAnyC(id).flatMap {
+      case Some(p) if p.parentId.isDefined => p.parentId.flatTraverse(getPageC).map(_.isEmpty)
+      case _                               => false.pure[ConnectionIO]
+    }
   )
 
   /** ゴミ箱から戻す。親がもう無い（削除済み）場合はワークスペース直下の末尾に戻す。 */

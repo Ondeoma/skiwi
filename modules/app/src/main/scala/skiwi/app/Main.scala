@@ -61,7 +61,7 @@ object Main extends IOApp.Simple:
         autos   = new Automations(autoSt, store, ops, dbSt, hookSt, cfg.taskTimezone)
         autoR   = new AutomationRoutes(store, autoSt, sess, audit)
         dbR     = new DatabaseRoutes(store, dbSt, ops, sess, audit, Some(autos))
-        hooks   = new WebhookService(hookSt, store, cfg.publicUrl, cfg.webhookAllowHttp)
+        hooks   = new WebhookService(hookSt, store, cfg.publicUrl, cfg.webhookAllowHttp, allowPrivate = cfg.webhookAllowPrivate)
         hookR   = new WebhookRoutes(store, hookSt, hooks, sess, audit)
         shareR  = new ShareRoutes(store, shareSt, docs, attachSt, attach, sess, audit, cfg.api.publicSharing, cfg.publicUrl, Some(hooks))
         api     = new ApiRoutes(store, docs, ops, sess, audit, collab.accessChanged, Some(shareSt), Some(hooks), Some(dbSt), Some(autos))
@@ -108,7 +108,7 @@ object Main extends IOApp.Simple:
                       // MCP（/mcp）。ツールは REST API を同じトークンで内部から呼ぶ
                       val backend = rest <+> new McpRoutes(rest, sess, cfg.publicUrl).routes
                       val all = cfg.staticDir.fold(backend)(d => backend <+> spa(d, shareR))
-                      ErrorHandling.Custom.recoverWith(all.orNotFound)(handler)
+                      Security.headers(cfg.publicUrl)(ErrorHandling.Custom.recoverWith(Security.bodyLimit(Security.csrf(cfg.publicUrl, cfg.api.cookieName)(all)).orNotFound)(handler))
                     }
                     .build
         // HTTPサーバーが待ち受けを始めてからクラスタに登録する。停止時は逆順: ハートビート停止 → 登録削除 → サーバー停止
@@ -138,7 +138,8 @@ object Main extends IOApp.Simple:
       sql"select not pg_is_in_recovery()".query[Boolean].unique.transact(xa).timeout(3.seconds).attempt.flatMap {
         case Right(true) => Ok(s"ok ${node.getOrElse("")}".trim)
         case Right(false) => ServiceUnavailable("database is read-only (not primary)")
-        case Left(e)      => ServiceUnavailable(s"database unavailable: ${e.getMessage}")
+        // 例外の内容（接続先など）は外に出さず、ログにだけ残す
+        case Left(e)      => IO.println(s"[skiwi] health check failed: ${e.getMessage}") *> ServiceUnavailable("database unavailable")
       }
   }
 
@@ -154,6 +155,7 @@ object Main extends IOApp.Simple:
 
   private val handler: PartialFunction[Throwable, IO[Response[IO]]] = {
     case ReadOnlyTokenError => Forbidden(ErrorDto("this API token is read-only"))
+    case e: Security.BodyTooLarge => PayloadTooLarge(ErrorDto(e.getMessage))
     case e => IO.println(s"[skiwi] unhandled error: $e") *> InternalServerError("internal error")
   }
 

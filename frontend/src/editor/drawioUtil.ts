@@ -1,5 +1,6 @@
 /** draw.io（diagrams.net）の図のための補助: エディタの URL、図の文字（検索用）、PNG の扱い */
 import { base64ToBytes, blobToDataUrl } from '../util/bytes'
+import { fetchAttachment } from '../util/url'
 
 const DEFAULT_URL = 'https://embed.diagrams.net'
 let configP: Promise<{ drawioUrl?: string }> | null = null
@@ -65,7 +66,7 @@ export function dataUrlToFile(dataUrl: string, name: string): File {
 }
 
 export async function urlToDataUrl(url: string): Promise<string> {
-  return blobToDataUrl(await (await fetch(url, { credentials: 'same-origin' })).blob())
+  return blobToDataUrl(await (await fetchAttachment(url)).blob())
 }
 
 /** 添付ファイルの名前（「図.drawio.png」の形） */

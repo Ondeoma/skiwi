@@ -4,6 +4,10 @@ name: skiwi1
 restapi:
   listen: 10.0.0.11:8008
   connect_address: 10.0.0.11:8008
+  # 切り替え・再起動などの操作（GET 以外）にはパスワードを求める（ヘルスチェックの GET はそのまま）。3台で同じ値。patronictl もこの設定を使う
+  authentication:
+    username: patroni
+    password: change-me
 etcd3:
   hosts: 10.0.0.11:2379,10.0.0.12:2379,10.0.0.13:2379
 bootstrap:

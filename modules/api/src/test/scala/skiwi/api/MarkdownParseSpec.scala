@@ -68,3 +68,26 @@ class MarkdownParseSpec extends FunSuite:
     val doc = Json.obj("type" -> Json.fromString("doc"), "content" -> Json.fromValues(p(md)))
     assertEquals(MarkdownExport(identity, _ => "").body(doc), md)
   }
+
+  test("悪意のある入力（長い行・深い入れ子）でもスタックを使い切らず、すぐに終わる") {
+    val inputs = List(
+      "a|\n" + "|-" * 60000,          // 表の区切り行（正規表現のグループの繰り返し）
+      "-" * 200000,                   // 区切り線
+      ">" * 20000 + "a",              // 引用の入れ子
+      "[" * 30000 + "a" + "](x)" * 30000, // リンクの入れ子
+      "# " + " " * 100000 + "x",      // 見出しの末尾の空白
+      "- a\n" + "\n" * 100000 + "  b", // リストの中の空行
+      "**a" * 50000                   // 閉じない強調
+    )
+    for in <- inputs do
+      val t0 = System.nanoTime()
+      assert(p(in).nonEmpty)
+      assert(System.nanoTime() - t0 < 5_000_000_000L, s"too slow: ${in.take(20)}")
+  }
+
+  test("見出しの末尾の # と区切り線・表の判定") {
+    assertEquals(p("## 題 ##"), Vector(j("""{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"題"}]}""")))
+    assertEquals(p("## C#"), Vector(j("""{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"C#"}]}""")))
+    assertEquals(p("* * *"), Vector(j("""{"type":"horizontalRule"}""")))
+    assert(p("a | b\n:--|--:\n1 | 2").head.hcursor.get[String]("type") == Right("table"))
+  }

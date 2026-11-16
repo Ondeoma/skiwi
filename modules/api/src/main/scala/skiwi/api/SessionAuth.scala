@@ -40,7 +40,11 @@ final class SessionAuth(store: Store, ops: OpsStore, cfg: ApiConfig):
       case Some(token) =>
         ops.findToken(Crypto.sha256(token), Instant.now()).flatMap {
           case None => IO.pure(None)
-          case Some((u, gs, tid, ro)) =>
+          // 外部サービス連携のトークンは、ページの一括参照にだけ使える（それ以外は認証なしと同じ扱い）
+          case Some((_, _, _, "lookup")) if !(req.method == Method.POST && readOnlyPosts.contains(req.uri.path.renderString)) =>
+            IO.pure(None)
+          case Some((u, gs, tid, scope)) =>
+            val ro = scope != "write"
             if ro && !isRead(req) then IO.raiseError(ReadOnlyTokenError)
             else IO.pure(Some(AuthSession(u, gs, isAdmin(gs), AuthVia.Token(tid, ro))))
         }
@@ -55,6 +59,7 @@ final class SessionAuth(store: Store, ops: OpsStore, cfg: ApiConfig):
     store.userWithGroups(userId).map(_.map((u, gs) => AuthSession(u, gs, isAdmin(gs))))
 
   def adminGroups: Set[String] = cfg.adminGroups
+  def cookieSecure: Boolean = cfg.cookieSecure
 
   private def bearer(req: Request[IO]): Option[String] =
     req.headers.get[Authorization].collect {

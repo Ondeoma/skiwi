@@ -256,9 +256,13 @@ final class ApiRoutes(
 
     case req @ DELETE -> Root / "api" / "pages" / UUIDVar(id) =>
       withPage(req, id, Role.Edit) { (s, p, _) =>
-        store.deletePage(id, Some(s.user.id)).flatTap(_ => webhooks.traverse_(_.emit("page.deleted", id, s.user.name))).flatMap { n =>
-          audit.log(s, "page.delete", "page", id, Json.obj("title" -> p.title.asJson, "deletedCount" -> n.asJson)) *>
-            accessChanged *> NoContent()
+        uneditableDescendants(s, id, inTrash = false).flatMap {
+          case n if n > 0 => err(Status.Forbidden, descendantsBlocked(n))
+          case _ =>
+            store.deletePage(id, Some(s.user.id)).flatTap(_ => webhooks.traverse_(_.emit("page.deleted", id, s.user.name))).flatMap { n =>
+              audit.log(s, "page.delete", "page", id, Json.obj("title" -> p.title.asJson, "deletedCount" -> n.asJson)) *>
+                accessChanged *> NoContent()
+            }
         }
       }
 

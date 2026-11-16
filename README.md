@@ -60,6 +60,8 @@ export SCIM_TOKEN=$(openssl rand -base64 32)
 # export TRASH_RETENTION_DAYS=30
 # Webhook の送り先に http:// を許す（開発用。既定は https のみ）
 # export WEBHOOK_ALLOW_HTTP=true
+# Webhook を社内のアドレス（10.x・192.168.x・127.0.0.1 など）にも送る（既定は送らない。編集者にサーバーから社内へ接続させないため）
+# export WEBHOOK_ALLOW_PRIVATE=true
 # リンクのカード（/api/unfurl）でプライベート・ループバックのアドレス（127.0.0.1・10.x・192.168.x など）も読み込む（既定は読み込まない）
 # export UNFURL_ALLOW_PRIVATE=true
 # draw.io の図のエディタ（既定 https://embed.diagrams.net）。社内に置いた draw.io（jgraph/drawio）を使うときに指定。空にすると図の編集を止める
@@ -98,7 +100,7 @@ OIDC に対応した IdP なら使える（`OIDC_ISSUER` の `/.well-known/openi
 scripts/dev-up.sh                              # DB・ScalaS3起動、フロントビルド、アプリ起動(:8080)
 scripts/dev-session.sh "山田 太郎" user-1 skiwi-admins yamada@example.com   # Cookie値を出力（グループ・メールは任意）
 ```
-送信されたメールは Mailpit（http://localhost:8025）で確認できる。SCIMも試す場合は `SCIM_TOKEN=dev-scim-token-123456 scripts/dev-up.sh`。
+送信されたメールは Mailpit（http://localhost:8025）で確認できる。SCIMも試す場合は `SCIM_TOKEN=dev-scim-token-0123456789abcdef scripts/dev-up.sh`。
 ブラウザで `http://localhost:8080/auth/callback` を開き、コンソールで `document.cookie="skiwi_session=<出力値>; path=/"` を実行してから `/` へ。
 
 ## エディタ
@@ -308,7 +310,7 @@ skea／skawau との連携・APIトークン・API の説明書・管理者向�
   - **JSON**: `{ event, text, workspace, page: { id, title, url }, actor, … }` を POST する。`X-Skiwi-Signature: sha256=<HMAC-SHA256>` で、
     作成時に一度だけ表示する秘密の値による署名を確かめられる（`X-Skiwi-Event`・`X-Skiwi-Delivery` も付く）。
 - 個別に権限を絞ったページ（「親の権限を引き継がない」にしたページとその下）の出来事は送らない。送信時点でも確かめ直す。
-- 送れなかったものは間隔を空けて再送する（4xx は再送しない）。「テスト送信」と、最後の送信結果を設定画面で確認できる。送り先は https のみ（`WEBHOOK_ALLOW_HTTP=true` で http も可）。
+- 送れなかったものは間隔を空けて再送する（4xx は再送しない）。「テスト送信」と、最後の送信結果を設定画面で確認できる。送り先は https のみ（`WEBHOOK_ALLOW_HTTP=true` で http も可）で、社内のアドレスには送らない（`WEBHOOK_ALLOW_PRIVATE=true` で可）。
 
 ## skea・skawau 連携（タスクID・ファイルのリンクの表示）
 本文中の skea のタスクID（`SKEA-123` など）をリンクにしてタイトルと状態を横に出し、skawau のファイル・フォルダのリンク（`…/view/{ID}` など）にファイル名を出す。

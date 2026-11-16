@@ -17,30 +17,53 @@ object MarkdownParse:
 
   // ---------------------------------------------------------------- ブロック
 
-  private val Heading  = """^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$""".r
+  /** 見出し。末尾の「 ###」は正規表現ではなく後から除く（遅延一致と空白の組み合わせは、長い行で二乗の時間がかかるため） */
+  private object Heading:
+    private val Re = """^ {0,3}(#{1,6})(?:[ \t]+(.*))?$""".r
+    def unapply(l: String): Option[(String, String)] = l match
+      case Re(hs, rest) =>
+        val t = Option(rest).getOrElse("").trim
+        val closed = t.reverse.dropWhile(_ == '#').reverse
+        Some((hs, if closed.isEmpty then "" else if closed.last == ' ' || closed.last == '\t' then closed.trim else t))
+      case _ => None
+    def matches(l: String): Boolean = Re.matches(l)
   private val Fence    = """^ {0,3}(`{3,}|~{3,})[ \t]*([^`\s]*).*$""".r
-  private val Rule     = """^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$""".r
   private val Quote    = """^ {0,3}> ?(.*)$""".r
   private val Bullet   = """^( *)([-*+])[ \t]+(.*)$""".r
   private val Ordered  = """^( *)(\d{1,9})[.)][ \t]+(.*)$""".r
   private val Task     = """^\[([ xX])\][ \t]+(.*)$""".r
-  private val TableSep = """^ *\|? *:?-+:? *(\| *:?-+:? *)*\|? *$""".r
   private val ImageAlone = """^ *!\[([^\]]*)\]\(([^)\s]+)(?: +"[^"]*")?\) *$""".r
 
   private def blank(l: String) = l.trim.isEmpty
+
+  // 区切り線と表の区切り行は正規表現を使わずに判定する
+  // （Java の正規表現はグループの繰り返しを再帰で処理するため、長い行で StackOverflowError になる）
+  private def isRule(l: String): Boolean =
+    val t = l.trim
+    indentOf(l) <= 3 && t.nonEmpty && "-*_".contains(t.head) && t.forall(c => c == t.head || c == ' ' || c == '\t') && t.count(_ == t.head) >= 3
+  private def isTableSep(l: String): Boolean =
+    val t = l.trim.stripPrefix("|").stripSuffix("|")
+    t.nonEmpty && t.split("\\|", -1).forall(_.trim.matches(":?-+:?"))
+
+  /** 入れ子（引用・リスト・行内の書式）の深さの上限。悪意のある入力でスタックを使い切らせない */
+  private val MaxDepth = 32
   private def indentOf(l: String) = l.takeWhile(_ == ' ').length
 
   /** Markdown の文字を、本文の最上位のブロックの並びにする。 */
   def blocks(markdown: String): Vector[Json] =
-    parseBlocks(markdown.replace("\r\n", "\n").replace("\t", "    ").split("\n", -1).toVector)
+    parseBlocks(markdown.replace("\r\n", "\n").replace("\t", "    ").split("\n", -1).toVector, 0)
 
-  private def parseBlocks(lines: Vector[String]): Vector[Json] =
+  private def parseBlocks(lines: Vector[String], depth: Int): Vector[Json] =
+    if depth >= MaxDepth then return Vector(node("paragraph")(inlines(lines.filterNot(blank).map(_.trim).mkString(" "))))
     val out = ArrayBuffer.empty[Json]
     var i   = 0
-    def tableStart(k: Int): Boolean = lines(k).contains('|') && k + 1 < lines.size && TableSep.matches(lines(k + 1))
+    // 各行から見て次の空でない行の位置（リストの空行の扱いで、毎回先を探し直さないように）
+    val nextNonBlank = Array.fill(lines.size + 1)(lines.size)
+    for k <- (lines.size - 1) to 0 by -1 do nextNonBlank(k) = if blank(lines(k)) then nextNonBlank(k + 1) else k
+    def tableStart(k: Int): Boolean = lines(k).contains('|') && k + 1 < lines.size && isTableSep(lines(k + 1))
     def startsBlock(k: Int): Boolean =
       val l = lines(k)
-      Heading.matches(l) || Fence.matches(l) || Rule.matches(l) || Quote.matches(l) || Bullet.matches(l) || Ordered.matches(l) || tableStart(k)
+      Heading.matches(l) || Fence.matches(l) || isRule(l) || Quote.matches(l) || Bullet.matches(l) || Ordered.matches(l) || tableStart(k)
     while i < lines.size do
       val l = lines(i)
       l match
@@ -57,7 +80,7 @@ object MarkdownParse:
         case Heading(hs, text) =>
           out += node("heading", "level" -> hs.length.asJson)(inlines(Option(text).getOrElse("")))
           i += 1
-        case Rule(_) =>
+        case _ if isRule(l) =>
           out += node("horizontalRule")(Vector.empty)
           i += 1
         case Quote(_) =>
@@ -65,9 +88,9 @@ object MarkdownParse:
           while i < lines.size && (lines(i) match { case Quote(_) => true; case _ => false }) do
             body += (lines(i) match { case Quote(rest) => rest; case x => x })
             i += 1
-          out += node("blockquote")(nonEmpty(parseBlocks(body.toVector)))
+          out += node("blockquote")(nonEmpty(parseBlocks(body.toVector, depth + 1)))
         case Bullet(_, _, _) | Ordered(_, _, _) =>
-          val (list, next) = parseList(lines, i)
+          val (list, next) = parseList(lines, i, nextNonBlank, depth)
           out += list
           i = next
         case _ if tableStart(i) =>
@@ -102,7 +125,8 @@ object MarkdownParse:
     body.split("""(?<!\\)\|""", -1).toVector.map(_.trim.replace("\\|", "|"))
 
   /** リスト（箇条書き・番号付き・ToDo）。同じ字下げの同じ種類の項目が続く間。戻り値: (リストのノード, 次の行) */
-  private def parseList(lines: Vector[String], start: Int): (Json, Int) =
+  private def parseList(lines: Vector[String], start: Int, nextNonBlank: Array[Int], depth: Int): (Json, Int) =
+    def nextLine(from: Int): Option[String] = Option(nextNonBlank(math.min(from, lines.size))).filter(_ < lines.size).map(lines)
     val first = lines(start)
     val base  = indentOf(first)
     val ordered = Ordered.matches(first)
@@ -125,14 +149,14 @@ object MarkdownParse:
           while more && i < lines.size do
             val l = lines(i)
             if blank(l) then
-              val nextIndented = lines.drop(i + 1).find(!blank(_)).exists(n => indentOf(n) > base)
+              val nextIndented = nextLine(i + 1).exists(n => indentOf(n) > base)
               if nextIndented then { body += ""; i += 1 } else more = false
             else if indentOf(l) > base && marker(l).isEmpty then { body += l.drop(math.min(indentOf(l), math.max(col, base + 2))); i += 1 }
             else more = false
           items += body.toVector
         case None =>
           // 空行の後に同じ種類の項目が続くなら同じリスト
-          if blank(lines(i)) && lines.drop(i).find(!blank(_)).exists(marker(_).isDefined) then i += 1
+          if blank(lines(i)) && nextLine(i).exists(marker(_).isDefined) then i += 1
           else continue = false
     val listNode =
       if firstTask then
@@ -140,17 +164,17 @@ object MarkdownParse:
           val (checked, head) = it.head match
             case Task(c, rest) => (c != " ", rest)
             case other         => (false, other)
-          node("taskItem", "checked" -> checked.asJson)(itemContent(head +: it.tail))
+          node("taskItem", "checked" -> checked.asJson)(itemContent(head +: it.tail, depth))
         })
       else if ordered then
         val startNo = first match { case Ordered(_, n, _) => n.toIntOption.getOrElse(1); case _ => 1 }
-        node("orderedList", "start" -> startNo.asJson)(items.toVector.map(it => node("listItem")(itemContent(it))))
-      else node("bulletList")(items.toVector.map(it => node("listItem")(itemContent(it))))
+        node("orderedList", "start" -> startNo.asJson)(items.toVector.map(it => node("listItem")(itemContent(it, depth))))
+      else node("bulletList")(items.toVector.map(it => node("listItem")(itemContent(it, depth))))
     (listNode, i)
 
   /** 項目の中身。最初は段落でなければならない（エディタの決まり）。 */
-  private def itemContent(lines: Vector[String]): Vector[Json] =
-    val bs = parseBlocks(lines)
+  private def itemContent(lines: Vector[String], depth: Int): Vector[Json] =
+    val bs = parseBlocks(lines, depth + 1)
     if bs.headOption.flatMap(_.hcursor.get[String]("type").toOption).contains("paragraph") then bs
     else node("paragraph")(Vector.empty) +: bs
 
@@ -163,6 +187,7 @@ object MarkdownParse:
   private val Url = """https?://[^\s<>()\[\]]*[^\s<>()\[\].,;:!?、。」）]""".r
 
   /** 行内の Markdown を文字のノードの並びにする（同じマークの続いた文字はまとめる）。 */
+  private val MaxInline = 4000
   def inlines(s: String): Vector[Json] =
     val out = ArrayBuffer.empty[(String, List[Mark])]
     def emit(t: String, marks: List[Mark]): Unit =
@@ -172,6 +197,8 @@ object MarkdownParse:
     def isWordChar(c: Char) = c.isLetterOrDigit && c < 0x3000 // 英数字（和文の中の _ は区切りとして扱う）
 
     def parse(s: String, marks: List[Mark]): Unit =
+      // 入れ子が深すぎる・行が長すぎるときは書式を解釈しない（スタックの使い切りと、閉じ記号の探索が二乗で重くなるのを防ぐ）
+      if marks.size >= MaxDepth || s.length > MaxInline then { emit(s, marks); return }
       val buf = StringBuilder()
       def flush() = { emit(buf.toString, marks); buf.clear() }
       var i = 0

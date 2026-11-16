@@ -1,4 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core'
+import { isAttachmentPath } from '../util/url'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -27,7 +28,7 @@ export const FileBlock = Node.create({
   parseHTML() { return [{ tag: 'div[data-file-block]' }] },
   renderHTML({ node, HTMLAttributes }) {
     return ['div', mergeAttributes(HTMLAttributes, { 'data-file-block': '', class: 'file-block' }),
-      ['a', { href: node.attrs.url, target: '_blank', rel: 'noopener' }, `📎 ${node.attrs.filename}`],
+      ['a', { href: isAttachmentPath(node.attrs.url) ? node.attrs.url : null, target: '_blank', rel: 'noopener' }, `📎 ${node.attrs.filename}`],
       ['span', { class: 'file-size' }, formatSize(Number(node.attrs.size))]]
   },
   renderText({ node }) { return `[file: ${node.attrs.filename}]` },

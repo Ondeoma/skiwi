@@ -114,7 +114,13 @@ final class BulkRoutes(protected val store: Store, protected val sessions: Sessi
                else store.movePage(p.id, parent, Placement.Last)).map(_.left.toOption.map(_.message))
             }
         }
-      case "delete" => each(p => store.deletePage(p.id, Some(s.user.id)) *> webhooks.traverse_(_.emit("page.deleted", p.id, s.user.name)).as(None))
+      case "delete" =>
+        each { p =>
+          uneditableDescendants(s, p.id, inTrash = false).flatMap {
+            case n if n > 0 => IO.pure(Some(descendantsBlocked(n)))
+            case _ => store.deletePage(p.id, Some(s.user.id)) *> webhooks.traverse_(_.emit("page.deleted", p.id, s.user.name)).as(None)
+          }
+        }
       case "labels" =>
         val add = Labels.normalize(b.addLabels)
         val rm = Labels.normalize(b.removeLabels).map(_.toLowerCase).toSet

@@ -108,7 +108,7 @@ function emitPresence() {
     if (client === provider.awareness.clientID || !st.user?.name) return
     const cur = people.get(st.user.name)
     const editing = st.mode === 'edit' || !!cur?.editing
-    people.set(st.user.name, { name: st.user.name, color: st.user.color ?? '#888', editing, avatar: safeAvatarUrl(st.user.avatar) ?? cur?.avatar ?? null })
+    people.set(String(st.user.name), { name: String(st.user.name), color: /^#[0-9a-f]{6}$/i.test(String(st.user.color)) ? st.user.color : '#888888', editing, avatar: safeAvatarUrl(st.user.avatar) ?? cur?.avatar ?? null })
   })
   emit('presence', [...people.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja')))
 }

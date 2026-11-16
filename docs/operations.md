@@ -100,7 +100,7 @@ README「IdP 側の設定」を参照（OIDC: Redirect URI `https://skiwi.exampl
 | 添付（`skiwi` バケット） | `rclone sync` で別の拠点（S3互換・NAS等）へ複製 | 毎日 |
 | 設定 | `/etc/skiwi`, `/etc/patroni`, `/etc/haproxy`, `/etc/keepalived`、ストレージの設定 | 変更時 |
 
-- pgBackRest: 初回 `pgbackrest --stanza=skiwi stanza-create`。バックアップは**プライマリでのみ**実行する
+- pgBackRest: `repo1-cipher-pass` を決めてから（失うとバックアップを読めないので、別の場所にも控える）、初回 `pgbackrest --stanza=skiwi stanza-create`。バックアップは**プライマリでのみ**実行する
   （cronで `psql -Atc "select pg_is_in_recovery()"` が `f` のときだけ `pgbackrest --stanza=skiwi backup --type=diff`）。
 - **同じストレージ上のバックアップだけでは不十分**（ストレージの全損に備えられない）。`skiwi-backup` も別の拠点へ複製すること。
 - 復旧訓練: 年1回程度、別環境へ `pgbackrest restore` → アプリ起動で内容を確認する。

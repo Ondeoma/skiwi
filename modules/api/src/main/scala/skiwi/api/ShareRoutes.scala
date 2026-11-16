@@ -128,10 +128,13 @@ final class ShareRoutes(
       case _ => false
   }
   private def cookieName(token: String) = s"skiwi_guest_${token.take(10)}"
-  /** パスワードを変えると以前の解錠は無効になる。 */
-  private def unlockValue(token: String, hash: String) = b64.encodeToString(Crypto.sha256(s"$token:$hash"))
+  /** 解錠の Cookie の値は「期限（エポック秒）.ハッシュ」。期限を過ぎるか、パスワードを変えると無効になる。 */
+  private val UnlockSeconds = 86400L
+  private def unlockValue(token: String, hash: String, exp: Long) = s"$exp." + b64.encodeToString(Crypto.sha256(s"$token:$hash:$exp"))
   private def unlocked(req: Request[IO], s: PageShare): Boolean =
-    s.passwordHash.forall(h => req.cookies.exists(c => c.name == cookieName(s.token) && c.content == unlockValue(s.token, h)))
+    s.passwordHash.forall(h => req.cookies.exists(c => c.name == cookieName(s.token) && (c.content.split('.') match
+      case Array(e, _) => e.toLongOption.exists(exp => exp > Instant.now().getEpochSecond && Crypto.constantTimeEquals(c.content, unlockValue(s.token, h, exp)))
+      case _           => false)))
 
   /** 総当たり対策: リンクごとに10分間で10回まで。 */
   private val attempts = Ref.unsafe[IO, Map[String, (Int, Instant)]](Map.empty)
@@ -161,10 +164,29 @@ final class ShareRoutes(
     def content(id: UUID): IO[Json] = pub match
       case Some(m) => IO.pure(m.get(id).flatMap(_.content).fold(Json.Null)(parseOrNull))
       case None    => docs.currentContent(id).map(_.fold(Json.Null)((json, _, _) => parseOrNull(json)))
-    def texts: IO[Map[UUID, String]] = pub match
+    private def savedTexts: IO[Map[UUID, String]] = pub match
       case Some(m) => IO.pure(m.view.mapValues(_.plainText).toMap)
       case None    => shares.plainTexts(pages.map(_.id))
+    /** ゲストに見せる平文（検索用）。保存済みの平文はエディタが作るので、ページへのリンクのタイトル（公開範囲外のページのものを含む）が入る。
+      * そこで本文の JSON から作り直す（ページへのリンク・メンションは含めない）。重いので、保存済みの平文が変わらない間は覚えておく */
+    def texts: IO[Map[UUID, String]] = savedTexts.flatMap { saved =>
+      guestTextCache.get.flatMap { cache =>
+        pages.traverse { p =>
+          val k = (p.id, saved.getOrElse(p.id, "").hashCode)
+          cache.get(k) match
+            case Some(t) => IO.pure((k, t, false))
+            case None    => content(p.id).map(c => (k, guestText(c), true))
+        }.flatMap { rs =>
+          val fresh = rs.collect { case (k, t, true) => k -> t }
+          IO.whenA(fresh.nonEmpty)(guestTextCache.update(m => (if m.size > 20000 then Map.empty else m) ++ fresh))
+            .as(rs.map((k, t, _) => k._1 -> t).toMap)
+        }
+      }
+    }
     def key: String = share.slug.getOrElse(share.token)
+
+  private val guestTextCache = Ref.unsafe[IO, Map[(UUID, Int), String]](Map.empty)
+  private def guestText(content: Json): String = if content.isNull then "" else MarkdownParse.plainText(Vector(content))
 
   private def view(s: PageShare, live: List[SharedPage]): IO[GuestView] =
     if s.pinned then shares.pubPages(s, live).map(pp => GuestView(s, pp.map(_.page), Some(pp.map(p => p.page.id -> p).toMap)))
@@ -252,9 +274,10 @@ final class ShareRoutes(
           pageKey.fold(v.pages.headOption)(v.find) match
             case None => IO.pure(None)
             case Some(p) =>
-              (v.content(p.id), v.texts.map(_.get(p.id))).mapN { (content, text) =>
+              v.content(p.id).map { content =>
                 val isRoot = p.id == s.pageId
-                val desc = (if isRoot then s.description else None).orElse(text.flatMap(summary))
+                // 説明文は本文の JSON から作る（公開範囲外のページへのリンクのタイトルを出さない）
+                val desc = (if isRoot then s.description else None).orElse(summary(guestText(content)))
                 val img = firstImage(forGuest(v.key, Set.empty)(content)).filter(_.startsWith("/api/public/")).map(base + _)
                 val url = s"$base/s/${v.key}" + (if isRoot then "" else s"/${p.slug.getOrElse(p.id.toString)}")
                 Some(GuestHead(if p.title.isBlank then "無題" else p.title, desc, img, url, s.indexable))
@@ -294,10 +317,14 @@ final class ShareRoutes(
 
     // ------------------------------------------------------------ 設定（ログインユーザー）
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "share" =>
-      withEditor(req, id) { (_, _) =>
+      withEditor(req, id) { (user, _) =>
         (shares.get(id), shares.coveringAncestor(id), shares.pageSlug(id)).flatMapN { (own, anc, slug) =>
-          own.traverse(fullDto).flatMap { d =>
-            Ok(ShareInfoDto(enabled, d, anc.map((s, t) => InheritedShareDto(s.pageId, t, s.token, s.slug, s.mode)), slug))
+          // 親ページを見られない人には、親のタイトルと公開リンク（親の内容も見られる）を伏せる
+          anc.traverse((s, t) => store.pageAccess(s.pageId, user).map {
+            case Some(_) => InheritedShareDto(s.pageId, t, s.token, s.slug, s.mode)
+            case None    => InheritedShareDto(s.pageId, "", "", None, s.mode)
+          }).flatMap { inherited =>
+            own.traverse(fullDto).flatMap(d => Ok(ShareInfoDto(enabled, d, inherited, slug)))
           }
         }
       }
@@ -418,8 +445,8 @@ final class ShareRoutes(
                     case false => err(Status.Forbidden, "wrong password")
                     case true =>
                       NoContent().map(_.addCookie(ResponseCookie(
-                        cookieName(s.token), unlockValue(s.token, h), maxAge = Some(86400L), path = Some(s"/api/public/$key"),
-                        httpOnly = true, secure = req.isSecure.getOrElse(false), sameSite = Some(SameSite.Lax))))
+                        cookieName(s.token), unlockValue(s.token, h, Instant.now().getEpochSecond + UnlockSeconds), maxAge = Some(UnlockSeconds),
+                        path = Some(s"/api/public/$key"), httpOnly = true, secure = sessions.cookieSecure, sameSite = Some(SameSite.Lax))))
                   }
               }
         }

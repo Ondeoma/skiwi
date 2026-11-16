@@ -22,7 +22,22 @@ def decodeYdoc(b64: String): Option[Array[Byte]] =
 def safeReturnTo(raw: Option[String]): Option[String] = raw.map(_.trim).filter(_.nonEmpty) match
   case None => Some("/")
   case Some(p) =>
-    Option.when(p.startsWith("/") && !p.startsWith("//") && !p.contains('\\') && !p.exists(_ < ' ') && p.length <= 2000)(p)
+    Option.when(p.startsWith("/") && !p.startsWith("//") && !p.contains('\\') && !p.exists(_ < ' ') && p.length <= 2000 && Uri.fromString(p).isRight)(p)
+
+/** リクエスト本文の JSON の入れ子の上限（本文の JSON はふつう数十段） */
+val MaxJsonDepth = 256
+
+/** JSON の入れ子が limit 段を超えるか（再帰せずに数える） */
+def jsonDepthOver(root: Json, limit: Int): Boolean =
+  val stack = scala.collection.mutable.Stack((root, 1))
+  var over = false
+  while !over && stack.nonEmpty do
+    val (j, d) = stack.pop()
+    if d > limit then over = true
+    else
+      j.asArray.foreach(_.foreach(c => stack.push((c, d + 1))))
+      j.asObject.foreach(_.values.foreach(c => stack.push((c, d + 1))))
+  over
 
 /** 1分あたりの回数をキーごとに制限する。上限内なら記録して true。 */
 def perMinute[K](rate: Ref[IO, Map[K, List[Long]]], key: K, limit: Int): IO[Boolean] =
@@ -58,9 +73,12 @@ trait RouteSupport extends Http4sDsl[IO]:
 
   /** リクエスト本文を読む（読めなければ 400）。 */
   protected def body[A: Decoder](req: Request[IO])(f: A => IO[Response[IO]]): IO[Response[IO]] =
-    req.as[A].attempt.flatMap {
+    req.as[Json].attempt.flatMap {
+      case Left(e: Security.BodyTooLarge) => err(Status.PayloadTooLarge, e.getMessage)
       case Left(_)  => err(Status.BadRequest, "invalid body")
-      case Right(b) => f(b)
+      // 深すぎる入れ子は、保存時の書き出し（再帰）でスタックを使い切るので断る
+      case Right(j) if jsonDepthOver(j, MaxJsonDepth) => err(Status.BadRequest, "body is nested too deeply")
+      case Right(j) => j.as[A].fold(_ => err(Status.BadRequest, "invalid body"), f)
     }
 
 /** ページ・ワークスペースの権限を確認する補助。 */
@@ -121,6 +139,16 @@ trait PageRouteSupport extends RouteSupport:
         }
 
   /** canEditUnder が通れば f、通らなければ 403 / 404。 */
+  /** いっしょに消える子孫のうち、この人が編集できない（見られないものを含む）ページの数。
+    * 親の編集権限だけで、個別に権限を絞った子や保護中の子まで消させないために使う。 */
+  protected def uneditableDescendants(s: AuthSession, id: UUID, inTrash: Boolean): IO[Int] =
+    store.subtreeIds(id, inTrash).flatMap { ids =>
+      if ids.isEmpty then IO.pure(0)
+      else (if inTrash then store.pagesAccessAny(ids, s) else store.pagesAccess(ids, s))
+        .map(acc => ids.count(i => !acc.get(i).exists(_._2 >= Role.Edit)))
+    }
+  protected def descendantsBlocked(n: Int): String = s"編集できない子ページ（${n}件）があるため削除できません"
+
   protected def editUnder(s: AuthSession, wsId: UUID, parent: Option[UUID])(f: => IO[Response[IO]]): IO[Response[IO]] =
     canEditUnder(s, wsId, parent).flatMap {
       case Right(_)                               => f

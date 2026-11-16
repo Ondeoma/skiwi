@@ -143,7 +143,7 @@ skea のタスクに書いた skiwi のページのリンク（`{skiwi の URL}/
   - 認可コードは60秒・一度だけ。ハッシュだけを `oauth_code` に保存し、client・redirect_uri・ユーザー・code_challenge に結び付ける。
 - **`POST /oauth/token`**（Basic 認証。`grant_type=authorization_code`・`code`・`redirect_uri`・`code_verifier`）:
   - 成功: `{"access_token":"skiwi_…","token_type":"Bearer","scope":"read"}`（`Cache-Control: no-store`）。
-  - トークンはそのユーザーの **読み取り専用の API トークン**（名前「skea 連携」、期限なし）。`api_token.oauth_client` に発行したクライアントを記録する。
+  - トークンはそのユーザーの API トークン（名前「skea 連携」、期限なし）で、**`POST /api/pages/lookup` にだけ使える**（ほかの API・MCP・WebSocket では認証なしと同じ `401`）。`api_token.oauth_client` に発行したクライアントを記録する。
     「APIトークン」の画面（`/settings/tokens`）に出て、そこから失効できる。
   - 同じユーザーが許可し直したら、そのクライアントが以前に発行したトークンを失効させる。
   - エラーは RFC 6749 の形（`invalid_request`・`invalid_client`（401）・`invalid_grant`・`unsupported_grant_type`）。
@@ -151,5 +151,5 @@ skea のタスクに書いた skiwi のページのリンク（`{skiwi の URL}/
 - **`POST /api/pages/lookup`** `{"ids":[…]}`（100件まで。超えると `400`）:
   - `{"pages":[{"id","workspaceId","title","icon"}]}`（`icon` はなければ `null`）。
   - 見られるページだけを返す（削除済み・存在しない・権限のないものは区別しない）。
-  - 読むだけなので、読み取り専用のトークンでも使える（`SessionAuth`）。失効・無効なトークンは `401`。
+  - 読むだけなので、読み取り専用のトークンと、`/oauth/token` で発行したトークンでも使える（`SessionAuth`）。失効・無効なトークンは `401`。
 - 実装: `modules/api/src/main/scala/skiwi/api/OAuthProviderRoutes.scala`、`V13__oauth_provider.sql`、テストは `OAuthProviderSpec`。

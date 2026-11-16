@@ -75,8 +75,13 @@ class OidcFlowSpec extends DbSuite:
           _ <- nonce.set(q("nonce"))
           _ <- challenge.set(q("code_challenge"))
 
+          stateCk = login.cookies.find(_.name == "skiwi_login_state").get
+          _ = assertEquals(stateCk.content, q("state"))
+          // 2a) state の Cookie がない（ログインを始めたブラウザと違う）callback は拒否（ログイン CSRF 対策）
+          csrf <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")))
+          _ = assertEquals(csrf.status, Status.BadRequest)
           // 2) /auth/callback → セッションCookie
-          cb <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")))
+          cb <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")).addCookie("skiwi_login_state", stateCk.content))
           _ = assertEquals(cb.status, Status.Found)
           setCookie = cb.cookies.find(_.name == "skiwi_session").get
           _ = assert(setCookie.httpOnly && setCookie.secure)
@@ -97,7 +102,7 @@ class OidcFlowSpec extends DbSuite:
           _ = assertEquals(j.hcursor.get[List[String]]("groups").map(_.toSet), Right(Set("skiwi-admins", "営業部")))
 
           // 4) stateは1回限り。再利用は拒否
-          replay <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")))
+          replay <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")).addCookie("skiwi_login_state", stateCk.content))
           _ = assertEquals(replay.status, Status.BadRequest)
 
           // 5) ログアウト後は401

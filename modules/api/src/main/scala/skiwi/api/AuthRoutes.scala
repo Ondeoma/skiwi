@@ -20,6 +20,13 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
   private def redirect(to: String): Response[IO] =
     Response[IO](Status.Found).putHeaders(Location(Uri.unsafeFromString(to)))
 
+  /** ログインを始めたブラウザだけが callback を完了できるよう、state を Cookie にも入れる（ログイン CSRF 対策）。
+    * IdP からの戻りはトップレベルの GET なので SameSite=Lax でも送られる。 */
+  private val StateCookie = "skiwi_login_state"
+  private def stateCookie(v: String, maxAge: Long) =
+    ResponseCookie(StateCookie, v, maxAge = Some(maxAge), path = Some("/auth"), httpOnly = true,
+      secure = sessions.cookieSecure, sameSite = Some(SameSite.Lax))
+
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     // returnTo: ログイン後の戻り先（同じサイトの相対パスだけ。/oauth/authorize などサーバーの画面へ戻るため）
@@ -29,12 +36,14 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
       for
         _   <- store.saveLoginState(state, verifier, nonce, Instant.now(), back)
         uri <- oidc.authorizationUri(state, verifier, nonce)
-      yield redirect(uri.renderString)
+      yield redirect(uri.renderString).addCookie(stateCookie(state, 600))
 
     case req @ GET -> Root / "auth" / "callback" =>
       val params = req.uri.query.params
       (params.get("state"), params.get("code"), params.get("error")) match
         case (_, _, Some(err)) => BadRequest(s"login failed: $err")
+        case (Some(state), _, _) if !req.cookies.find(_.name == StateCookie).exists(c => Crypto.constantTimeEquals(c.content, state)) =>
+          BadRequest("ログインを始めたブラウザと違います。もう一度ログインしてください")
         case (Some(state), Some(code), _) =>
           store.takeLoginState(state, Instant.now()).flatMap {
             case None => BadRequest("invalid or expired login state")
@@ -57,7 +66,7 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
                     }
                   }
               }
-          }
+          }.map(_.addCookie(stateCookie("", 0)))
         case _ => BadRequest("missing state or code")
 
     case req @ POST -> Root / "auth" / "logout" =>

@@ -143,21 +143,22 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
     sql"select count(*)::int from api_token where oauth_client = $clientId and revoked_at is null".query[Int].unique
   )
 
-  /** トークンから (ユーザー, グループ, トークンID, 読み取り専用か)。無効・期限切れ・失効・無効ユーザーは None。 */
-  def findToken(hash: Array[Byte], now: Instant): IO[Option[(User, List[Group], UUID, Boolean)]] = tx {
-    sql"""select t.id, t.scope, u.id, u.oidc_sub, u.email, u.name
+  /** トークンから (ユーザー, グループ, トークンID, スコープ)。無効・期限切れ・失効・無効ユーザーは None。
+    * OAuth で発行したトークン（外部サービス連携）のスコープは "lookup"（ページの一括参照だけ）。 */
+  def findToken(hash: Array[Byte], now: Instant): IO[Option[(User, List[Group], UUID, String)]] = tx {
+    sql"""select t.id, case when t.oauth_client is not null then 'lookup' else t.scope end, u.id, u.oidc_sub, u.email, u.name
           from api_token t join app_user u on u.id = t.user_id
           where t.token_hash = $hash and t.revoked_at is null and u.active
             and (t.expires_at is null or t.expires_at > $now)"""
       .query[(UUID, String, User)].option.flatMap {
-        case None => none[(User, List[Group], UUID, Boolean)].pure[ConnectionIO]
+        case None => none[(User, List[Group], UUID, String)].pure[ConnectionIO]
         case Some((tid, scope, u)) =>
           for
             // 最終使用日時は1分に1回だけ更新する（書き込みを抑える）
             _  <- sql"""update api_token set last_used_at = $now
                         where id = $tid and (last_used_at is null or last_used_at < $now - interval '1 minute')""".update.run
             gs <- SqlParts.groupsOfC(u.id)
-          yield Some((u, gs, tid, scope == "read"))
+          yield Some((u, gs, tid, scope))
       }
   }
 

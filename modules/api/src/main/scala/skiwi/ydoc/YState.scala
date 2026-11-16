@@ -137,28 +137,35 @@ final class YState private ():
 
   private val parentMemo = mutable.Map.empty[YId, Parent]
 
-  /** Yjs の Item.getMissing と同じ規則で、かけらの親を決める。 */
-  private def parentOf(p: Piece): Parent =
-    if p.gc then Parent.Gone
-    else
-      parentMemo.get(p.id) match
-        case Some(x) => x
-        case None =>
-          val left  = p.origin.flatMap(find)
-          val right = p.rightOrigin.flatMap(find)
-          val r =
-            if left.exists(_.gc) || right.exists(_.gc) then Parent.Gone
-            else
-              p.parentRef match
-                case Some(YParent.Of(pid)) =>
-                  if find(pid).exists(!_.gc) then Parent.Known(YParent.Of(pid), p.parentSub) else Parent.Gone
-                case Some(root) => Parent.Known(root, p.parentSub)
-                case None =>
-                  left.orElse(right) match
-                    case Some(n) => parentOf(n)
-                    case None    => Parent.Gone
-          parentMemo(p.id) = r
-          r
+  /** Yjs の Item.getMissing と同じ規則で、かけらの親を決める。
+    * origin の鎖は長くなりうる（細工した update では数万）ので、再帰せずにたどる。循環していれば Gone。 */
+  private def parentOf(p0: Piece): Parent =
+    val chain = mutable.ArrayBuffer.empty[Piece]
+    val seen  = mutable.Set.empty[YId]
+    var cur: Option[Piece] = Some(p0)
+    var result: Option[Parent] = None
+    while result.isEmpty do
+      cur match
+        case None => result = Some(Parent.Gone)
+        case Some(p) if p.gc => result = Some(Parent.Gone)
+        case Some(p) if !seen.add(p.id) => result = Some(Parent.Gone)
+        case Some(p) =>
+          parentMemo.get(p.id) match
+            case Some(x) => result = Some(x)
+            case None =>
+              chain += p
+              val left  = p.origin.flatMap(find)
+              val right = p.rightOrigin.flatMap(find)
+              if left.exists(_.gc) || right.exists(_.gc) then result = Some(Parent.Gone)
+              else
+                p.parentRef match
+                  case Some(YParent.Of(pid)) =>
+                    result = Some(if find(pid).exists(!_.gc) then Parent.Known(YParent.Of(pid), p.parentSub) else Parent.Gone)
+                  case Some(root) => result = Some(Parent.Known(root, p.parentSub))
+                  case None       => cur = left.orElse(right)
+    val r = result.get
+    chain.foreach(c => parentMemo(c.id) = r)
+    r
 
   /** 親（と属性名）ごとの子の索引。最初に使うときに一度だけ作り、分割したかけらは split で足す。 */
   private var groups: Option[mutable.Map[(YParent, Option[String]), mutable.ArrayBuffer[Piece]]] = None
@@ -265,12 +272,15 @@ final class YState private ():
     flush()
     out.result()
 
-  private def element(el: Piece): Option[Json] = el.content match
-    case YContent.Type(YContent.YXmlElement, Some(name)) =>
+  /** 要素の入れ子の上限（ふつうの本文はせいぜい数十段。細工した update でスタックを使い切らせない） */
+  private val MaxElementDepth = 200
+
+  private def element(el: Piece, depth: Int = 0): Option[Json] = el.content match
+    case YContent.Type(YContent.YXmlElement, Some(name)) if depth <= MaxElementDepth =>
       val content = children(YParent.Of(el.id)).filterNot(_.deleted).flatMap { c =>
         c.content match
           case YContent.Type(YContent.YXmlText, _) => textNodes(c)
-          case _                                   => element(c).toVector
+          case _                                   => element(c, depth + 1).toVector
       }
       val attrs = attributes(el)
       Some(Json.fromFields(Vector("type" -> Json.fromString(name)) ++ Option.when(attrs.nonEmpty)("attrs" -> Json.fromJsonObject(attrs)) ++

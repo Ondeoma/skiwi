@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import LinkCardView from './LinkCardView.vue'
 import { parsePageUrl } from './pageLinks'
+import { safeLinkUrl } from '../util/url'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -22,13 +23,13 @@ export const LinkCard = Node.create({
   },
   parseHTML() { return [{ tag: 'div[data-link-card]' }] },
   renderHTML({ node, HTMLAttributes }) {
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-link-card': '' }), ['a', { href: node.attrs.url, target: '_blank', rel: 'noopener' }, node.attrs.title || node.attrs.url]]
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-link-card': '' }), ['a', { href: safeLinkUrl(node.attrs.url), target: '_blank', rel: 'noopener' }, node.attrs.title || node.attrs.url]]
   },
   renderText({ node }) { return `${node.attrs.title ?? ''} ${node.attrs.url}`.trim() },
   addNodeView() { return VueNodeViewRenderer(LinkCardView) },
   addCommands() {
     return {
-      insertLinkCard: (url) => ({ commands }) => /^https?:\/\//i.test(url.trim()) && commands.insertContent({ type: this.name, attrs: { url: url.trim() } }),
+      insertLinkCard: (url) => ({ commands }) => /^https?:\/\//i.test(url.trim()) && !!safeLinkUrl(url) && commands.insertContent({ type: this.name, attrs: { url: url.trim() } }),
     }
   },
 })

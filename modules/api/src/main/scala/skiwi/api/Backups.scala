@@ -31,7 +31,8 @@ final class BackupService(
 
   private def safeName(s: String) =
     val x = s.replaceAll("""[\\/:*?"<>|\u0000-\u001f]""", "_").trim.take(80)
-    if x.isEmpty then "無題" else x
+    // 「.」「..」だけの名前は、展開したときに ZIP の外へ書き出されうる（zip slip）
+    if x.isEmpty then "無題" else if x.forall(_ == '.') then x.replace('.', '_') else x
 
   /** 1回分を作って保存する。戻り値: (保存先のキー, 大きさ, ページ数, 添付の数) */
   def build(wsId: UUID, id: UUID): IO[(String, Long, Int, Int)] =

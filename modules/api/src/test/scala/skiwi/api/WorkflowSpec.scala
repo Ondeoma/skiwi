@@ -42,7 +42,7 @@ class WorkflowSpec extends DbSuite:
         val attSt = new AttachmentStore(xa)
         val blobs = new InMemoryBlobStore
         val hooks = new WebhookStore(xa)
-        val svc   = new WebhookService(hooks, store, "https://skiwi.example.com", allowHttp = true)
+        val svc   = new WebhookService(hooks, store, "https://skiwi.example.com", allowHttp = true, allowPrivate = true)
         val dbSt  = new DatabaseStore(xa)
         val shareR = new ShareRoutes(store, new ShareStore(xa), docs, attSt, new AttachmentRoutes(store, attSt, Some(blobs), sess), sess, audit, true, "https://skiwi.example.com", Some(svc))
         val mentions = new Mentions(store, ops, sess)

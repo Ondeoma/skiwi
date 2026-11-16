@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
+import { safeLinkUrl } from '../util/url'
 
 /** URL のカード。情報がなければ取りに行き（編集できる人だけが保存）、更新もできる */
 const props = defineProps(nodeViewProps)
 const loading = ref(false)
 const host = computed(() => { try { return new URL(String(props.node.attrs.url)).hostname } catch { return '' } })
 const editable = computed(() => props.editor.isEditable)
+// 本文の属性は同時編集で好きな値にできるので、http(s) の URL だけを出す
+const href = computed(() => safeLinkUrl(props.node.attrs.url))
+const image = computed(() => safeLinkUrl(props.node.attrs.image))
+const icon = computed(() => safeLinkUrl(props.node.attrs.icon))
 
 async function refresh() {
   if (loading.value) return
@@ -30,17 +35,17 @@ const iconOk = ref(true)
 
 <template>
   <NodeViewWrapper class="link-card-wrap" data-drag-handle>
-    <a class="link-card" :href="String(node.attrs.url)" target="_blank" rel="noopener noreferrer" data-testid="link-card" @click="open">
+    <a class="link-card" :href="href ?? undefined" target="_blank" rel="noopener noreferrer" data-testid="link-card" @click="open">
       <div class="lc-body">
         <div class="lc-title">{{ node.attrs.title || node.attrs.url }}</div>
         <div v-if="node.attrs.description" class="lc-desc">{{ node.attrs.description }}</div>
         <div class="lc-site">
-          <img v-if="node.attrs.icon && iconOk" :src="String(node.attrs.icon)" alt="" class="lc-icon" referrerpolicy="no-referrer" @error="iconOk = false" />
+          <img v-if="icon && iconOk" :src="icon" alt="" class="lc-icon" referrerpolicy="no-referrer" @error="iconOk = false" />
           <span>{{ node.attrs.siteName || host }}</span>
           <span v-if="loading" class="muted">・読み込み中…</span>
         </div>
       </div>
-      <img v-if="node.attrs.image && imgOk" :src="String(node.attrs.image)" alt="" class="lc-image" referrerpolicy="no-referrer" loading="lazy" @error="imgOk = false" />
+      <img v-if="image && imgOk" :src="image" alt="" class="lc-image" referrerpolicy="no-referrer" loading="lazy" @error="imgOk = false" />
     </a>
     <button v-if="editable" class="lc-refresh" title="情報を取り直す" contenteditable="false" @click.stop="refresh">🔄</button>
   </NodeViewWrapper>

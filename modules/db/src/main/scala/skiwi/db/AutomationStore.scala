@@ -67,9 +67,9 @@ final class AutomationStore(xa: Transactor[IO]) extends TxStore(xa):
           select exists(select 1 from anc where id = $ancestor)""".query[Boolean].unique
   )
 
-  /** データベースの項目のうち、日付の列に値があるもの: (項目, タイトル, 日付, 値のJSON) */
-  def datedRows(dbPageId: UUID, prop: String): IO[List[(UUID, String, String, String)]] = tx(
+  /** データベースの項目のうち、日付の列に値があるもの: (項目, タイトル, 日付, 値のJSON)。ルールのワークスペースの中だけ */
+  def datedRows(wsId: UUID, dbPageId: UUID, prop: String): IO[List[(UUID, String, String, String)]] = tx(
     sql"""select id, title, props->>$prop, props::text from page
-          where parent_id = $dbPageId and deleted_at is null and jsonb_exists(props, $prop) and jsonb_typeof(props->$prop) = 'string'"""
+          where parent_id = $dbPageId and workspace_id = $wsId and deleted_at is null and jsonb_exists(props, $prop) and jsonb_typeof(props->$prop) = 'string'"""
       .query[(UUID, String, String, String)].to[List]
   )

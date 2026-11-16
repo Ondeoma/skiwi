@@ -105,6 +105,43 @@ class FeaturesSpec extends DbSuite:
     }
   }
 
+  test("trash: restoring to the root needs edit on the workspace; deleting needs edit on every descendant") {
+    run {
+      for
+        (o, ot) <- user("perm-owner")
+        (m, mt) <- user("perm-member")
+        ws <- env.store.createWorkspace("権限", o.user.id)
+        edit = (u: AuthSession) => AclEntry(Principal(PrincipalType.User, u.user.id), Role.Edit)
+        // 制限ページ R（m は編集できる）とその子 X
+        r  <- page(ws.id, "制限", None, o.user.id)
+        _  <- env.store.setPageAcl(r.id, PageAcl(false, List(edit(o), edit(m))))
+        x  <- page(ws.id, "子", Some(r.id), o.user.id)
+        (d1, _, _) <- call(Some(mt), Method.DELETE, s"/api/pages/${x.id}")
+        _ = assertEquals(d1, Status.NoContent)
+        _ <- call(Some(ot), Method.DELETE, s"/api/pages/${r.id}")
+        // 親が消えているので直下に戻る → 直下に作れない m は戻せない（ワークスペース全体に見えてしまうため）
+        (s1, _, _) <- call(Some(mt), Method.POST, s"/api/trash/pages/${x.id}/restore")
+        _ = assertEquals(s1, Status.Forbidden)
+        (s2, _, _) <- call(Some(ot), Method.POST, s"/api/trash/pages/${x.id}/restore")
+        _ = assertEquals(s2, Status.Ok)
+        // P（m は編集できる）の下に、m が見られない Q
+        p  <- page(ws.id, "親", None, o.user.id)
+        _  <- env.store.setPageAcl(p.id, PageAcl(true, List(edit(m))))
+        q  <- page(ws.id, "非公開の子", Some(p.id), o.user.id)
+        _  <- env.store.setPageAcl(q.id, PageAcl(false, List(edit(o))))
+        (s3, _, _) <- call(Some(mt), Method.DELETE, s"/api/pages/${p.id}")
+        _ = assertEquals(s3, Status.Forbidden)
+        (s4, _, _) <- call(Some(ot), Method.DELETE, s"/api/pages/${p.id}")
+        _ = assertEquals(s4, Status.NoContent)
+        // 完全削除も同じ（m は親を戻せても、見られない子ごと完全には消せない）
+        (s5, _, _) <- call(Some(mt), Method.DELETE, s"/api/trash/pages/${p.id}")
+        _ = assertEquals(s5, Status.Forbidden)
+        (s6, _, _) <- call(Some(ot), Method.DELETE, s"/api/trash/pages/${p.id}")
+        _ = assertEquals(s6, Status.NoContent)
+      yield ()
+    }
+  }
+
   test("workspace rename, delete to trash, restore") {
     run {
       for

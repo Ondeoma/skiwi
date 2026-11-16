@@ -18,8 +18,10 @@ import javax.crypto.spec.SecretKeySpec
 import scala.concurrent.duration.*
 
 /** Webhook の送信。送信時点のページのタイトル・URLで本文を組み立てる。個別に権限を絞ったページ・削除されたページ（削除の通知を除く）は送らない。
-  * allowHttp: http:// の送り先を許す（開発・テスト用。既定は https のみ） */
-final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String, allowHttp: Boolean = false, interval: FiniteDuration = 10.seconds):
+  * allowHttp: http:// の送り先を許す（開発・テスト用。既定は https のみ）
+  * allowPrivate: 社内のアドレス（10.x・192.168.x・127.0.0.1 など）にも送る。既定は送らない（編集者にサーバーから社内へ接続させない） */
+final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String, allowHttp: Boolean = false, interval: FiniteDuration = 10.seconds,
+    allowPrivate: Boolean = false):
   private val base = publicUrl.stripSuffix("/")
   private val client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build()
 
@@ -102,16 +104,19 @@ final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String,
   /** 送る。戻り値: (HTTPステータス, エラー) */
   private def post(url: String, format: String, secret: String, event: String, deliveryId: Long, body: String): IO[(Option[Int], Option[String])] =
     if !validUrl(url) then IO.pure((None, Some("invalid url")))
-    else
-      val b = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
-        .header("Content-Type", "application/json; charset=utf-8").header("User-Agent", "skiwi-webhook/1")
-        .POST(HttpRequest.BodyPublishers.ofString(body))
-      val req = (if format == "generic" then b.header("X-Skiwi-Event", event).header("X-Skiwi-Delivery", deliveryId.toString)
-                   .header("X-Skiwi-Signature", s"sha256=${sign(secret, body)}") else b).build()
-      IO.fromCompletableFuture(IO(client.sendAsync(req, HttpResponse.BodyHandlers.discarding())))
-        .map(r => (Some(r.statusCode()), Option.when(r.statusCode() / 100 != 2)(s"HTTP ${r.statusCode()}")))
-        .timeout(15.seconds)
-        .handleError(e => (None, Some(Option(e.getMessage).getOrElse(e.getClass.getSimpleName).take(300))))
+    else (if allowPrivate then IO.pure(true) else NetGuard.publicHost(URI.create(url).getHost)).flatMap {
+      case false => IO.pure((None, Some("社内のアドレスには送れません（WEBHOOK_ALLOW_PRIVATE）")))
+      case true =>
+        val b = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
+          .header("Content-Type", "application/json; charset=utf-8").header("User-Agent", "skiwi-webhook/1")
+          .POST(HttpRequest.BodyPublishers.ofString(body))
+        val req = (if format == "generic" then b.header("X-Skiwi-Event", event).header("X-Skiwi-Delivery", deliveryId.toString)
+                     .header("X-Skiwi-Signature", s"sha256=${sign(secret, body)}") else b).build()
+        IO.fromCompletableFuture(IO(client.sendAsync(req, HttpResponse.BodyHandlers.discarding())))
+          .map(r => (Some(r.statusCode()), Option.when(r.statusCode() / 100 != 2)(s"HTTP ${r.statusCode()}")))
+          .timeout(15.seconds)
+          .handleError(e => (None, Some(Option(e.getMessage).getOrElse(e.getClass.getSimpleName).take(300))))
+    }
 
   def deliver(it: WebhookItem): IO[OutboxResult] =
     if !it.enabled then IO.pure(OutboxResult.Skip("disabled"))

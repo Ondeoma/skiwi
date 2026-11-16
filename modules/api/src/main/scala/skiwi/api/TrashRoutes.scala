@@ -80,12 +80,18 @@ final class TrashRoutes(
     case req @ POST -> Root / "api" / "trash" / "pages" / UUIDVar(id) / "restore" =>
       authed(req) { s =>
         store.pageAccessAny(id, s).flatMap {
-          case Some((_, r)) if r >= Role.Edit =>
-            store.restorePage(id).flatMap {
-              case Left(_) => err(Status.NotFound, "trashed page not found")
-              case Right(p) =>
-                audit.log(s, "page.restore_from_trash", "page", id, Json.obj("title" -> p.title.asJson)) *> accessChanged *>
-                  Ok(Json.obj("id" -> p.id.asJson, "workspaceId" -> p.workspaceId.asJson, "parentId" -> p.parentId.asJson))
+          case Some((page, r)) if r >= Role.Edit =>
+            // 元の親が削除済みだと直下に移り、ワークスペース全体の権限を継承する（制限していた内容が広く見えるようになる）。
+            // そのため直下にページを作れる人だけが戻せる
+            store.restoreMovesToRoot(id).flatMap(toRoot => if toRoot then canEditUnder(s, page.workspaceId, None) else IO.pure(Right(()))).flatMap {
+              case Left(_) => err(Status.Forbidden, "元の親ページが削除されているため、ワークスペースの直下に戻す権限が要ります（先に親ページを戻してください）")
+              case Right(_) =>
+                store.restorePage(id).flatMap {
+                  case Left(_) => err(Status.NotFound, "trashed page not found")
+                  case Right(p) =>
+                    audit.log(s, "page.restore_from_trash", "page", id, Json.obj("title" -> p.title.asJson)) *> accessChanged *>
+                      Ok(Json.obj("id" -> p.id.asJson, "workspaceId" -> p.workspaceId.asJson, "parentId" -> p.parentId.asJson))
+                }
             }
           case Some(_) => err(Status.Forbidden, "insufficient permission")
           case None    => err(Status.NotFound, "trashed page not found")
@@ -96,10 +102,15 @@ final class TrashRoutes(
       authed(req) { s =>
         store.pageAccessAny(id, s).flatMap {
           case Some((p, r)) if r >= Role.Edit =>
-            store.purgePage(id).flatMap {
-              case None => err(Status.NotFound, "trashed page not found")
-              case Some(keys) =>
-                dropBlobs(keys) *> audit.log(s, "page.purge", "page", id, Json.obj("title" -> p.title.asJson)) *> NoContent()
+            // 元に戻せないので、いっしょに消える子孫もすべて編集できる人だけ
+            uneditableDescendants(s, id, inTrash = true).flatMap {
+              case n if n > 0 => err(Status.Forbidden, descendantsBlocked(n))
+              case _ =>
+                store.purgePage(id).flatMap {
+                  case None => err(Status.NotFound, "trashed page not found")
+                  case Some(keys) =>
+                    dropBlobs(keys) *> audit.log(s, "page.purge", "page", id, Json.obj("title" -> p.title.asJson)) *> NoContent()
+                }
             }
           case Some(_) => err(Status.Forbidden, "insufficient permission")
           case None    => err(Status.NotFound, "trashed page not found")

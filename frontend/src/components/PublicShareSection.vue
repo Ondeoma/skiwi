@@ -207,10 +207,11 @@ const savePageSlug = () => run(async () => {
     </template>
     <template v-else-if="pub.inherited">
       <p class="note">
-        このページは親ページ「{{ pub.inherited.title || '無題' }}」の公開リンクに含まれ、すでにゲストが閲覧できます。
+        <template v-if="pub.inherited.token">このページは親ページ「{{ pub.inherited.title || '無題' }}」の公開リンクに含まれ、すでにゲストが閲覧できます。</template>
+        <template v-else>このページは、あなたが閲覧できない上位のページの公開リンクに含まれ、すでにゲストが閲覧できます。</template>
         <template v-if="pub.inherited.mode === 'pinned'">公開版を固定しているため、変更は親ページの共有画面で「現在の内容を公開」を押すと反映されます。</template>
       </p>
-      <div class="link-row">
+      <div v-if="pub.inherited.token" class="link-row">
         <input :value="inheritedLink()" readonly data-testid="inherited-url" @focus="($event.target as HTMLInputElement).select()" />
         <button @click="copyLink(inheritedLink())">{{ copied ? 'コピーしました' : 'コピー' }}</button>
       </div>

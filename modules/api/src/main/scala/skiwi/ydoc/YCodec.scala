@@ -112,21 +112,27 @@ final class YReader(bytes: Array[Byte]):
   def string(): String       = String(varBytes(), UTF_8)
   def id(): YId              = YId(varUint(), varUint())
 
-  /** lib0 の readAny。Uint8Array・undefined・bigint は扱わない値として null にする。 */
-  def any(): Json = (127 - u8()) match
-    case 0  => Json.Null // undefined
-    case 1  => Json.Null
-    case 2  => Json.fromLong(varInt())
-    case 3  => Json.fromFloatOrNull(ByteBuffer.wrap(bytes(4)).getFloat)
-    case 4  => Json.fromDoubleOrNull(ByteBuffer.wrap(bytes(8)).getDouble)
-    case 5  => Json.fromLong(ByteBuffer.wrap(bytes(8)).getLong)
-    case 6  => Json.False
-    case 7  => Json.True
-    case 8  => Json.fromString(string())
-    case 9  => Json.fromFields((0L until varUint()).map(_ => string() -> any()))
-    case 10 => Json.fromValues((0L until varUint()).map(_ => any()))
-    case 11 => varBytes(); Json.Null
-    case t  => throw IllegalArgumentException(s"unknown any type: $t")
+  /** lib0 の readAny。Uint8Array・undefined・bigint は扱わない値として null にする。
+    * 入れ子は MaxAnyDepth 段まで（細工した update でスタックを使い切らせない）。 */
+  def any(depth: Int = 0): Json =
+    if depth > YReader.MaxAnyDepth then throw IllegalArgumentException("any value is nested too deeply")
+    (127 - u8()) match
+      case 0  => Json.Null // undefined
+      case 1  => Json.Null
+      case 2  => Json.fromLong(varInt())
+      case 3  => Json.fromFloatOrNull(ByteBuffer.wrap(bytes(4)).getFloat)
+      case 4  => Json.fromDoubleOrNull(ByteBuffer.wrap(bytes(8)).getDouble)
+      case 5  => Json.fromLong(ByteBuffer.wrap(bytes(8)).getLong)
+      case 6  => Json.False
+      case 7  => Json.True
+      case 8  => Json.fromString(string())
+      case 9  => Json.fromFields((0L until varUint()).map(_ => string() -> any(depth + 1)))
+      case 10 => Json.fromValues((0L until varUint()).map(_ => any(depth + 1)))
+      case 11 => varBytes(); Json.Null
+      case t  => throw IllegalArgumentException(s"unknown any type: $t")
+
+object YReader:
+  val MaxAnyDepth = 100
 
 final class YWriter:
   private val out = ByteArrayOutputStream()

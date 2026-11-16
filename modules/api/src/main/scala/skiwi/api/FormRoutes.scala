@@ -163,7 +163,8 @@ final class FormRoutes(
 
   private def submit(f: DbForm, respondent: Option[AuthSession], in: JsonObject): IO[Response[IO]] =
     val fields = fieldsOf(f)
-    val title = in("title").flatMap(_.asString).map(_.trim.take(500)).getOrElse("")
+    // 件名も、フォームの項目にあるときだけ受け付ける
+    val title = in("title").filter(_ => fields.exists(_.prop == "title")).flatMap(_.asString).map(_.trim.take(500)).getOrElse("")
     val missing = fields.filter(_.required).filter { fd =>
       in(fd.prop).forall(v => v.isNull || v.asString.exists(_.trim.isEmpty) || v.asArray.exists(_.isEmpty) || v.asBoolean.contains(false))
     }

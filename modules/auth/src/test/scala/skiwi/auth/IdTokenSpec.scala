@@ -30,9 +30,11 @@ class IdTokenSpec extends munit.FunSuite:
     assertEquals(id, Right(Identity("u1", Some("a@example.com"), "日本 太郎", List("skiwi-admins", "dev"))))
   }
 
-  test("aud may be an array") {
+  test("aud may be an array (then azp must be this client)") {
     val c = claims("aud" -> List("x", "skiwi-client").asJson)
-    assert(IdToken.validate(c, issuer, cfg, "n1", now).isRight)
+    assert(IdToken.validate(c.deepMerge(Json.obj("azp" -> "skiwi-client".asJson)), issuer, cfg, "n1", now).isRight)
+    assert(IdToken.validate(c.deepMerge(Json.obj("azp" -> "x".asJson)), issuer, cfg, "n1", now).isLeft)
+    assert(IdToken.validate(c, issuer, cfg, "n1", now).isLeft)
   }
 
   test("rejects wrong issuer / audience / nonce / expired") {

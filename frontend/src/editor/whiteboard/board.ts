@@ -50,6 +50,7 @@ if (typeof window !== 'undefined') (window as any).EXCALIDRAW_ASSET_PATH = `${lo
 const LOCAL = Symbol('whiteboard-local')
 /** Y.Doc のルート名（Editor.vue が接続前に登録する） */
 import { blobToDataUrl } from '../../util/bytes'
+import { fetchAttachment } from '../../util/url'
 
 
 export async function mountBoard(container: HTMLElement, o: BoardOptions): Promise<BoardHandle> {
@@ -200,7 +201,7 @@ export async function mountBoard(container: HTMLElement, o: BoardOptions): Promi
       if (loadedFiles.has(fid)) continue
       loadedFiles.add(fid)
       try {
-        const blob = await fetch(o.mapUrl ? o.mapUrl(m.url) : m.url, { credentials: 'same-origin' }).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob() })
+        const blob = await fetchAttachment(o.mapUrl ? o.mapUrl(m.url) : m.url).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob() })
         api.addFiles([{ id: fid, mimeType: m.mimeType, dataURL: await blobToDataUrl(blob), created: Date.now() }])
       } catch (e) { loadedFiles.delete(fid); console.warn('[whiteboard] image load failed', e) }
     }
