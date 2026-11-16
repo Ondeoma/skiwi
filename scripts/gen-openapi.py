@@ -18,7 +18,7 @@ schemas = {
  "Version": S(id=UUID, createdAt=DT, label={**STR, "nullable": True}, createdBy={**STR, "nullable": True}, authors=arr(STR)),
  "SearchResult": S(page=ref("Page"), snippet={**STR, "nullable": True, "description": "一致箇所を含む抜粋（HTML。キーワードのみ装飾）"}, fuzzy=BOOL),
  "Comment": S(id=UUID, threadId={**UUID, "nullable": True}, anchor={**STR, "nullable": True}, quote={**STR, "nullable": True}, body=STR,
-              authorId={**UUID, "nullable": True}, authorName={**STR, "nullable": True}, createdAt=DT, updatedAt=DT, resolvedAt={**DT, "nullable": True}),
+              authorId={**UUID, "nullable": True}, authorName={**STR, "nullable": True}, authorAvatarUrl={**STR, "nullable": True}, createdAt=DT, updatedAt=DT, resolvedAt={**DT, "nullable": True}),
  "AclEntry": S(principalType={"type": "string", "enum": ["user", "group"]}, principalId=UUID, role={"type": "string", "enum": ["view", "edit"]},
                expiresAt={**DT, "nullable": True, "description": "権限の期限（過ぎると自動で外れる）"}),
  "Task": S(pageId=UUID, workspaceId=UUID, workspaceName=STR, pageTitle=STR, seq=INT, text=STR, checked=BOOL, due={"type": "string", "format": "date", "nullable": True}),
@@ -45,7 +45,16 @@ def op(method, path, tag, summary, params=(), body=None, resp=None, status="200"
     o["responses"] = {status: r, "401": {"description": "未認証"}, "403": {"description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"}, "404": {"description": "見つからない（閲覧権限がない場合も404）"}}
     paths.setdefault(path, {})[method] = o
 
-op("get", "/api/me", "ユーザー", "自分の情報", resp=S(id=UUID, name=STR, email={**STR, "nullable": True}, groups=arr(STR), isAdmin=BOOL))
+op("get", "/api/me", "ユーザー", "自分の情報", resp=S(id=UUID, name=STR, email={**STR, "nullable": True}, groups=arr(STR), isAdmin=BOOL,
+   avatarUrl={**STR, "nullable": True, "description": "アイコンの URL（設定していなければ null）"}))
+op("put", "/api/me/avatar", "ユーザー", "自分のアイコンを設定する", resp=S(avatarUrl=STR),
+   desc="本文は画像そのもの（Content-Type は image/png・image/jpeg・image/webp）。200KB まで。画面では正方形に切り抜いて 256px に縮めてから送る。")
+op("delete", "/api/me/avatar", "ユーザー", "自分のアイコンを外す", resp=S(avatarUrl={**STR, "nullable": True}))
+op("get", "/api/users/{userId}/avatar", "ユーザー", "ユーザーのアイコンの画像", [P("userId", "ユーザーID", UUID)],
+   desc="アイコンがなければ 404。`?v=`（版）付きの URL は長くキャッシュしてよい。")
+_img = {t: {"schema": {"type": "string", "format": "binary"}} for t in ("image/png", "image/jpeg", "image/webp")}
+paths["/api/me/avatar"]["put"]["requestBody"] = {"required": True, "content": _img}
+paths["/api/users/{userId}/avatar"]["get"]["responses"]["200"]["content"] = _img
 op("get", "/api/directory", "ユーザー", "ユーザー・グループの検索", [P("q", "名前・メール（ひらがな/カタカナ・全角/半角の違いは無視）", STR, "query")],
    resp=arr(S(principalType=STR, id=UUID, name=STR, detail={**STR, "nullable": True})))
 op("get", "/api/workspaces", "ワークスペース", "見られるワークスペースの一覧", resp=arr(ref("Workspace")))

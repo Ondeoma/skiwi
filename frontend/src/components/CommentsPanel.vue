@@ -10,6 +10,7 @@ import { commentApi, formatDate, type Comment } from '../api'
 import { confirmDialog, guarded } from '../ui/dialog'
 import MentionInput from './MentionInput.vue'
 import CommentBody from './CommentBody.vue'
+import UserAvatar from '../ui/UserAvatar.vue'
 
 /** コメントの一覧と投稿。draft は本文の選択範囲・ホワイトボードへの新しいコメント。 */
 
@@ -172,6 +173,7 @@ watch(() => [props.focus, props.comments.length] as const, async ([id]) => {
         <div v-else-if="t.root.quote" class="anchor static">「{{ t.root.quote }}」</div>
         <div v-for="c in [t.root, ...t.replies]" :key="c.id" class="c" :class="{ reply: c.id !== t.root.id }">
           <div class="meta">
+            <UserAvatar :name="c.authorName" :url="c.authorAvatarUrl" :size="20" />
             <b>{{ c.authorName ?? '（不明）' }}</b>
             <span class="muted">{{ formatDate(c.createdAt) }}<template v-if="c.updatedAt !== c.createdAt && !c.deleted">（編集済み）</template></span>
             <span class="acts">
@@ -225,7 +227,7 @@ header { display: flex; align-items: center; gap: .5rem; padding: .6rem .8rem; b
 .anchor.static { cursor: default; }
 .c { padding: .25rem 0; }
 .c.reply { margin-left: .8rem; padding-left: .5rem; border-left: 2px solid var(--line); }
-.meta { display: flex; align-items: baseline; gap: .4rem; font-size: .78rem; }
+.meta { display: flex; align-items: center; gap: .4rem; font-size: .78rem; }
 .meta .acts { margin-left: auto; display: flex; gap: .4rem; }
 .deleted { font-size: .8rem; font-style: italic; }
 .resolved { font-size: .75rem; margin-top: .3rem; }

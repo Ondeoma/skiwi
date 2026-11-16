@@ -76,6 +76,29 @@ final case class TaskRow(pageId: UUID, seq: Int, text: String, checked: Boolean,
 /** 運用系の永続化: APIトークン、監査ログ、ウォッチ、メールアウトボックス、ディレクトリ検索。 */
 final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
 
+  // ---------------------------------------------------------------- ユーザーのアイコン
+
+  /** アイコンの種類・中身・更新日時 */
+  def avatar(userId: UUID): IO[Option[(String, Array[Byte], Instant)]] =
+    tx(sql"select content_type, data, updated_at from user_avatar where user_id = $userId".query[(String, Array[Byte], Instant)].option)
+
+  /** アイコンの更新日時（キャッシュを切り替える版として URL に付ける） */
+  def avatarVersion(userId: UUID): IO[Option[Instant]] =
+    tx(sql"select updated_at from user_avatar where user_id = $userId".query[Instant].option)
+
+  /** 複数のユーザーのアイコンの更新日時（アイコンのない人は含まない） */
+  def avatarVersions(userIds: List[UUID]): IO[Map[UUID, Instant]] =
+    if userIds.isEmpty then IO.pure(Map.empty)
+    else tx(sql"select user_id, updated_at from user_avatar where user_id = any(${userIds.toArray})".query[(UUID, Instant)].to[List]).map(_.toMap)
+
+  def saveAvatar(userId: UUID, contentType: String, data: Array[Byte]): IO[Instant] = tx(
+    sql"""insert into user_avatar (user_id, content_type, data) values ($userId, $contentType, $data)
+          on conflict (user_id) do update set content_type = excluded.content_type, data = excluded.data, updated_at = now()
+          returning updated_at""".query[Instant].unique
+  )
+
+  def deleteAvatar(userId: UUID): IO[Boolean] = tx(sql"delete from user_avatar where user_id = $userId".update.run.map(_ > 0))
+
 
   private val tokenCols = fr"id, name, scope, created_at, expires_at, last_used_at"
 

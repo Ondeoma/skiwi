@@ -44,7 +44,7 @@ import { SkeaTasks } from './SkeaTasks'
 export interface EditorDeps {
   ydoc: Y.Doc
   provider: WebsocketProvider
-  user: { name: string; color: string }
+  user: { name: string; color: string; avatar?: string | null }
   ctx: SlashContext
   uploadAt: (file: File, pos?: number) => Promise<void>
   /** 貼り付け・ドロップしたファイル（複数可）をアップロードして、元の順で入れる */

@@ -27,9 +27,10 @@ import { knownEmbedUrl } from '../editor/Embed'
 import { isDrawioPng, isDrawioXml, labelsOf, xmlFromPng } from '../editor/drawioUtil'
 import { bytesToBase64 } from '../util/bytes'
 import { useEventListener } from '../ui/composables'
+import { safeAvatarUrl, type Person } from '../ui/avatar'
 
 /** editable: 編集モードかどうか（実際に編集できるのは、サーバーが通知する権限が edit のときだけ） */
-const props = defineProps<{ pageId: string; editable: boolean; userName: string }>()
+const props = defineProps<{ pageId: string; editable: boolean; userName: string; userAvatar?: string | null }>()
 const emit = defineEmits<{
   role: [role: Role | 'none']
   /** 選択した文章にコメントする */
@@ -37,7 +38,7 @@ const emit = defineEmits<{
   /** コメントの付いた文章をクリックした */
   'comment-click': [anchorId: string]
   /** このページを開いているほかの人（同じ人の複数タブは1人にまとめる） */
-  presence: [people: { name: string; color: string; editing: boolean }[]]
+  presence: [people: Person[]]
 }>()
 
 const colors = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2']
@@ -102,12 +103,12 @@ watch(() => props.editable, () => applyEditable())
 
 // --- 開いている人（awareness） ------------------------------------------------------------
 function emitPresence() {
-  const people = new Map<string, { name: string; color: string; editing: boolean }>()
+  const people = new Map<string, Person>()
   provider.awareness.getStates().forEach((st, client) => {
     if (client === provider.awareness.clientID || !st.user?.name) return
     const cur = people.get(st.user.name)
     const editing = st.mode === 'edit' || !!cur?.editing
-    people.set(st.user.name, { name: st.user.name, color: st.user.color ?? '#888', editing })
+    people.set(st.user.name, { name: st.user.name, color: st.user.color ?? '#888', editing, avatar: safeAvatarUrl(st.user.avatar) ?? cur?.avatar ?? null })
   })
   emit('presence', [...people.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja')))
 }
@@ -197,7 +198,7 @@ const editor: Editor = new Editor({
   editable: props.editable,
   extensions: buildExtensions({
     ydoc, provider,
-    user: { name: props.userName, color },
+    user: { name: props.userName, color, avatar: props.userAvatar ?? null },
     ctx: { pickFile, upload: (f) => uploadAt(f), pickDatabase },
     uploadAt,
     uploadMany,

@@ -14,7 +14,8 @@ given Decoder[Role]          = Decoder.decodeString.emap(s => Role.parse(s).toRi
 given Encoder[PrincipalType] = Encoder.encodeString.contramap(_.asString)
 given Decoder[PrincipalType] = Decoder.decodeString.emap(s => PrincipalType.parse(s).toRight(s"invalid principal type: $s"))
 
-final case class MeDto(id: UUID, name: String, email: Option[String], groups: List[String], isAdmin: Boolean) derives Encoder.AsObject
+/** avatarUrl: アイコンがあれば、その URL（更新日時の版付き） */
+final case class MeDto(id: UUID, name: String, email: Option[String], groups: List[String], isAdmin: Boolean, avatarUrl: Option[String]) derives Encoder.AsObject
 
 final case class WorkspaceDto(id: UUID, name: String, role: Role, favorite: Boolean = false) derives Encoder.AsObject
 final case class FavoriteDto(favorite: Boolean) derives Encoder.AsObject, Decoder

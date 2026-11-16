@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkspaceStore } from '../stores/workspace'
-import { api, api5, STATUS_LABEL, type PageStatus, searchPages, searchWorkspaces, type SearchResult, type WorkspaceHit } from '../api'
+import { api5, STATUS_LABEL, type PageStatus, searchPages, searchWorkspaces, type SearchResult, type WorkspaceHit } from '../api'
 import PageTree from '../components/PageTree.vue'
 import ShareDialog from '../components/ShareDialog.vue'
 import DuplicateDialog from '../components/DuplicateDialog.vue'
@@ -24,8 +24,7 @@ import GuestHtmlDialog from '../components/GuestHtmlDialog.vue'
 import { alertError, confirmDialog, promptDialog } from '../ui/dialog'
 import { isMac } from '../util/text'
 import { useDebouncedSearch, useEventListener, useSideMenu, useStoredRef } from '../ui/composables'
-import ThemeToggle from '../ui/ThemeToggle.vue'
-import IntegrationConnect from '../components/IntegrationConnect.vue'
+import AppHeader from '../components/AppHeader.vue'
 const importPage = (wid: string, parent: string | null) => import('../ui/importer').then((m) => m.importPage(wid, parent))
 
 const props = defineProps<{ wid: string }>()
@@ -202,22 +201,12 @@ async function onCommand(e: Event) {
 useEventListener(window, 'skiwi:command', onCommand)
 const paletteKey = isMac ? '⌘K' : 'Ctrl+K'
 const openPalette = () => window.dispatchEvent(new Event('skiwi:palette'))
-
-async function logout() {
-  await api.logout()
-  location.href = '/'
-}
 </script>
 
 <template>
+  <div class="shell">
+  <AppHeader :side-open="sideOpen" :shortcut="shortcut" @open-side="sideOpen = true" />
   <div class="layout">
-    <button
-      v-if="!sideOpen"
-      class="side-open"
-      :title="`サイドメニューを開く（${shortcut}）`"
-      data-testid="side-open"
-      @click="sideOpen = true"
-    >☰</button>
     <div v-if="narrow && sideOpen" class="side-backdrop" @click="sideOpen = false" />
     <aside class="side" :class="{ closed: !sideOpen, overlay: narrow }" :inert="!sideOpen" data-testid="side">
       <div class="side-head">
@@ -360,22 +349,8 @@ async function logout() {
         <nav v-else class="tree"><LabelPanel :wid="props.wid" /></nav>
       </template>
       <BulkBar :wid="props.wid" />
-      <div class="side-foot">
-        <button v-if="store.current?.role === 'edit'" class="new-page" data-testid="new-page" @click="newRoot">＋ 新規ページ</button>
-        <div class="me">
-          <span class="user" :title="store.me?.email ? `${store.me?.name}（${store.me.email}）` : store.me?.name">👤 {{ store.me?.name }}</span>
-          <ThemeToggle />
-          <button class="logout" @click="logout">ログアウト</button>
-        </div>
-        <div class="links">
-          <router-link to="/settings/tokens">APIトークン</router-link>
-          <router-link to="/help" data-testid="open-help">📖 使い方</router-link>
-          <router-link to="/settings/api">API の説明書</router-link>
-          <router-link v-if="store.me?.isAdmin" to="/admin/audit">監査ログ</router-link>
-          <router-link v-if="store.me?.isAdmin" to="/admin/shares">公開中のページ</router-link>
-          <router-link v-if="store.me?.isAdmin" to="/admin/integrations" data-testid="admin-integrations">外部連携</router-link>
-          <IntegrationConnect />
-        </div>
+      <div v-if="store.current?.role === 'edit'" class="side-foot">
+        <button class="new-page" data-testid="new-page" @click="newRoot">＋ 新規ページ</button>
       </div>
       <GuestHtmlDialog v-if="wsGuestHtmlOpen && store.current" kind="workspace" :id="store.current.id" :title="store.current.name" @close="wsGuestHtmlOpen = false" />
       <CssDialog v-if="wsCssOpen && store.current" kind="workspace" :id="store.current.id" :title="store.current.name" @close="wsCssOpen = false" />
@@ -393,10 +368,12 @@ async function logout() {
       <p v-if="!$route.params.pid" class="muted" style="padding: 3rem">左のツリーからページを選択してください。</p>
     </section>
   </div>
+  </div>
 </template>
 
 <style scoped>
-.layout { display: flex; height: 100%; position: relative; overflow: hidden; }
+.shell { display: flex; flex-direction: column; height: 100%; }
+.layout { display: flex; flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .side { width: 290px; flex: none; transition: margin-left .18s ease; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
 .side-head { padding: .6rem .6rem .3rem; display: flex; gap: .3rem; align-items: center; }
 .side-tools { display: flex; align-items: center; gap: 2px; padding: 0 .5rem .5rem; flex-wrap: wrap; }
@@ -407,17 +384,10 @@ async function logout() {
 .fav { color: var(--muted); }
 .fav.on { color: #eab308; }
 .side-close { border: none; color: var(--muted); padding: 0 6px; font-size: 1rem; }
-.side-open { position: absolute; z-index: 30; top: .9rem; left: .7rem; width: 30px; height: 28px; padding: 0; color: var(--muted); background: var(--bg); }
-.side-open:hover { color: var(--fg); }
 .side-head select { flex: 1; min-width: 0; padding: .35rem .4rem; font: inherit; font-weight: 600; }
-.links { width: 100%; display: flex; flex-wrap: wrap; gap: .2rem .8rem; font-size: .78rem; }
-.links a { color: var(--muted); }
 .tree { flex: 1; overflow: auto; padding: 0 .3rem; }
 .side-foot { padding: .6rem; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: .45rem; }
 .new-page { width: 100%; }
-.me { display: flex; align-items: center; gap: .4rem; }
-.user { flex: 1; min-width: 0; font-size: .85em; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.logout { font-size: .8rem; padding: 1px 8px; }
 .main { flex: 1; overflow: auto; }
 .search { padding: 0 .6rem .5rem; }
 .search-row input { width: 100%; padding: .3rem .6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
@@ -468,8 +438,7 @@ async function logout() {
 .side.overlay.closed { margin-left: max(-300px, -86vw); box-shadow: none; }
 .side-backdrop { position: absolute; inset: 0; z-index: 55; background: rgba(0,0,0,.35); }
 @media (max-width: 768px) {
-  .side-open { top: .6rem; left: .5rem; }
   .side-foot { font-size: .9rem; }
 }
-@media print { .side, .side-open { display: none !important; } .main { overflow: visible; } .layout { height: auto; overflow: visible; } }
+@media print { .side, .shell > :deep(.app-header) { display: none !important; } .main { overflow: visible; } .shell, .layout { height: auto; overflow: visible; } }
 </style>

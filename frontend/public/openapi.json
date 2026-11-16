@@ -219,6 +219,10 @@
       "type": "string",
       "nullable": true
      },
+     "authorAvatarUrl": {
+      "type": "string",
+      "nullable": true
+     },
      "createdAt": {
       "type": "string",
       "format": "date-time"
@@ -551,8 +555,161 @@
           },
           "isAdmin": {
            "type": "boolean"
+          },
+          "avatarUrl": {
+           "type": "string",
+           "nullable": true,
+           "description": "アイコンの URL（設定していなければ null）"
           }
          }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/me/avatar": {
+   "put": {
+    "tags": [
+     "ユーザー"
+    ],
+    "summary": "自分のアイコンを設定する",
+    "parameters": [],
+    "description": "本文は画像そのもの（Content-Type は image/png・image/jpeg・image/webp）。200KB まで。画面では正方形に切り抜いて 256px に縮めてから送る。",
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "avatarUrl": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "image/png": {
+       "schema": {
+        "type": "string",
+        "format": "binary"
+       }
+      },
+      "image/jpeg": {
+       "schema": {
+        "type": "string",
+        "format": "binary"
+       }
+      },
+      "image/webp": {
+       "schema": {
+        "type": "string",
+        "format": "binary"
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "ユーザー"
+    ],
+    "summary": "自分のアイコンを外す",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "avatarUrl": {
+           "type": "string",
+           "nullable": true
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/users/{userId}/avatar": {
+   "get": {
+    "tags": [
+     "ユーザー"
+    ],
+    "summary": "ユーザーのアイコンの画像",
+    "parameters": [
+     {
+      "name": "userId",
+      "in": "path",
+      "required": true,
+      "description": "ユーザーID",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "description": "アイコンがなければ 404。`?v=`（版）付きの URL は長くキャッシュしてよい。",
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "image/png": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       },
+       "image/jpeg": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       },
+       "image/webp": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
         }
        }
       }

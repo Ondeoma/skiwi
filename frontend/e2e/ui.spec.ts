@@ -71,6 +71,41 @@ test('同じページを開いている人が表示される', async ({ browser 
   await a.context().close()
 })
 
+// 1x1 の PNG（ブラウザで正方形に縮めてから送る）
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+
+test('アイコン: 設定するとヘッダ・同じページを開いている人・コメントに出て、外すと名前の1文字に戻る', async ({ browser }) => {
+  const a = await open(browser, owner, pageUrl(pageA.id))
+  await expect(a.getByTestId('me-avatar').locator('img')).toHaveCount(0)
+  await a.getByTestId('user-menu').click()
+  await a.getByTestId('avatar-open').click()
+  await a.getByTestId('avatar-file').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: PNG })
+  await expect(a.getByTestId('avatar-preview').locator('img')).toHaveAttribute('src', /^blob:/)
+  await a.getByTestId('avatar-save').click()
+  await expect(a.getByTestId('avatar-dialog')).toHaveCount(0)
+  await expect(a.getByTestId('me-avatar').locator('img')).toHaveAttribute('src', new RegExp(`^/api/users/${owner.id}/avatar\\?v=\\d+$`))
+  // 保存したのはブラウザで縮めた WebP か JPEG
+  const me = await api(owner, 'GET', '/api/me')
+  const res = await a.request.get(me.avatarUrl)
+  expect(res.headers()['content-type']).toMatch(/^image\/(webp|jpeg)$/)
+
+  // 後から開いた人には、同じページを開いている人としてアイコンが出る（読み込み直した a の状態が届く）
+  await a.reload()
+  await api(owner, 'POST', `/api/pages/${pageA.id}/comments`, { body: 'アイコン付きのコメント' })
+  const b = await open(browser, member, pageUrl(pageA.id))
+  await expect(b.getByTestId('presence').locator('img')).toHaveAttribute('src', me.avatarUrl)
+  await b.getByTestId('comments-toggle').click()
+  await expect(b.locator('.c', { hasText: 'アイコン付きのコメント' }).locator('.user-avatar img')).toHaveAttribute('src', me.avatarUrl)
+  await b.context().close()
+
+  await a.getByTestId('user-menu').click()
+  await a.getByTestId('avatar-open').click()
+  await a.getByTestId('avatar-remove').click()
+  await expect(a.getByTestId('me-avatar').locator('img')).toHaveCount(0)
+  await expect(a.getByTestId('me-avatar')).toHaveText('テ')
+  await a.context().close()
+})
+
 test('ToDo の担当者と期限が「自分のToDo」に出る', async ({ browser }) => {
   const a = await open(browser, owner, `${pageUrl(pageB.id)}?edit=1`)
   const today = new Date()

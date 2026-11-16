@@ -104,7 +104,7 @@ object Main extends IOApp.Simple:
                     .withHttpWebSocketApp { wsb =>
                       val rest =
                         health <+> new AuthRoutes(oidc, store, sess, audit, cfg.api.scimManagesGroups).routes <+> api.routes <+> opsR.routes <+>
-                          search.routes <+> new ContentEditRoutes(store, docs, ops, sess, audit, collab.injectUpdate).routes <+> attach.routes <+> shareR.routes <+> trash.routes <+> extra.routes <+> commentR.routes <+> cssR.routes <+> copyR.routes <+> bulkR.routes <+> lockR.routes <+> autoR.routes <+> inboundR.routes <+> formR.routes <+> unfurlR.routes <+> integR.routes <+> oauthR.routes <+> backupR.routes <+> hookR.routes <+> dbR.routes <+> collab.routes(wsb) <+> scim.fold(HttpRoutes.empty[IO])(_.routes)
+                          search.routes <+> new ContentEditRoutes(store, docs, ops, sess, audit, collab.injectUpdate).routes <+> attach.routes <+> shareR.routes <+> trash.routes <+> extra.routes <+> commentR.routes <+> cssR.routes <+> copyR.routes <+> bulkR.routes <+> lockR.routes <+> autoR.routes <+> inboundR.routes <+> formR.routes <+> unfurlR.routes <+> integR.routes <+> new AvatarRoutes(ops, sess).routes <+> oauthR.routes <+> backupR.routes <+> hookR.routes <+> dbR.routes <+> collab.routes(wsb) <+> scim.fold(HttpRoutes.empty[IO])(_.routes)
                       // MCP（/mcp）。ツールは REST API を同じトークンで内部から呼ぶ
                       val backend = rest <+> new McpRoutes(rest, sess, cfg.publicUrl).routes
                       val all = cfg.staticDir.fold(backend)(d => backend <+> spa(d, shareR))

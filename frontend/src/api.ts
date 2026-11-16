@@ -1,4 +1,5 @@
-export interface Me { id: string; name: string; email?: string; groups: string[]; isAdmin: boolean }
+/** avatarUrl: アイコンを設定していれば、その URL */
+export interface Me { id: string; name: string; email?: string; groups: string[]; isAdmin: boolean; avatarUrl?: string | null }
 export interface Workspace { id: string; name: string; role: 'view' | 'edit'; favorite: boolean }
 export interface Page {
   id: string; workspaceId: string; parentId: string | null; position: string
@@ -34,14 +35,14 @@ async function errorOf(res: Response): Promise<ApiError> {
 interface RequestOpts { redirectOn401?: boolean }
 const NO_REDIRECT: RequestOpts = { redirectOn401: false }
 
-/** body が FormData ならそのまま（multipart）、それ以外は JSON で送る */
+/** body が FormData ならそのまま（multipart）、Blob ならその種類で中身だけ、それ以外は JSON で送る */
 async function request<T>(method: string, url: string, body?: unknown, opts: RequestOpts = {}): Promise<T> {
-  const form = body instanceof FormData
+  const raw = body instanceof FormData || body instanceof Blob
   const res = await fetch(url, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+    headers: body === undefined || body instanceof FormData ? undefined : { 'Content-Type': body instanceof Blob ? body.type : 'application/json' },
+    body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
   })
   if (res.status === 401 && opts.redirectOn401 !== false) {
     // 未ログイン: IdPへ
@@ -58,6 +59,8 @@ export const okOrNull = <T>(p: Promise<T>): Promise<T | null> =>
 
 export const api = {
   me: () => request<Me>('GET', '/api/me'),
+  setAvatar: (image: Blob) => request<{ avatarUrl: string | null }>('PUT', '/api/me/avatar', image),
+  deleteAvatar: () => request<{ avatarUrl: string | null }>('DELETE', '/api/me/avatar'),
   workspaces: () => request<Workspace[]>('GET', '/api/workspaces'),
   createWorkspace: (name: string) => request<Workspace>('POST', '/api/workspaces', { name }),
   setFavorite: (id: string, favorite: boolean) => request<{ favorite: boolean }>('PUT', `/api/workspaces/${id}/favorite`, { favorite }),
@@ -259,7 +262,7 @@ export function formatDate(iso: string): string {
 // ---------------------------------------------------------------- コメント・閲覧できる人
 export interface Comment {
   id: string; threadId: string | null; anchor: string | null; quote: string | null; body: string
-  authorId: string | null; authorName: string | null; createdAt: string; updatedAt: string
+  authorId: string | null; authorName: string | null; authorAvatarUrl?: string | null; createdAt: string; updatedAt: string
   resolvedAt: string | null; resolvedBy: string | null; deleted: boolean; canEdit: boolean; canDelete: boolean
 }
 export interface AudienceEntry { userId: string; name: string; email: string | null; role: Role; reason: string }

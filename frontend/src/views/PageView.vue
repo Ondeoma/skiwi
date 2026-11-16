@@ -22,6 +22,7 @@ import { dbApi, lockApi, type PageLockState } from '../api'
 import LockDialog from '../components/LockDialog.vue'
 import { defaultDatabase } from '../database/db'
 import { useEventListener, isTyping } from '../ui/composables'
+import type { Person } from '../ui/avatar'
 const DatabaseView = defineAsyncComponent(() => import('../database/DatabaseView.vue'))
 const RowProps = defineAsyncComponent(() => import('../database/RowProps.vue'))
 
@@ -133,7 +134,7 @@ useEventListener(window, 'skiwi:css-changed', loadCss)
 function onCssClosed() { cssOpen.value = false; cssPreview.value = null }
 
 /** このページを開いているほかの人 */
-const people = ref<{ name: string; color: string; editing: boolean }[]>([])
+const people = ref<Person[]>([])
 
 // --- 所有者・状態 --------------------------------------------------------------
 async function updateMeta(body: { ownerId?: string | null; status?: PageStatus | null }) {
@@ -346,7 +347,7 @@ watch(toolbarEl, (el, _old, onCleanup) => {
       <span class="mode-label">{{ editing ? '編集中' : '' }}</span>
       <span v-if="people.length" class="people" data-testid="presence" :title="people.map((p) => `${p.name}${p.editing ? '（編集中）' : '（閲覧中）'}`).join('\n')">
         <span v-for="p in people.slice(0, 5)" :key="p.name" class="avatar" :class="{ editing: p.editing }" :style="{ background: p.color }">
-          {{ p.name.slice(0, 1) }}<span v-if="p.editing" class="pen">✎</span>
+          <img v-if="p.avatar" :src="p.avatar" alt="" /><template v-else>{{ p.name.slice(0, 1) }}</template><span v-if="p.editing" class="pen">✎</span>
         </span>
         <span v-if="people.length > 5" class="avatar more">+{{ people.length - 5 }}</span>
       </span>
@@ -465,6 +466,7 @@ watch(toolbarEl, (el, _old, onCleanup) => {
       :page-id="page.id"
       :editable="editing"
       :user-name="store.me?.name ?? 'anonymous'"
+      :user-avatar="store.me?.avatarUrl"
       @role="onRole"
       @presence="(p) => (people = p)"
       @comment="onSelectionComment"
@@ -552,6 +554,7 @@ watch(toolbarEl, (el, _old, onCleanup) => {
 .people { display: inline-flex; margin-right: .4rem; }
 .avatar { position: relative; width: 24px; height: 24px; border-radius: 50%; color: #fff; font-size: .72rem; font-weight: 700; display: inline-grid; place-items: center; margin-left: -6px; border: 2px solid var(--bg); }
 .avatar:first-child { margin-left: 0; }
+.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .avatar.more { background: var(--hover); color: var(--muted); }
 .avatar .pen { position: absolute; right: -4px; bottom: -4px; font-size: .6rem; background: var(--bg); color: var(--fg); border-radius: 50%; width: 12px; height: 12px; line-height: 12px; text-align: center; }
 .lock-banner { margin-top: .5rem; font-size: .82rem; padding: .35rem .6rem; border-radius: 6px; background: rgba(234,179,8,.14); border: 1px solid rgba(234,179,8,.4); }

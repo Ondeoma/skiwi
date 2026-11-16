@@ -86,7 +86,8 @@ final class ApiRoutes(
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     case req @ GET -> Root / "api" / "me" =>
-      authed(req)(s => Ok(MeDto(s.user.id, s.user.name, s.user.email, s.groups.map(_.name), s.isAdmin)))
+      authed(req)(s => ops.avatarVersion(s.user.id).flatMap(v =>
+        Ok(MeDto(s.user.id, s.user.name, s.user.email, s.groups.map(_.name), s.isAdmin, v.map(AvatarRoutes.url(s.user.id, _))))))
 
     // ------------------------------------------------------------ directory（共有ダイアログ用）
     case req @ GET -> Root / "api" / "directory" =>

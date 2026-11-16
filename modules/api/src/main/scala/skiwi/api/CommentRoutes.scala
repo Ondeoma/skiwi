@@ -15,7 +15,8 @@ import java.util.UUID
 final case class CommentDto(
     id: UUID, threadId: Option[UUID], anchor: Option[String], quote: Option[String], body: String,
     authorId: Option[UUID], authorName: Option[String], createdAt: Instant, updatedAt: Instant,
-    resolvedAt: Option[Instant], resolvedBy: Option[String], deleted: Boolean, canEdit: Boolean, canDelete: Boolean
+    resolvedAt: Option[Instant], resolvedBy: Option[String], deleted: Boolean, canEdit: Boolean, canDelete: Boolean,
+    authorAvatarUrl: Option[String]
 ) derives Encoder.AsObject
 final case class NewCommentReq(body: String, threadId: Option[UUID], anchor: Option[String], quote: Option[String]) derives Decoder
 final case class EditCommentReq(body: String) derives Decoder
@@ -38,18 +39,24 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
       case Some(c) => withPage(req, c.pageId, Role.View)((s, p, r) => f(s, c, p, r))
     }
 
-  private def dto(s: AuthSession, r: Role)(c: Comment) =
+  private def dto(s: AuthSession, r: Role, avatars: Map[UUID, Instant])(c: Comment) =
     val mine = c.authorId.contains(s.user.id)
     CommentDto(c.id, c.threadId, c.anchor, c.quote, if c.deletedAt.isDefined then "" else c.body, c.authorId, c.authorName,
       c.createdAt, c.updatedAt, c.resolvedAt, c.resolvedBy, c.deletedAt.isDefined,
-      canEdit = mine && c.deletedAt.isEmpty, canDelete = (mine || r == Role.Edit) && c.deletedAt.isEmpty)
+      canEdit = mine && c.deletedAt.isEmpty, canDelete = (mine || r == Role.Edit) && c.deletedAt.isEmpty,
+      authorAvatarUrl = c.authorId.flatMap(a => avatars.get(a).map(AvatarRoutes.url(a, _))))
+
+  /** 作者のアイコンの版を読んでから DTO にする */
+  private def dtos(s: AuthSession, r: Role)(cs: List[Comment]): IO[List[CommentDto]] =
+    ops.avatarVersions(cs.flatMap(_.authorId).distinct).map(av => cs.map(dto(s, r, av)))
+  private def dto1(s: AuthSession, r: Role)(c: Comment): IO[CommentDto] = dtos(s, r)(List(c)).map(_.head)
 
   private val validAnchor = """^(text|wb):[0-9A-Za-z-]{1,64}$""".r
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "comments" =>
-      withPage(req, id, Role.View)((s, _, r) => comments.list(id).flatMap(cs => Ok(cs.map(dto(s, r)))))
+      withPage(req, id, Role.View)((s, _, r) => comments.list(id).flatMap(dtos(s, r)).flatMap(Ok(_)))
 
     case req @ POST -> Root / "api" / "pages" / UUIDVar(id) / "comments" =>
       withPage(req, id, Role.View) { (s, _, r) =>
@@ -70,7 +77,8 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
                   others   <- (root.fold(IO.pure(Set.empty[UUID]))(comments.participants), ops.watchers(id)).mapN(_ ++ _)
                   _        <- mentions.notify("comment", id, others -- mentioned - s.user.id, s.user.name, excerpt, Some(c.root))
                   _        <- webhooks.traverse_(_.emit("comment.created", id, s.user.name, Json.obj("excerpt" -> excerpt.asJson, "threadId" -> c.root.toString.asJson)))
-                  resp     <- Created(dto(s, r)(c))
+                  d        <- dto1(s, r)(c)
+                  resp     <- Created(d)
                 yield resp
             }
         }
@@ -85,7 +93,7 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
             // 編集で新しく加わったメンションだけ通知する
             val added = LinkExtract.commentMentions(b.body) -- LinkExtract.commentMentions(c.body) - s.user.id
             comments.edit(id, b.body.trim) *> mentions.notify("mention", c.pageId, added, s.user.name, Mentions.excerpt(b.body), Some(c.root)) *>
-              comments.get(id).flatMap(n => Ok(dto(s, r)(n.get)))
+              comments.get(id).flatMap(n => dto1(s, r)(n.get)).flatMap(Ok(_))
         }
       }
 
@@ -101,7 +109,7 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
         body[ResolveReq](req) {
           case _ if !c.isRoot => err(Status.BadRequest, "only a thread can be resolved")
           case _ if !(c.authorId.contains(s.user.id) || r == Role.Edit) => err(Status.Forbidden, "insufficient permission")
-          case b => comments.resolve(id, Option.when(b.resolved)(s.user.id)) *> comments.get(id).flatMap(n => Ok(dto(s, r)(n.get)))
+          case b => comments.resolve(id, Option.when(b.resolved)(s.user.id)) *> comments.get(id).flatMap(n => dto1(s, r)(n.get)).flatMap(Ok(_))
         }
       }
 
