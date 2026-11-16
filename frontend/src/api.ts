@@ -210,7 +210,7 @@ export const guestApi = {
   search: (token: string, q: string) =>
     guestGet<{ page: GuestPage; snippet: string | null; titleHit: boolean }[]>(`/api/public/${encodeURIComponent(token)}/search?q=${encodeURIComponent(q)}`),
   page: (token: string, pageId: string) =>
-    guestGet<{ page: GuestPage; content: unknown; styles?: string[]; top?: string[]; bottom?: string[] }>(`/api/public/${encodeURIComponent(token)}/pages/${encodeURIComponent(pageId)}`),
+    guestGet<{ page: GuestPage; content: unknown; styles?: string[]; top?: string[]; bottom?: string[]; fullWidth?: boolean }>(`/api/public/${encodeURIComponent(token)}/pages/${encodeURIComponent(pageId)}`),
   /** 正しければ true。回数超過などは例外 */
   unlock: async (token: string, password: string): Promise<boolean> => {
     try {

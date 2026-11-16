@@ -94,5 +94,12 @@ test('ゲスト向け: ヘッダーを出さず、本文の上下にHTMLを隔�
   await expect(guest.frameLocator('[data-testid=guest-html] >> nth=1').locator('#footer')).toContainText('© レイアウト確認')
   // 高さが中身に合わせて付く
   await expect.poll(() => guest.getByTestId('guest-html').first().evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(20)
+  // ページを全幅にすると、ゲスト向けの表示も全幅になる
+  const width = () => guest.getByTestId('guest-page').evaluate((el) => el.getBoundingClientRect().width)
+  expect(await width()).toBeLessThanOrEqual(860)
+  await api(u, 'PATCH', `/api/pages/${pg.id}`, { fullWidth: true })
+  await guest.reload()
+  await expect(guest.getByTestId('guest-title')).toHaveText('段組みのページ')
+  await expect.poll(width).toBeGreaterThan(1000)
   await ctx.close()
 })

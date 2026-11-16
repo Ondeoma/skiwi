@@ -71,7 +71,9 @@ final case class ReleaseNoteReq(note: Option[String]) derives Decoder
 /** ゲスト向けの更新履歴 */
 final case class GuestReleaseDto(publishedAt: Instant, note: String) derives Encoder.AsObject
 /** top / bottom: 本文の上下に入れるHTML（上は外側から、下は内側から） */
-final case class GuestContentDto(page: GuestPageDto, content: Json, styles: List[String] = Nil, top: List[String] = Nil, bottom: List[String] = Nil) derives Encoder.AsObject
+/** fullWidth: 全幅で表示するページか（公開版を固定していても、今のページの設定に従う） */
+final case class GuestContentDto(page: GuestPageDto, content: Json, styles: List[String] = Nil, top: List[String] = Nil, bottom: List[String] = Nil,
+    fullWidth: Boolean = false) derives Encoder.AsObject
 final case class GuestSearchHitDto(page: GuestPageDto, snippet: Option[String], titleHit: Boolean) derives Encoder.AsObject
 /** 公開ページのHTMLに埋め込む情報（タイトル・OGP・検索エンジン） */
 final case class GuestHead(title: String, description: Option[String], image: Option[String], url: String, indexable: Boolean)
@@ -438,9 +440,9 @@ final class ShareRoutes(
         v.find(pageKey) match
           case None => err(Status.NotFound, "not found")
           case Some(p) =>
-            (v.content(p.id), store.cssLayers(p.id), store.guestHtmlLayers(p.id)).flatMapN { (content, css, html) =>
+            (v.content(p.id), store.cssLayers(p.id), store.guestHtmlLayers(p.id), store.isFullWidth(p.id)).flatMapN { (content, css, html, wide) =>
               Ok(GuestContentDto(guest(p), forGuest(key, v.pages.map(_.id).toSet)(content), css.map(_.css),
-                top = html.flatMap(_.top), bottom = html.reverse.flatMap(_.bottom)))
+                top = html.flatMap(_.top), bottom = html.reverse.flatMap(_.bottom), fullWidth = wide))
             }
       }
 

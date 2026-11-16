@@ -23,6 +23,8 @@ const loading = ref(true)
 const editor = shallowRef<Editor | null>(null)
 // カスタムCSS（添付ファイルの url() は公開リンク経由に読み替える）
 const styles = ref<string[]>([])
+/** 全幅で表示するページか（ページの「全幅」の設定） */
+const fullWidth = ref(false)
 // 公開リンクの設定: ヘッダーを出さない / 本文の上下のHTML
 const hideHeader = ref(false)
 const topHtml = ref<string[]>([])
@@ -174,6 +176,7 @@ watch([pageId, rootId], async ([id]) => {
     const r = await guestApi.page(props.token, id)
     current.value = r.page
     styles.value = r.styles ?? []
+    fullWidth.value = !!r.fullWidth
     topHtml.value = r.top ?? []
     bottomHtml.value = r.bottom ?? []
     editor.value?.commands.setContent((r.content as Record<string, unknown> | null) ?? '')
@@ -232,7 +235,7 @@ function onAreaClick(e: MouseEvent) {
           </router-link>
         </div>
       </nav>
-      <main class="page skiwi-page-css">
+      <main class="page skiwi-page-css" :class="{ 'full-width': fullWidth }" data-testid="guest-page">
         <p v-if="error" class="error" data-testid="guest-error">{{ error }}</p>
         <form v-else-if="needPassword" class="pw" data-testid="guest-password" @submit.prevent="unlock">
           <h1>🔒 パスワードが必要です</h1>

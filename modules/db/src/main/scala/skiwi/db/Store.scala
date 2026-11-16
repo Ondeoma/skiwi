@@ -319,6 +319,8 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
   /** 全幅で表示するページ */
   def fullWidthIn(wsId: UUID): IO[Set[UUID]] =
     tx(sql"select id from page where workspace_id = $wsId and full_width and deleted_at is null".query[UUID].to[List].map(_.toSet))
+  def isFullWidth(id: UUID): IO[Boolean] =
+    tx(sql"select full_width from page where id = $id".query[Boolean].option.map(_.getOrElse(false)))
   def setFullWidth(id: UUID, on: Boolean): IO[Unit] = tx(sql"update page set full_width = $on where id = $id".update.run.void)
 
   /** ページのタイトル（権限の確認なし。自動化ルールなどサーバー内部用） */
