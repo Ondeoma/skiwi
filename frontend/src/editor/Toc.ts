@@ -1,7 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import TocView from './TocView.vue'
+import { TocView } from './TocView'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -50,7 +49,7 @@ export const Toc = Node.create({
   parseHTML() { return [{ tag: 'nav[data-toc]' }] },
   renderHTML({ HTMLAttributes }) { return ['nav', mergeAttributes(HTMLAttributes, { 'data-toc': '' })] },
   renderText() { return '' }, // 検索用の本文には含めない
-  addNodeView() { return VueNodeViewRenderer(TocView) },
+  addNodeView() { return TocView },
   addCommands() {
     return { insertToc: () => ({ commands }) => commands.insertContent({ type: this.name }) }
   },

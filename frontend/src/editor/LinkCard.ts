@@ -1,7 +1,6 @@
 import { Extension, Node, mergeAttributes } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import LinkCardView from './LinkCardView.vue'
+import { LinkCardView } from './LinkCardView'
 import { parsePageUrl } from './pageLinks'
 import { safeLinkUrl } from '../util/url'
 
@@ -26,7 +25,7 @@ export const LinkCard = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, { 'data-link-card': '' }), ['a', { href: safeLinkUrl(node.attrs.url), target: '_blank', rel: 'noopener' }, node.attrs.title || node.attrs.url]]
   },
   renderText({ node }) { return `${node.attrs.title ?? ''} ${node.attrs.url}`.trim() },
-  addNodeView() { return VueNodeViewRenderer(LinkCardView) },
+  addNodeView() { return LinkCardView },
   addCommands() {
     return {
       insertLinkCard: (url) => ({ commands }) => /^https?:\/\//i.test(url.trim()) && !!safeLinkUrl(url) && commands.insertContent({ type: this.name, attrs: { url: url.trim() } }),

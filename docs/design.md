@@ -12,7 +12,7 @@
 | 権限 | ページ単位の閲覧・編集の2権限。IdPのグループと連携 |
 | 機能 | 版履歴、全文検索、メール通知、監査ログ、REST API |
 | 基盤 | 3ノード冗長。Patroni（PostgreSQL）と S3 互換ストレージ（添付ファイル）。Redis等は使わない |
-| 実装 | バックエンドはScala（Cats Effect、http4s、doobie、sbt）。フロントはTypeScript + Vue 3。エディタとCRDTはTiptap + Yjs |
+| 実装 | バックエンドはScala（Cats Effect、http4s、doobie、sbt）。フロントは Scala.js + Scalactive（兄弟のサービスと同じ作り）。エディタとCRDTはTiptap + Yjs（TypeScript） |
 
 ## 2. 全体アーキテクチャ
 
@@ -199,8 +199,8 @@ skiwi
 ├─ app         起動、設定
 ├─ shared      バックエンドと画面(Scala.js)で共有するAPIの型
 └─ web         Scalactive(Scala.js)で書いた画面
-frontend/      Vue 3 + TypeScript + Vite（Pinia、Vue Router）
-               エディタは Tiptap(@tiptap/vue-3) + Yjs + y-websocket互換プロバイダ
+frontend/      Vite の入口。JS のまま残す部分（TypeScript）を window.skiwiLoad で Scala.js の画面へ渡す
+               エディタは Tiptap（素の DOM のノードビュー） + Yjs + y-websocket互換プロバイダ
                ビルド成果物は skiwi-app が静的配信、または HAProxy 配信
 ```
 

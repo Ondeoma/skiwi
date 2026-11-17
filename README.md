@@ -17,8 +17,8 @@ skiwi は、チーム向けの Wiki です（ブロックエディタ、同時�
 | `modules/app` | 起動・設定（環境変数）、ビルド済みフロントの配信 |
 | `deploy/` | Dockerfile・Patroni/HAProxy設定（試験環境）と、VM構築用の設定ひな形（`deploy/vm/`） |
 | `modules/shared` | バックエンドとフロントエンド(Scala.js)で共有する API の型（circe）。日時は `Timestamp`（JVM では `Instant`、JS では ISO 文字列） |
-| `modules/web` | Scalactive(Scala.js)で書いた画面（`.st`）。Vue から移行中（下の「フロントエンド」） |
-| `frontend/` | Vue 3 + TypeScript + Tiptap + Yjs（ページツリー、エディタ） |
+| `modules/web` | 画面（Scalactive・Scala.js の `.st`）。ルートは `App.st`（`/w/...` は `WorkspaceView` が描く）、共有の状態は `Store`、API は `Api` と画面ごとの `XxxApi` |
+| `frontend/` | Vite の入口と、JS のまま残す部分（エディタ: Tiptap + Yjs・ホワイトボード・draw.io・Mermaid と、JS のライブラリを呼ぶ小さな部分: marked・mammoth・fflate など）。Scala.js からは `window.skiwiLoad(名前)`（`src/bridge/`）で読み込む |
 | `proto/` | 同時編集 + 日本語IME 検証用プロトタイプ（検証済み） |
 
 ## 権限モデル
@@ -447,7 +447,7 @@ npm run dev        # :5173 （/api /auth /ws を :8080 へプロキシ）
 npm run build      # dist/ を生成。STATIC_DIR=$PWD/frontend/dist を指定するとアプリが配信（SPA対応）
 # 依存の追加は `npm install --force`（katex と数式拡張のバージョン指定の食い違いのため）
 # dev/build の前に Excalidraw のフォントを public/excalidraw/ にコピーする（CDNから読み込ませないため）
-# 画面ごとに分割して読み込む（最初の読み込みは約120KB。エディタ・ホワイトボードはページを開いたときに読み込む）
+# エディタ・ホワイトボードなどは使うときに読み込む（src/bridge/ の各ファイル。Scala.js 側は skiwi.web.JsModule）
 # dev/build は sbt で Scala.js（modules/web）もビルドする（frontend/vite-scalajs.ts。sbt と JDK が必要）
 ```
 

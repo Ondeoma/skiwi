@@ -1,20 +1,26 @@
 import type { Editor } from '@tiptap/core'
-import { readonly, ref, type Ref } from 'vue'
 
 /** エディタごとに1つ（ノードビューの数だけリスナーを増やさない） */
-const shared = new WeakMap<Editor, Readonly<Ref<boolean>>>()
+const shared = new WeakMap<Editor, Set<() => void>>()
 
 /**
- * ノードビュー内で editor.isEditable をリアクティブに扱う（表示/編集モードの切替に追従する）。
+ * 表示/編集モードの切替（editor.isEditable の変化）で f を呼ぶ。戻り値で解除する。
  * setEditable は 'update' を出すので、それだけを見る。リスナーはエディタと一緒に破棄される。
  */
-export function useEditable(editor: Editor): Readonly<Ref<boolean>> {
-  let r = shared.get(editor)
-  if (!r) {
-    const editable = ref(editor.isEditable)
-    editor.on('update', () => { editable.value = editor.isEditable })
-    r = readonly(editable)
-    shared.set(editor, r)
+export function onEditableChange(editor: Editor, f: () => void): () => void {
+  let fs = shared.get(editor)
+  if (!fs) {
+    const set = new Set<() => void>()
+    fs = set
+    shared.set(editor, set)
+    let last = editor.isEditable
+    editor.on('update', () => {
+      if (editor.isEditable === last) return
+      last = editor.isEditable
+      set.forEach((g) => g())
+    })
   }
-  return r
+  const s = fs
+  s.add(f)
+  return () => { s.delete(f) }
 }

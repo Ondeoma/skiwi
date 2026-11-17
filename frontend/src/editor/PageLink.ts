@@ -1,7 +1,6 @@
 import { InputRule, Node, mergeAttributes } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import PageLinkView from './PageLinkView.vue'
+import { PageLinkView } from './PageLinkView'
 import { pageHref, parsePageUrl } from './pageLinks'
 
 declare module '@tiptap/core' {
@@ -40,7 +39,7 @@ export const PageLink = Node.create({
   },
   renderText({ node }) { return node.attrs.title || '無題' },
 
-  addNodeView() { return VueNodeViewRenderer(PageLinkView) },
+  addNodeView() { return PageLinkView },
 
   addCommands() {
     return {

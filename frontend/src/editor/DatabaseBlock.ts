@@ -1,6 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import DatabaseBlockView from './DatabaseBlockView.vue'
+import { DatabaseBlockView } from './DatabaseBlockView'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -23,7 +22,7 @@ export const DatabaseBlock = Node.create({
   parseHTML() { return [{ tag: 'div[data-database-block]' }] },
   renderHTML({ HTMLAttributes }) { return ['div', mergeAttributes(HTMLAttributes, { 'data-database-block': '' }), '（データベース）'] },
   renderText() { return '（データベース）' },
-  addNodeView() { return VueNodeViewRenderer(DatabaseBlockView) },
+  addNodeView() { return DatabaseBlockView },
   addCommands() {
     return { insertDatabaseBlock: (databaseId) => ({ commands }) => commands.insertContent({ type: this.name, attrs: { databaseId } }) }
   },

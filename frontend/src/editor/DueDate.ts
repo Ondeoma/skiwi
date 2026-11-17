@@ -1,6 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import DueDateView from './DueDateView.vue'
+import { DueDateView } from './DueDateView'
 import { ymd } from '../ui/date'
 
 declare module '@tiptap/core' {
@@ -28,7 +27,7 @@ export const DueDate = Node.create({
   parseHTML() { return [{ tag: 'span[data-due]' }] },
   renderHTML({ node, HTMLAttributes }) { return ['span', mergeAttributes(HTMLAttributes, { 'data-due': '', class: 'due-date' }), `📅 ${node.attrs.date ?? ''}`] },
   renderText({ node }) { return `📅${node.attrs.date ?? ''}` },
-  addNodeView() { return VueNodeViewRenderer(DueDateView) },
+  addNodeView() { return DueDateView },
   addCommands() {
     return { insertDueDate: (date) => ({ chain }) => chain().insertContent([{ type: this.name, attrs: { date: date ?? today(7) } }, { type: 'text', text: ' ' }]).run() }
   },

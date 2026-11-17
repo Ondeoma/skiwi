@@ -1,6 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import PanelView from './PanelView.vue'
+import { PanelView } from './PanelView'
 import { isColor, type ColorId } from '../ui/palette'
 
 declare module '@tiptap/core' {
@@ -43,7 +42,7 @@ export const Panel = Node.create({
   renderHTML({ HTMLAttributes }) {
     return ['div', mergeAttributes(HTMLAttributes, { 'data-panel': '', class: 'panel' }), 0]
   },
-  addNodeView() { return VueNodeViewRenderer(PanelView) },
+  addNodeView() { return PanelView },
   addCommands() {
     return {
       setPanel: (attrs) => ({ commands }) => commands.wrapIn(this.name, attrs),

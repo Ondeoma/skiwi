@@ -1,6 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import MermaidView from './MermaidView.vue'
+import { MermaidView } from './MermaidView'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -22,7 +21,7 @@ export const Mermaid = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, { 'data-mermaid': '' }), ['pre', {}, node.attrs.code]]
   },
   renderText({ node }) { return node.attrs.code },
-  addNodeView() { return VueNodeViewRenderer(MermaidView) },
+  addNodeView() { return MermaidView },
   addCommands() {
     return { insertMermaid: (code) => ({ commands }) => commands.insertContent({ type: this.name, attrs: { code: code ?? DEFAULT_MERMAID } }) }
   },

@@ -3,7 +3,7 @@ import { PluginKey } from '@tiptap/pm/state'
 import Suggestion from '@tiptap/suggestion'
 import { menuRenderer } from './suggestionMenu'
 import { api4 } from '../api'
-import MentionMenu, { type MentionUser } from './MentionMenu.vue'
+import { mentionMenu, type MentionUser } from './MentionMenu'
 
 /** 本文中の @メンション。保存されるとサーバーが新しくメンションされた人に通知する（閲覧できる人だけ）。 */
 export const Mention = Node.create({
@@ -47,7 +47,7 @@ export const Mention = Node.create({
             { type: 'text', text: ' ' },
           ]).run()
         },
-        render: menuRenderer<MentionUser>(MentionMenu),
+        render: menuRenderer<MentionUser>(mentionMenu),
       }),
     ]
   },

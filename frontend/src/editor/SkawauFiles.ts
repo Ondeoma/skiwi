@@ -1,7 +1,7 @@
 import type { Mark, Node as PMNode } from '@tiptap/pm/model'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { SkawauFile } from '../api'
-import { skawau } from '../ui/integration'
+import { host } from '../ui/host'
 import { chip, eachTextblock, isCode, linkedExtension, linkedInline, linkedWidget, textblockText, type LinkedState } from './linkedDecorations'
 
 /**
@@ -9,6 +9,7 @@ import { chip, eachTextblock, isCode, linkedExtension, linkedInline, linkedWidge
  * リンクの文字が URL そのもの（貼り付けたまま）のときは、閲覧中は URL を隠して「📄 ファイル名」を出し、編集中は URL の後ろに名前を添える。
  * 文字を付けたリンク（[資料](URL)）は、文字はそのままで、マウスを乗せるとファイル名が出る。コードの中は対象外。
  */
+const skawau = () => host().integration<SkawauFile>('skawau')
 const ID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -61,13 +62,22 @@ export function fileIcon(f: Pick<SkawauFile, 'name' | 'isDir' | 'mimeType'>): st
   return '📄'
 }
 
+/** 線の SVG アイコンで出す種類（画像・動画）のクラス. ほかは fileIcon の絵文字 */
+export function fileIconClass(f: Pick<SkawauFile, 'isDir' | 'mimeType'>): string | null {
+  const mime = f.mimeType ?? ''
+  if (f.isDir) return null
+  if (mime.startsWith('image/')) return 'ico ico-image'
+  if (mime.startsWith('video/')) return 'ico ico-video'
+  return null
+}
+
 function build(doc: PMNode): LinkedState {
-  const s = skawau.status.value
+  const s = skawau().status()
   if (!s?.enabled || !s.url) return { deco: DecorationSet.empty, keys: [] }
   const found = findFileLinks(doc, s.url)
   const decos: Decoration[] = []
   for (const f of found) {
-    const file = s.connected ? skawau.item(f.id) : undefined
+    const file = s.connected ? skawau().item(f.id) : undefined
     const title = !s.connected ? 'skawau と連携するとファイル名を表示します'
       : file ? `${file.name}（skawau）` : file === null ? 'skawau で見つからないか、見る権限がありません' : 'skawau のファイル'
     const named = !!file && f.raw
@@ -78,7 +88,9 @@ function build(doc: PMNode): LinkedState {
         chip('skawau-chip', f.url, `${file.name} を skawau で開く`, (a) => {
           a.dataset.testid = 'skawau-chip'
           const i = document.createElement('span')
-          i.textContent = fileIcon(file)
+          const ic = fileIconClass(file)
+          if (ic) i.className = ic
+          else i.textContent = fileIcon(file)
           const n = document.createElement('span')
           n.className = 'linked-name'
           n.textContent = file.name

@@ -1,59 +1,28 @@
-import type { Ref } from 'vue'
-import { createRequest } from './request'
 import { api4 } from '../api'
+import { host, type DialogChoice } from './host'
 
 /**
- * 画面内の確認・入力ダイアログ。
+ * 画面内の確認・入力ダイアログ（Scalactive の skiwi.web.Dialog を使う）。
  * window.confirm / prompt / alert は埋め込みブラウザ等で無効化されることがある（即座に false / null が返る）ため使わない。
  */
-export interface DialogRequest {
-  kind: 'confirm' | 'prompt' | 'alert' | 'choose'
-  /** choose: 選択肢（value を返す） */
-  options?: { label: string; value: string; detail?: string }[]
-  message: string
-  value: string
-  placeholder?: string
-  okLabel: string
-  danger: boolean
-  multiline: boolean
-  resolve: (v: string | boolean | null) => void
-}
+export const confirmDialog = (message: string, opts: { okLabel?: string; danger?: boolean } = {}): Promise<boolean> =>
+  host().confirm(message, opts)
 
-// 既に開いているものは取り消し扱いで閉じる
-const req = createRequest<Omit<DialogRequest, 'resolve'>, string | boolean | null>((next) => (next.kind === 'confirm' ? false : null))
-export const currentDialog = req.current
-const open = req.open
-
-export async function confirmDialog(message: string, opts: { okLabel?: string; danger?: boolean } = {}): Promise<boolean> {
-  return (await open({ kind: 'confirm', message, value: '', okLabel: opts.okLabel ?? 'OK', danger: opts.danger ?? false, multiline: false })) === true
-}
-
-export async function promptDialog(
-  message: string,
-  value = '',
-  opts: { okLabel?: string; placeholder?: string; multiline?: boolean } = {},
-): Promise<string | null> {
-  const v = await open({ kind: 'prompt', message, value, placeholder: opts.placeholder, okLabel: opts.okLabel ?? 'OK', danger: false, multiline: opts.multiline ?? false })
-  return typeof v === 'string' ? v : null
-}
+export const promptDialog = (message: string, value = '', opts: { okLabel?: string; placeholder?: string; multiline?: boolean } = {}): Promise<string | null> =>
+  host().prompt(message, value, opts)
 
 /** 選択肢から1つ選ぶ。取り消しは null */
-export async function chooseDialog(message: string, options: { label: string; value: string; detail?: string }[]): Promise<string | null> {
-  const v = await open({ kind: 'choose', message, value: '', okLabel: '', danger: false, multiline: false, options })
-  return typeof v === 'string' ? v : null
-}
+export const chooseDialog = (message: string, options: DialogChoice[]): Promise<string | null> => host().choose(message, options)
 
-export async function alertDialog(message: string): Promise<void> {
-  await open({ kind: 'alert', message, value: '', okLabel: 'OK', danger: false, multiline: false })
-}
+export const alertDialog = (message: string): Promise<void> => host().alert(message)
 
 /** 失敗を「（what）: 理由」で知らせる。例: alertError('変更できませんでした', e) */
 export const alertError = (what: string, e: unknown) => alertDialog(`${what}: ${(e as Error).message}`)
 
-/** f を実行し、失敗したら「操作に失敗しました」と知らせる。busy: 実行中は true にする */
-export async function guarded(f: () => Promise<unknown>, busy?: Ref<boolean>) {
-  if (busy) busy.value = true
-  try { await f() } catch (e) { await alertError('操作に失敗しました', e) } finally { if (busy) busy.value = false }
+/** f を実行し、失敗したら「操作に失敗しました」と知らせる。busy: 実行中は true にする（呼び出し側の状態を変える関数） */
+export async function guarded(f: () => Promise<unknown>, busy?: (b: boolean) => void) {
+  busy?.(true)
+  try { await f() } catch (e) { await alertError('操作に失敗しました', e) } finally { busy?.(false) }
 }
 
 /**

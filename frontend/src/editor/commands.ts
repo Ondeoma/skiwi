@@ -14,6 +14,8 @@ export interface SlashItem {
   title: string
   description: string
   icon: string
+  /** 線の SVG アイコン（例: 'ico ico-image'。あれば icon の代わりに出す） */
+  iconClass?: string
   keywords: string[]
   category?: Category
   /** 'all' = 「すべてのブロックを表示」（一覧モーダルを開く特別な項目） */
@@ -123,7 +125,7 @@ export function slashItems(ctx: SlashContext): SlashItem[] {
       run: (e, r) => chain(e, r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
     { title: 'ホワイトボード', description: '自由に描ける共同編集ボード（付箋・図形・矢印・手書き）', icon: '🧩', keywords: ['whiteboard', 'board', 'draw', 'miro', 'excalidraw', 'ほわいとぼーど', 'ずけい', 'てがき', 'ふせん'],
       run: (e, r) => chain(e, r).insertWhiteboard().run() },
-    { title: '画像', description: '画像をアップロード（貼り付け・ドラッグでも追加できます）', icon: '🖼', keywords: ['image', 'img', 'picture', 'がぞう'],
+    { title: '画像', description: '画像をアップロード（貼り付け・ドラッグでも追加できます）', icon: '🖼', iconClass: 'ico ico-image', keywords: ['image', 'img', 'picture', 'がぞう'],
       run: async (e, r) => { chain(e, r).run(); const f = await ctx.pickFile('image/*'); if (f) await ctx.upload(f) } },
     { title: 'ファイル', description: 'ファイルを添付（ドラッグでも追加できます）', icon: '📎', keywords: ['file', 'attach', 'upload', 'ふぁいる', 'てんぷ'],
       run: async (e, r) => { chain(e, r).run(); const f = await ctx.pickFile('*/*'); if (f) await ctx.upload(f) } },

@@ -1,4 +1,4 @@
-import { Editor } from '@tiptap/vue-3'
+import { Editor } from '@tiptap/core'
 import Collaboration from '@tiptap/extension-collaboration'
 import type { JSONContent } from '@tiptap/core'
 import { contentExtensions } from '../editor/extensions'

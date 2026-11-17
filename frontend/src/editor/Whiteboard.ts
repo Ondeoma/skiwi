@@ -1,7 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import type * as Y from 'yjs'
-import WhiteboardView from './WhiteboardView.vue'
+import { WhiteboardView } from './WhiteboardView'
 import { snapshotText, type Awareness, type Snapshot } from './whiteboard/shared'
 
 declare module '@tiptap/core' {
@@ -49,10 +48,8 @@ export const Whiteboard = Node.create<WhiteboardOptions>({
   },
   renderText({ node }) { return snapshotText(parseSnapshot(node.attrs.snapshot)) },
 
-  addNodeView() {
-    // ボード内の操作（キー入力・貼り付け・ドラッグなど）はエディタに渡さない
-    return VueNodeViewRenderer(WhiteboardView, { stopEvent: ({ event }) => !(event.target as HTMLElement)?.closest?.('[data-drag-handle]') })
-  },
+  // ボード内の操作（キー入力・貼り付け・ドラッグなど）はエディタに渡さない（WhiteboardView の stopEvent）
+  addNodeView() { return WhiteboardView },
 
   addCommands() {
     return {

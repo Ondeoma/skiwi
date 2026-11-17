@@ -1,6 +1,6 @@
 <script lang="scala">
 import skiwi.shared.*
-import skiwi.web.{Api, Fmt, Host}
+import skiwi.web.{Api, Dialog, Fmt}
 
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.util.{Failure, Success}
@@ -33,7 +33,7 @@ def create(s: State): Unit = {
 }
 
 def revoke(s: State, t: TokenDto): Unit = {
-  Host.confirm(s"トークン「${t.name}」を失効させますか？\nこのトークンを使っているプログラムは使えなくなります。", okLabel = "失効させる", danger = true)
+  Dialog.confirm(s"トークン「${t.name}」を失効させますか？\nこのトークンを使っているプログラムは使えなくなります。", okLabel = "失効させる", danger = true)
     .foreach(ok => if (ok) Api.revokeToken(t.id).foreach(_ => load(s)))
 }
 
@@ -44,9 +44,9 @@ def scopeLabel(scope: String): String = if (scope == "read") "閲覧のみ" else
 
 <template>
   <div class="wrap">
-    <p><Link to="/">← 戻る</Link></p>
+    <p><RouterLink to="/">← 戻る</RouterLink></p>
     <h1>APIトークン</h1>
-    <p class="muted">使い方は <Link to="/settings/api">API の説明書</Link> を見てください（その場で試せます）。</p>
+    <p class="muted">使い方は <RouterLink to="/settings/api">API の説明書</RouterLink> を見てください（その場で試せます）。</p>
     <p class="muted">
       プログラムから skiwi の APIを使うためのトークンです。<code>Authorization: Bearer &lt;トークン&gt;</code> で送ります。
       権限はあなた自身の権限に準じます。「閲覧のみ」は読み取り（GET）だけができます。

@@ -68,7 +68,13 @@ export const nodes = (doc: any, type: string): any[] => {
 
 /** ページのエディタ（Tiptap）を操作する。日本語の入力など、自動操作で打ちにくいものに使う */
 export async function editorRun(page: Page, fn: string, arg?: unknown) {
-  await page.waitForFunction(() => (document.querySelector('.ProseMirror') as any)?.editor)
+  // 同期が済む前に本文を変えると、あとから届いたサーバーの本文と合わさって両方残るため、同期済みになるまで待つ
+  // （同期の表示がない読み取り専用の表示ではそのまま）
+  await page.waitForFunction(() => {
+    if (!(document.querySelector('.ProseMirror') as any)?.editor) return false
+    const st = document.querySelector('.skiwi-editor .status')
+    return !st || st.textContent!.includes('同期済み')
+  })
   return page.evaluate(([src, a]) => new Function('editor', 'arg', src)((document.querySelector('.ProseMirror') as any).editor, a), [fn, arg] as const)
 }
 

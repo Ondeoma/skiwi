@@ -51,7 +51,7 @@ def detail(e: AuditDto): String = if (e.detail.asObject.exists(_.nonEmpty)) e.de
 
 <template>
   <div class="wrap">
-    <p><Link to="/">← 戻る</Link></p>
+    <p><RouterLink to="/">← 戻る</RouterLink></p>
     <h1>監査ログ</h1>
     <div class="filters">
       <select v-model="s.action" @change="load(s, reset = true)">

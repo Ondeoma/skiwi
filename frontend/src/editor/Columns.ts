@@ -1,7 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import ColumnsView from './ColumnsView.vue'
+import { ColumnsView } from './ColumnsView'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -46,7 +45,7 @@ export const Columns = Node.create({
     const spans = parseLayout(node.attrs.layout, node.childCount)
     return ['div', mergeAttributes(HTMLAttributes, { 'data-columns': '', class: 'columns', style: `grid-template-columns: ${spans.map((s) => `minmax(0, ${s}fr)`).join(' ')}` }), 0]
   },
-  addNodeView() { return VueNodeViewRenderer(ColumnsView) },
+  addNodeView() { return ColumnsView },
   addCommands() {
     return {
       insertColumns: (count) => ({ commands }) => {

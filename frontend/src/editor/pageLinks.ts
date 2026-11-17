@@ -1,4 +1,3 @@
-import { reactive, shallowRef } from 'vue'
 import { api, ApiError, type GuestPage } from '../api'
 
 /** このシステムのページURL（/w/{ワークスペース}/p/{ページ}）。同じホストのものだけを対象にする。 */
@@ -29,28 +28,44 @@ export const pageHref = (workspaceId: string, pageId: string) => `/w/${workspace
 /** ゲスト向け公開ページのURL（URL名があればそれ、なければID） */
 export const guestHref = (token: string, p: { id: string; slug?: string | null }) => `/s/${token}/${p.slug || p.id}`
 
+// --- 表示の更新の知らせ ---------------------------------------------------------------------
+const listeners = new Set<() => void>()
+const notify = () => listeners.forEach((f) => f())
+/** ページ情報・ゲスト表示の状態が変わったら f を呼ぶ（ページリンクなどの表示の更新）。戻り値で解除 */
+export function onLinksChange(f: () => void): () => void {
+  listeners.add(f)
+  return () => { listeners.delete(f) }
+}
+
 // --- 表示用のページ情報 -------------------------------------------------------------------
 export type LinkInfo =
   | { state: 'loading' }
   | { state: 'ok'; title: string; icon: string | null; workspaceId: string }
   | { state: 'denied' } // 削除済み・権限なし
 
-/** 取得済みのページ情報（ページリンクの表示で共有。名前の変更は patchPageInfo で反映する）。 */
-const cache = reactive(new Map<string, LinkInfo>())
+/** 取得済みのページ情報（ページリンクの表示で共有）。 */
+const cache = new Map<string, LinkInfo>()
 
 export function pageInfo(pageId: string): LinkInfo {
   const hit = cache.get(pageId)
   if (hit) return hit
   cache.set(pageId, { state: 'loading' })
   api.getPage(pageId, { redirectOn401: false })
-    .then((p) => { cache.set(pageId, { state: 'ok', title: p.title, icon: p.icon, workspaceId: p.workspaceId }) })
+    .then((p) => { cache.set(pageId, { state: 'ok', title: p.title, icon: p.icon, workspaceId: p.workspaceId }); notify() })
     .catch((e) => {
-      if (e instanceof ApiError) cache.set(pageId, { state: 'denied' })
-      else cache.delete(pageId) // 通信エラーは次回やり直す
+      if (e instanceof ApiError) { cache.set(pageId, { state: 'denied' }); notify() }
+      else cache.delete(pageId) // 通信エラーは次に表示するときにやり直す（すぐには知らせない）
     })
   return cache.get(pageId)!
 }
 
 // --- ゲスト表示 ---------------------------------------------------------------------------
+export interface GuestContext { token: string; pages: Map<string, GuestPage> }
+let guest: GuestContext | null = null
 /** ゲスト表示中は、公開範囲のページだけをリンクとして出す（ログインが必要なAPIは呼ばない）。 */
-export const guestContext = shallowRef<{ token: string; pages: Map<string, GuestPage> } | null>(null)
+export const guestContext = (): GuestContext | null => guest
+/** ゲスト表示（公開ページ・印刷）を始める・終える（null） */
+export function setGuestContext(ctx: { token: string; pages: GuestPage[] } | null) {
+  guest = ctx ? { token: ctx.token, pages: new Map(ctx.pages.map((p) => [p.id, p])) } : null
+  notify()
+}

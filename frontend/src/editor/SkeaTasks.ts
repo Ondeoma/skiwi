@@ -1,6 +1,7 @@
 import type { Node as PMNode } from '@tiptap/pm/model'
 import { DecorationSet, type Decoration } from '@tiptap/pm/view'
-import { skea } from '../ui/integration'
+import type { SkeaTask } from '../api'
+import { host } from '../ui/host'
 import { chip, eachTextblock, linkedExtension, linkedInline, linkedWidget, textblockText, type LinkedState } from './linkedDecorations'
 
 /**
@@ -8,6 +9,7 @@ import { chip, eachTextblock, linkedExtension, linkedInline, linkedWidget, textb
  * 対象は管理者が設定したプロジェクトキーだけ（大文字と小文字を区別）。コードブロックとインラインのコードの中は対象外。
  * 直後にタイトルと状態（連携していなければ ↗）を出す。
  */
+const skea = () => host().integration<SkeaTask>('skea')
 const KEY_RE = /^[A-Z][A-Z0-9_]*$/
 const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/
 
@@ -26,12 +28,12 @@ export function findTaskKeys(doc: PMNode, projectKeys: string[]): TaskKeyMatch[]
 }
 
 function build(doc: PMNode): LinkedState {
-  const s = skea.status.value
+  const s = skea().status()
   if (!s?.enabled || !s.url) return { deco: DecorationSet.empty, keys: [] }
   const found = findTaskKeys(doc, s.projectKeys)
   const decos: Decoration[] = []
   for (const f of found) {
-    const task = s.connected ? skea.item(f.key) : undefined
+    const task = s.connected ? skea().item(f.key) : undefined
     const url = task?.url ?? `${s.url}/tasks/${f.key}`
     const title = !s.connected ? 'skea と連携するとタイトルを表示します'
       : task ? `${task.title}（${task.status.name}）`

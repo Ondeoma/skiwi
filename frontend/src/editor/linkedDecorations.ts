@@ -2,7 +2,7 @@ import { Extension } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import type { Integration } from '../ui/integration'
+import type { HostIntegration } from '../ui/host'
 
 /**
  * 外部サービス（skea・skawau）の項目を、本文を書き換えずに表示の飾り（decoration）で見せる拡張の共通部分。
@@ -62,7 +62,7 @@ export const linkedWidget = (pos: number, key: string, make: () => HTMLElement) 
   Decoration.widget(pos, make, { side: 1, ignoreSelection: true, stopEvent: () => true, key })
 
 /** integration の状態と項目を見て build で飾りを作り、本文のキーをまとめて問い合わせる拡張 */
-export function linkedExtension(name: string, integration: Integration<unknown>, build: (doc: PMNode) => LinkedState) {
+export function linkedExtension(name: string, integrationOf: () => HostIntegration, build: (doc: PMNode) => LinkedState) {
   const key = new PluginKey<LinkedState>(name)
   return Extension.create({
     name,
@@ -86,6 +86,7 @@ export function linkedExtension(name: string, integration: Integration<unknown>,
             },
           },
           view(view) {
+            const integration = integrationOf()
             let timer: ReturnType<typeof setTimeout> | undefined
             // 本文のキーをまとめて問い合わせる（入力中は待つ。同じものは問い合わせない）
             const schedule = () => {

@@ -1,7 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import SyncedBlockView from './SyncedBlockView.vue'
-import SyncedRefView from './SyncedRefView.vue'
+import { SyncedBlockView } from './SyncedBlockView'
+import { SyncedRefView } from './SyncedRefView'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -26,7 +25,7 @@ export const SyncedBlock = Node.create({
   },
   parseHTML() { return [{ tag: 'div[data-synced-block]' }] },
   renderHTML({ HTMLAttributes }) { return ['div', mergeAttributes(HTMLAttributes, { 'data-synced-block': '', class: 'synced-block' }), 0] },
-  addNodeView() { return VueNodeViewRenderer(SyncedBlockView) },
+  addNodeView() { return SyncedBlockView },
   addCommands() {
     return { setSyncedBlock: () => ({ commands }) => commands.wrapIn(this.name, { id: newId() }) }
   },
@@ -51,7 +50,7 @@ export const SyncedRef = Node.create<{ depth: number }>({
   renderHTML({ HTMLAttributes }) { return ['div', mergeAttributes(HTMLAttributes, { 'data-synced-ref': '', class: 'synced-ref-static' }), '🔗 同期ブロック'] },
   // 検索の本文には含めない（元のページで見つかる）
   renderText() { return '' },
-  addNodeView() { return VueNodeViewRenderer(SyncedRefView) },
+  addNodeView() { return SyncedRefView },
   addCommands() {
     return { insertSyncedRef: (attrs) => ({ commands }) => commands.insertContent({ type: this.name, attrs }) }
   },

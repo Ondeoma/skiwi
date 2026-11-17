@@ -37,7 +37,7 @@ import { EmojiSuggest } from './EmojiSuggest'
 import { LinkCard, UrlPaste } from './LinkCard'
 import { DatabaseBlock } from './DatabaseBlock'
 import { Drawio } from './Drawio'
-import NodeRange from '@tiptap/extension-node-range'
+import { BlockRange, SelectionKeys } from './SelectionKeys'
 import { SkawauFiles } from './SkawauFiles'
 import { SkeaTasks } from './SkeaTasks'
 
@@ -228,7 +228,8 @@ export function buildExtensions(d: EditorDeps): AnyExtension[] {
     }),
     SlashCommand.configure({ ctx: d.ctx }),
     EmojiSuggest,
-    NodeRange,
+    BlockRange,
+    SelectionKeys,
     UrlPaste,
     // skea のタスクID・skawau のファイルのリンクの表示（ログイン中のエディタだけ。ゲスト向けの表示には入れない）
     SkeaTasks,

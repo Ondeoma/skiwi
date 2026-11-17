@@ -1,7 +1,6 @@
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import { common, createLowlight } from 'lowlight'
-import CodeBlockView from './CodeBlockView.vue'
+import { CodeBlockView } from './CodeBlockView'
 
 const lowlight = createLowlight(common)
 
@@ -22,5 +21,5 @@ export const languageLabel = (id: string | null | undefined) => (id ? NAMES[id] 
 
 /** 言語を明示指定できるコードブロック（未指定なら自動判定でハイライト）。 */
 export const CodeBlock = CodeBlockLowlight.extend({
-  addNodeView() { return VueNodeViewRenderer(CodeBlockView) },
+  addNodeView() { return CodeBlockView },
 }).configure({ lowlight, defaultLanguage: null })

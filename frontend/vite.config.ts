@@ -1,12 +1,11 @@
 import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
 import scalaJS from './vite-scalajs'
 
 const backend = process.env.BACKEND ?? 'http://localhost:8080'
 
 export default defineConfig({
-  // Scalactive(Scala.js)の画面は sbt の web プロジェクトから読み込む
-  plugins: [vue(), scalaJS({ cwd: '..', projectID: 'web' })],
+  // 画面（Scalactive. Scala.js）は sbt の web プロジェクトから読み込む
+  plugins: [scalaJS({ cwd: '..', projectID: 'web' })],
   server: {
     proxy: {
       '/api': backend,

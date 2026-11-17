@@ -1,32 +1,26 @@
 package skiwi.web
 
+import io.github.ondeoma.scalactive.ScalactiveConfig
 import io.github.ondeoma.scalactive.components.ComponentManager.*
 import org.scalajs.dom
-import skiwi.web.views.*
-
-import scala.scalajs.js
-import scala.scalajs.js.annotation.JSExportTopLevel
 
 /**
- * Vue の画面から Scalactive の画面を描画する入口（frontend/src/scalactive/ScalactiveView.vue が呼ぶ）.
- * 移行中は、vue-router のルートごとに Scalactive の画面へ置き換えていく.
+ * 画面の入口.
+ * `@main def main()` にすると生成される `main` クラスと `Main` が、大文字小文字を区別しないファイルシステム（macOS）で
+ * 同じファイル名（main.sjsir / Main.sjsir）になり差分コンパイルが壊れるため、通常の main(args) にする.
  */
 object Main {
 
-  /** nameの画面をelに描画し、片付ける関数を返します. paramsはルートのパラメーター. */
-  @JSExportTopLevel("mountView")
-  def mountView(name: String, el: dom.Element, params: js.Dictionary[String]): js.Function0[Unit] = {
-    val r = name match {
-      case "tokens" => mount(el) { TokensView() }
-      case "audit" => mount(el) { AuditView() }
-      case _ => Left(s"unknown view: $name")
-    }
-    r match {
-      case Right(h) => () => h.unmount()
-      case Left(e) =>
-        dom.console.error(s"mountView($name): $e")
-        () => ()
-    }
+  def main(args: Array[String]): Unit = {
+    ScalactiveConfig.defaultTitle = Some("skiwi")
+    // 画面の移動で一番上へ戻すのは、各画面（スクロールする領域）に任せる
+    ScalactiveConfig.scrollToTopOnNavigate = false
+    Theme.apply()
+    Host.exposeToJs()
+    EmbedViews.register()
+    // 存在しない URL はトップへ. 開いた直後の URL も確かめるよう、RouterComponent を描く前に登録する
+    Fallback.install(App.known)
+    App()(dom.document.body, AddMethod.appendS(IdSelector("app"))).init()
   }
 
 }

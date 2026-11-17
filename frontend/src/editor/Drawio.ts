@@ -1,6 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { VueNodeViewRenderer } from '@tiptap/vue-3'
-import DrawioView from './DrawioView.vue'
+import { DrawioView } from './DrawioView'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -56,7 +55,7 @@ export const Drawio = Node.create<DrawioOptions>({
     ), ['img', { src: a.src ?? '', alt: a.title || 'draw.io の図' }]]
   },
   renderText({ node }) { return [node.attrs.title, node.attrs.text].filter(Boolean).join('\n') },
-  addNodeView() { return VueNodeViewRenderer(DrawioView) },
+  addNodeView() { return DrawioView },
   addCommands() {
     return {
       insertDrawio: (attrs) => ({ commands }) => {
