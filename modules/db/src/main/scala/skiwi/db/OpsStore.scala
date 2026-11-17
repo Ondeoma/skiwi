@@ -69,12 +69,16 @@ final case class NotificationRow(
     workspaceName: Option[String]
 )
 
+/** 作った画面内の通知と受け取る人（プッシュ通知に使う） */
+final case class Notified(userId: UUID, row: NotificationRow)
+
 /** 自分に割り当てられたToDo */
 final case class TaskRow(pageId: UUID, seq: Int, text: String, checked: Boolean, due: Option[java.time.LocalDate],
                          pageTitle: String, pageIcon: Option[String], workspaceId: UUID)
 
 /** 運用系の永続化: APIトークン、監査ログ、ウォッチ、メールアウトボックス、ディレクトリ検索。 */
-final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
+/** onNotified: 画面内の通知を作ったあと（コミット後）に裏で呼ぶ（プッシュ通知を送る）。失敗しても通知の作成は取り消さない */
+final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] = _ => IO.unit) extends TxStore(xa):
 
   // ---------------------------------------------------------------- ユーザーのアイコン
 
@@ -90,6 +94,11 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
   def avatarVersions(userIds: List[UUID]): IO[Map[UUID, Instant]] =
     if userIds.isEmpty then IO.pure(Map.empty)
     else tx(sql"select user_id, updated_at from user_avatar where user_id = any(${userIds.toArray})".query[(UUID, Instant)].to[List]).map(_.toMap)
+
+  /** IdP のアイコンの URL（OIDC の picture） */
+  def pictures(userIds: List[UUID]): IO[Map[UUID, String]] =
+    if userIds.isEmpty then IO.pure(Map.empty)
+    else tx(sql"select id, picture_url from app_user where id = any(${userIds.toArray}) and picture_url is not null".query[(UUID, String)].to[List]).map(_.toMap)
 
   def saveAvatar(userId: UUID, contentType: String, data: Array[Byte]): IO[Instant] = tx(
     sql"""insert into user_avatar (user_id, content_type, data) values ($userId, $contentType, $data)
@@ -280,7 +289,7 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
 
   /** 期限が今日・明日・過ぎている未完了のToDoを通知する（同じToDo・同じ期限には1回だけ）。tz は「今日」を決める時間帯。 */
   def enqueueTaskDue(tz: String): IO[Int] = tx {
-    sql"""with due as (
+    (fr"""with due as (
             select t.assignee_id, t.page_id, t.text, t.due,
                    t.page_id || ':' || t.seq || ':' || t.due || ':' || md5(t.text) as key
             from page_task t join page p on p.id = t.page_id
@@ -290,26 +299,40 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
           ), fresh as (
             select d.* from due d
             where not exists (select 1 from notification n where n.user_id = d.assignee_id and n.kind = 'task_due' and n.detail->>'key' = d.key)
+          ), mail as (
+            insert into mail_outbox (user_id, kind, page_id, detail)
+            select assignee_id, 'task_due', page_id, jsonb_build_object('excerpt', text, 'due', due::text) from fresh
+            returning 1
           ), ins as (
             insert into notification (user_id, kind, page_id, detail)
             select assignee_id, 'task_due', page_id, jsonb_build_object('key', key, 'excerpt', text, 'due', due::text) from fresh
-            returning 1
+            returning *
           )
-          insert into mail_outbox (user_id, kind, page_id, detail)
-          select assignee_id, 'task_due', page_id, jsonb_build_object('excerpt', text, 'due', due::text) from fresh""".update.run
-  }
+          """ ++ notifiedSelect).query[Notified].to[List]
+  }.flatMap(fired)
 
   // ---------------------------------------------------------------- 画面内の通知
 
+  /** NotificationRow の列（n は通知の行。ページ・ワークスペースの名前は表示時点のもの） */
+  private val rowCols: Fragment =
+    fr"""n.id, n.kind, n.page_id, n.workspace_id, n.actors, n.detail::text, n.created_at, n.read_at,
+         p.title, p.icon, p.workspace_id, coalesce(w.name, pw.name)"""
+  private val rowJoins: Fragment =
+    fr"""left join page p on p.id = n.page_id and p.deleted_at is null
+         left join workspace pw on pw.id = p.workspace_id
+         left join workspace w on w.id = n.workspace_id and w.deleted_at is null"""
+
+  /** 直前の CTE ins（insert into notification ... returning *）で作った通知を Notified として読む */
+  private val notifiedSelect: Fragment = fr"select n.user_id," ++ rowCols ++ fr"from ins n" ++ rowJoins
+
+  /** 作った通知を知らせる（コミット後に裏で）。作った数を返す */
+  private def fired(ns: List[Notified]): IO[Int] =
+    IO.whenA(ns.nonEmpty)(onNotified(ns).handleErrorWith(e => skiwi.observe.Log.println(s"[notify] push failed: $e")).start.void).as(ns.size)
+
   def notifications(userId: UUID, limit: Int): IO[List[NotificationRow]] = tx(
-    sql"""select n.id, n.kind, n.page_id, n.workspace_id, n.actors, n.detail::text, n.created_at, n.read_at,
-                 p.title, p.icon, p.workspace_id, coalesce(w.name, pw.name)
-          from notification n
-          left join page p on p.id = n.page_id and p.deleted_at is null
-          left join workspace pw on pw.id = p.workspace_id
-          left join workspace w on w.id = n.workspace_id and w.deleted_at is null
-          where n.user_id = $userId and (n.page_id is null or p.id is not null)
-          order by n.created_at desc limit $limit""".query[NotificationRow].to[List]
+    (fr"select" ++ rowCols ++ fr"from notification n" ++ rowJoins ++
+     fr"""where n.user_id = $userId and (n.page_id is null or p.id is not null)
+          order by n.created_at desc limit $limit""").query[NotificationRow].to[List]
   )
 
   def unreadNotifications(userId: UUID): IO[Int] = tx(
@@ -339,13 +362,15 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
           join app_user u on u.id = e
           on conflict (user_id, page_id) do update set edited_at = now()""".update.run *>
     // 画面内の通知（未読があれば1件にまとめ、編集者を追加して新しくする）。受け取る人: 本文の更新を受け取る設定のウォッチ（祖先の「子ページも含める」を含む）
-    (ancestorsCte(pageId) ++ fr", ew as (" ++ effectiveWatchers("edits") ++ fr")" ++
+    // プッシュ通知は新しく作ったときだけ（未読の通知にまとめたときは、もう知らせてある）
+    (ancestorsCte(pageId) ++ fr", ew as (" ++ effectiveWatchers("edits") ++ fr"), ins as (" ++
      fr"""insert into notification (user_id, kind, page_id, actors)
           select w.user_id, 'page_edited', $pageId, array(select name from app_user where id = any($eds::uuid[]) order by name)
           from ew w where not (w.user_id = any($eds::uuid[]))
           on conflict (user_id, page_id) where kind = 'page_edited' and read_at is null do update set
             actors = array(select distinct x from unnest(notification.actors || excluded.actors) x order by x),
-            created_at = now()""").update.run *>
+            created_at = now()
+          returning *, (xmax = 0) as fresh)""" ++ notifiedSelect ++ fr"where n.fresh").query[Notified].to[List].flatMap { ns =>
     (ancestorsCte(pageId) ++ fr", ew as (" ++ effectiveWatchers("edits") ++ fr")" ++
      fr"""insert into mail_outbox (user_id, kind, page_id, dedupe_key, detail, not_before)
           select w.user_id, 'page_edited', $pageId, 'page_edited:' || $pageId || ':' || w.user_id,
@@ -358,21 +383,21 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
               (select coalesce(jsonb_agg(distinct e), '[]'::jsonb)
                  from jsonb_array_elements((mail_outbox.detail->'editors') || (excluded.detail->'editors')) e)),
             not_before = least(now() + make_interval(secs => $quietSeconds),
-                               mail_outbox.created_at + make_interval(secs => $maxDelaySeconds))""").update.run
-  }
+                               mail_outbox.created_at + make_interval(secs => $maxDelaySeconds))""").update.run.as(ns) }
+  }.flatMap(fired)
 
   /** 共有通知を積む（ユーザーごとに即時送信）。 */
   def enqueueShared(pageId: UUID, userIds: Set[UUID], byName: String, role: String): IO[Int] =
     if userIds.isEmpty then IO.pure(0)
     else tx {
       val ids = userIds.toArray
-      sql"""insert into notification (user_id, kind, page_id, actors, detail)
+      (fr"""with ins as (insert into notification (user_id, kind, page_id, actors, detail)
             select u, 'shared', $pageId, array[$byName::text], jsonb_build_object('role', $role::text)
-            from unnest($ids::uuid[]) u""".update.run *>
+            from unnest($ids::uuid[]) u returning *)""" ++ notifiedSelect).query[Notified].to[List] <*
       sql"""insert into mail_outbox (user_id, kind, page_id, detail)
             select u, 'shared', $pageId, jsonb_build_object('by', $byName::text, 'role', $role::text)
             from unnest($ids::uuid[]) u""".update.run
-    }
+    }.flatMap(fired)
 
   /** メンション（kind=mention）・コメント（kind=comment）の通知。画面内とメールの両方に積む。
     * 権限の確認は呼び出し側で行う（メールは送信時にも確認する）。 */
@@ -381,25 +406,25 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
     else tx {
       val ids = userIds.toArray
       val t = threadId.map(_.toString)
-      sql"""insert into notification (user_id, kind, page_id, actors, detail)
+      (fr"""with ins as (insert into notification (user_id, kind, page_id, actors, detail)
             select u, $kind, $pageId, array[$byName::text], jsonb_strip_nulls(jsonb_build_object('excerpt', $excerpt::text, 'threadId', $t::text))
-            from unnest($ids::uuid[]) u""".update.run *>
+            from unnest($ids::uuid[]) u returning *)""" ++ notifiedSelect).query[Notified].to[List] <*
       sql"""insert into mail_outbox (user_id, kind, page_id, detail)
             select u, $kind, $pageId, jsonb_strip_nulls(jsonb_build_object('by', $byName::text, 'excerpt', $excerpt::text, 'threadId', $t::text))
             from unnest($ids::uuid[]) u""".update.run
-    }
+    }.flatMap(fired)
 
   /** 汎用の通知（画面内。mail=true ならメールも）。detail はJSONオブジェクトの文字列。 */
   def enqueueNotice(kind: String, userIds: Set[UUID], pageId: Option[UUID], actor: String, detail: String, mail: Boolean): IO[Int] =
     if userIds.isEmpty then IO.pure(0)
     else tx {
       val ids = userIds.toArray
-      sql"""insert into notification (user_id, kind, page_id, actors, detail)
-            select u, $kind, $pageId, array[$actor::text], $detail::jsonb from unnest($ids::uuid[]) u""".update.run *>
+      (fr"""with ins as (insert into notification (user_id, kind, page_id, actors, detail)
+            select u, $kind, $pageId, array[$actor::text], $detail::jsonb from unnest($ids::uuid[]) u returning *)""" ++ notifiedSelect).query[Notified].to[List] <*
       (if !mail then 0.pure[ConnectionIO]
        else sql"""insert into mail_outbox (user_id, kind, page_id, detail)
                   select u, $kind, $pageId, $detail::jsonb || jsonb_build_object('by', $actor::text) from unnest($ids::uuid[]) u""".update.run)
-    }
+    }.flatMap(fired)
 
   /** コメントの通知を受け取る人（直接のウォッチと、子ページも含めてウォッチしている祖先）。 */
   def watchers(pageId: UUID): IO[Set[UUID]] = tx(
@@ -411,13 +436,13 @@ final class OpsStore(xa: Transactor[IO]) extends TxStore(xa):
     if userIds.isEmpty then IO.pure(0)
     else tx {
       val ids = userIds.toArray
-      sql"""insert into notification (user_id, kind, workspace_id, actors, detail)
+      (fr"""with ins as (insert into notification (user_id, kind, workspace_id, actors, detail)
             select u, 'shared_workspace', $workspaceId, array[$byName::text], jsonb_build_object('role', $role::text, 'workspace', $workspaceName::text)
-            from unnest($ids::uuid[]) u""".update.run *>
+            from unnest($ids::uuid[]) u returning *)""" ++ notifiedSelect).query[Notified].to[List] <*
       sql"""insert into mail_outbox (user_id, kind, detail)
             select u, 'shared', jsonb_build_object('by', $byName::text, 'role', $role::text, 'workspace', $workspaceName::text)
             from unnest($ids::uuid[]) u""".update.run
-    }
+    }.flatMap(fired)
 
   /** 送信期限が来た未送信メールを取得してロックする（複数ノードで重複送信しないよう SKIP LOCKED）。
     * f の結果に応じて送信済み/スキップ/再試行を記録する。 */

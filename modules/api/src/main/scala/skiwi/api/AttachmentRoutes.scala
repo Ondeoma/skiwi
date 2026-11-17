@@ -121,12 +121,14 @@ final class AttachmentRoutes(
                             val id  = UUID.randomUUID()
                             val key = s"pages/$pageId/$id"
                             for
-                              _ <- blobStore.put(key, tmp, ctype)
+                              _ <- skiwi.observe.Telemetry.span("attachment.store", "content.type" -> ctype)(blobStore.put(key, tmp, ctype))
                               a <- attachments.insert(id, pageId, key, filename, ctype, size, HexFormat.of().formatHex(md.digest()), s.user.id)
                               _ <- audit.traverse_(_.log(s, "attachment.upload", "attachment", a.id,
                                      io.circe.Json.obj("pageId" -> io.circe.Json.fromString(pageId.toString),
                                        "filename" -> io.circe.Json.fromString(a.filename), "size" -> io.circe.Json.fromLong(a.size))))
                               _ <- indexer.traverse_(_.kick(a)) // 検索用に中の文字を取り出す（裏で）
+                              _ <- skiwi.observe.Metrics.count("skiwi.attachments.uploaded", "type" -> ctype.takeWhile(_ != '/'))
+                              _ <- skiwi.observe.Metrics.add("skiwi.attachments.bytes", size)
                               r <- Created(AttachmentDto(a.id, s"/api/attachments/${a.id}", a.filename, a.contentType, a.size))
                             yield r
                         }

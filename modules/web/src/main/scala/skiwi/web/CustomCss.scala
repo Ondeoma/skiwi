@@ -50,9 +50,7 @@ object CustomCss {
 
   private def urlAllowed(u: String): Boolean = {
     val s = jsTrim(u)
-    test("""^\/api\/attachments\/[0-9a-f-]{36}$""", "i", s) ||
-    test("""^\/api\/public\/[\w-]+\/attachments\/[0-9a-f-]{36}$""", "i", s) ||
-    test("""^data:image\/""", "i", s)
+    skiwi.web.editor.SafeUrl.isAttachmentPath(s) || test("""^data:image\/""", "i", s)
   }
 
   /** 括弧の中の , では区切らない */

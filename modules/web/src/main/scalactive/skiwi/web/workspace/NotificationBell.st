@@ -1,5 +1,7 @@
 <script lang="scala">
 import org.scalajs.dom
+import skiwi.shared.NoticeText
+import skiwi.web.parts.PushToggle
 import skiwi.web.{Nav, Ui}
 
 import scala.concurrent.Future
@@ -40,23 +42,10 @@ def toggle(s: State): Unit = {
   if (s.open.v) refresh(s)
 }
 
-def text(n: Notif): String = {
-  val who = if (n.actors.size > 2) s"${n.actors.take(2).mkString("、")} ほか${n.actors.size - 2}人" else n.actors.mkString("、")
-  val role = if (n.role.contains("edit")) "編集" else "閲覧"
-  val ex = n.excerpt.getOrElse("")
-  n.kind match {
-    case "page_edited" => s"$who が更新しました"
-    case "mention" => if (ex.nonEmpty) s"$who がコメントであなたをメンションしました: $ex" else s"$who が本文であなたをメンションしました"
-    case "comment" => s"$who がコメントしました: $ex"
-    case "task_due" => s"ToDo の期限（${n.due.getOrElse("")}）が近づいています: $ex"
-    case "shared" => s"$who が共有しました（$role）"
-    case "access_request" => s"$who が${role}権限を申請しました${if (ex.nonEmpty) s": $ex" else ""}"
-    case "access_granted" => s"$who が${role}権限の申請を承認しました"
-    case "access_denied" => s"$who が権限の申請を承認しませんでした"
-    case "automation" => s"⚙ $ex（ルール: $who）"
-    case _ => s"$who がワークスペースを共有しました（$role）"
-  }
-}
+// 見出し・文・開く場所はプッシュ通知と同じ（skiwi.shared.NoticeText）
+def heading(n: Notif): String = NoticeText.heading(n.kind, n.pageId.isDefined, n.pageIcon, n.pageTitle, n.workspaceName)
+
+def text(n: Notif): String = NoticeText.text(n.kind, n.actors, n.role, n.excerpt, n.due)
 
 def markRead(s: State, n: Notif): Future[Unit] =
   if (n.read) Future.successful(())
@@ -67,15 +56,7 @@ def markRead(s: State, n: Notif): Future[Unit] =
 
 def go(s: State, n: Notif): Unit = {
   s.open := false
-  markRead(s, n).foreach { _ =>
-    (n.pageId, n.workspaceId) match {
-      case (Some(pid), Some(wid)) =>
-        val q = n.threadId.map(t => s"?comment=$t").getOrElse(if (n.kind == "access_request") "?access=requests" else "")
-        Nav.go(s"/w/$wid/p/$pid$q")
-      case (_, Some(wid)) => Nav.go(s"/w/$wid")
-      case _ => ()
-    }
-  }
+  markRead(s, n).foreach(_ => NoticeText.link(n.kind, n.pageId, n.workspaceId, n.threadId).foreach(Nav.go))
 }
 
 // 権限の申請への返事（通知から直接）
@@ -99,7 +80,7 @@ def readAll(s: State): Unit =
 
 def bellTitle(s: State): String = if (s.unread.v > 0) s"未読の通知 ${s.unread.v} 件" else "通知"
 
-def roleLabel(n: Notif): String = if (n.role.contains("edit")) "編集" else "閲覧"
+def roleLabel(n: Notif): String = NoticeText.roleLabel(n.role)
 </script>
 
 <template>
@@ -115,11 +96,7 @@ def roleLabel(n: Notif): String = if (n.role.contains("edit")) "編集" else "�
       <p v-if="s.items.v.isEmpty" class="empty">通知はありません。ページの「🔕 ウォッチ」を押すと、更新がここに届きます。</p>
       <ul v-else>
         <li v-for="n in s.items.v" :key="n.id" :class='Map("unread" -> !n.read)' data-testid="notification" @click="go(s, n)">
-          <div class="t">
-            <template v-if="n.pageId.isDefined">{{ n.pageIcon.getOrElse("📄") }} {{ n.pageTitle.filter(_.nonEmpty).getOrElse("無題") }}</template>
-            <template v-else-if='n.kind == "access_denied"'>🔒 権限の申請</template>
-            <template v-else>🗂 {{ n.workspaceName.getOrElse("") }}</template>
-          </div>
+          <div class="t">{{ heading(n) }}</div>
           <div class="d">{{ text(n) }}</div>
           <div v-if='n.kind == "access_request" && n.requestId.isDefined' class="req" @click="event.stopPropagation()">
             <span v-if="s.decided.v.contains(n.id)" class="m">{{ s.decided.v.getOrElse(n.id, "") }}</span>
@@ -131,6 +108,7 @@ def roleLabel(n: Notif): String = if (n.role.contains("edit")) "編集" else "�
           <div class="m">{{ Ui.date(n.createdAt) }}<template v-if="n.pageId.isDefined && n.workspaceName.isDefined"> ・ {{ n.workspaceName.getOrElse("") }}</template></div>
         </li>
       </ul>
+      <footer><PushToggle /></footer>
     </div>
   </div>
 </template>
@@ -156,4 +134,5 @@ li.unread .t { font-weight: 700; }
 .req button { font-size: .75rem; padding: 1px 8px; }
 .req .deny { color: var(--danger); }
 .empty { padding: 1rem; font-size: .82rem; color: var(--muted); }
+footer { padding: .45rem .7rem; border-top: 1px solid var(--line); }
 </style>

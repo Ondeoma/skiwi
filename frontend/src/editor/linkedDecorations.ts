@@ -3,16 +3,15 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { HostIntegration } from '../ui/host'
+import { openNewTab } from '../lib'
 
 /**
  * 外部サービス（skea・skawau）の項目を、本文を書き換えずに表示の飾り（decoration）で見せる拡張の共通部分。
  * 既存のページにもそのまま効き、同時編集にも影響しない。ログイン中のエディタだけに入れる。
  * - 飾りの付いた文字（data-linked-url を持つ要素）: 閲覧中はクリックで開く。編集中はふつうにカーソルを置き、Ctrl/⌘+クリックで開く。
- * - 横の小さな表示（chip）: クリックすると、いつでも新しいタブで開く。
+ * - 横の小さな表示（chip）: クリックすると、いつでも新しいタブで開く（中身は Scala の editor.Linked が作る）。
  */
 export interface LinkedState { deco: DecorationSet; keys: string[] }
-
-export const openNewTab = (url: string) => window.open(url, '_blank', 'noopener,noreferrer')
 
 /**
  * テキストブロックの文字を、文書の位置と添字が揃うように取り出す。
@@ -35,22 +34,6 @@ export function eachTextblock(doc: PMNode, f: (node: PMNode, pos: number) => voi
     f(node, pos + 1)
     return false
   })
-}
-
-/** 横に出す小さな表示。中身は fill で入れる */
-export function chip(cls: string, url: string, title: string, fill: (a: HTMLAnchorElement) => void): HTMLElement {
-  const a = document.createElement('a')
-  a.className = `linked-chip ${cls}`
-  a.href = url
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  a.contentEditable = 'false'
-  a.title = title
-  fill(a)
-  // エディタにカーソル移動させず、自分で開く
-  a.addEventListener('mousedown', (e) => e.preventDefault())
-  a.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openNewTab(url) })
-  return a
 }
 
 /** 飾りの付いた文字（クリックで url を開く） */

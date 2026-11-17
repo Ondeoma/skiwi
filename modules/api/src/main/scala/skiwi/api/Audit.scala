@@ -22,4 +22,4 @@ final class Audit(ops: OpsStore):
     write(AuditEvent(Some(u.id), Some(u.name), via, action, Some("user"), Some(u.id.toString), detail.noSpaces))
 
   private def write(e: AuditEvent): IO[Unit] =
-    ops.audit(e).handleErrorWith(err => IO.println(s"[audit] failed to record ${e.action}: $err"))
+    ops.audit(e).handleErrorWith(err => skiwi.observe.Log.println(s"[audit] failed to record ${e.action}: $err"))

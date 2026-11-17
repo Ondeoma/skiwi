@@ -1,5 +1,5 @@
 /**
- * 素の DOM を短く書くための小さな関数（Vue のテンプレートの代わり）。
+ * 素の DOM を短く書くための小さな関数（エディタのノードビュー・メニューの DOM を作る。ProseMirror に同期で渡すため JS のまま）。
  *   h('button', { class: 'x', title: '…', onclick: () => … }, '文字', 子要素)
  * props: on〜 は addEventListener、value・checked・disabled などはプロパティ、
  *        style は文字列かオブジェクト、false・null・undefined の属性は付けない、それ以外は属性
@@ -36,34 +36,4 @@ function append(el: Element, children: (Child | Child[])[]) {
 export function setChildren(el: Element, ...children: (Child | Child[])[]) {
   el.replaceChildren()
   append(el, children)
-}
-
-/**
- * メニューなどの外をクリック（mousedown）したら閉じる。escape を渡すと Esc キーでも呼ぶ。
- * inside(target): 閉じないクリックか / defer: 開いたクリック自体で閉じないよう、次のタスクで登録する。
- * 戻り値で解除する
- */
-export function onDismiss(inside: (target: Node) => boolean, close: () => void, opts: { escape?: () => void; defer?: boolean } = {}): () => void {
-  const onDoc = (e: MouseEvent) => { if (!inside(e.target as Node)) close() }
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') opts.escape?.() }
-  let alive = true
-  if (opts.defer) setTimeout(() => { if (alive) document.addEventListener('mousedown', onDoc) })
-  else document.addEventListener('mousedown', onDoc)
-  if (opts.escape) document.addEventListener('keydown', onKey)
-  return () => {
-    alive = false
-    document.removeEventListener('mousedown', onDoc)
-    document.removeEventListener('keydown', onKey)
-  }
-}
-
-/**
- * クリップボードへコピーし、ボタンの文字を1.5秒「コピーしました」にする。
- * label: ふだんの文字（戻すときに使う）
- */
-export async function copyWithFlash(btn: HTMLElement, text: string, label: string, done = 'コピーしました') {
-  const ok = await navigator.clipboard.writeText(text).then(() => true, () => false)
-  if (!ok) return
-  btn.textContent = done
-  setTimeout(() => { btn.textContent = label }, 1500)
 }

@@ -49,8 +49,7 @@ if (typeof window !== 'undefined') (window as any).EXCALIDRAW_ASSET_PATH = `${lo
 
 const LOCAL = Symbol('whiteboard-local')
 /** Y.Doc のルート名（Editor.vue が接続前に登録する） */
-import { blobToDataUrl } from '../../util/bytes'
-import { fetchAttachment } from '../../util/url'
+import { blobToDataUrl, fetchAttachment } from '../../lib'
 
 
 export async function mountBoard(container: HTMLElement, o: BoardOptions): Promise<BoardHandle> {

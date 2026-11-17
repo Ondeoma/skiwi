@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { PanelView } from './PanelView'
-import { isColor, type ColorId } from '../ui/palette'
+import { isColor, type ColorId } from '../lib'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {

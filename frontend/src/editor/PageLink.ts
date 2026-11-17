@@ -1,7 +1,7 @@
 import { InputRule, Node, mergeAttributes } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { PageLinkView } from './PageLinkView'
-import { pageHref, parsePageUrl } from './pageLinks'
+import { pageHref, parsePageUrl } from '../lib'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {

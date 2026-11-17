@@ -57,7 +57,7 @@ final class PgBus(cfg: DbConfig, xa: Transactor[IO]):
       } *> onConnect *> {
         // 1秒ごとに通知を待つ。接続が切れていれば例外になり、外側で再接続する
         val poll: IO[Unit] = IO.blocking(Option(pg.getNotifications(1000)).toList.flatten).flatMap { ns =>
-          ns.traverse_(n => handle(n.getName, n.getParameter).handleErrorWith(e => IO.println(s"[bus] handler failed: $e")))
+          ns.traverse_(n => handle(n.getName, n.getParameter).handleErrorWith(e => skiwi.observe.Log.println(s"[bus] handler failed: $e")))
         } *> IO.blocking {
           // getNotifications(timeout) は切断を検出しないことがあるため、軽いクエリで生存確認する
           val st = c.createStatement(); try st.execute("select 1") finally st.close()

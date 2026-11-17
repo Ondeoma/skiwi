@@ -9,4 +9,4 @@ object Periodic:
 
   /** initialDelay 待ってから action を動かし、以後 every ごとに繰り返す。失敗しても止めず、onError の文を出力する。 */
   def run(initialDelay: FiniteDuration, every: FiniteDuration)(onError: Throwable => String)(action: IO[Any]): IO[Nothing] =
-    IO.sleep(initialDelay) *> (action.void.handleErrorWith(e => IO.println(onError(e))) *> IO.sleep(every)).foreverM
+    IO.sleep(initialDelay) *> (action.void.handleErrorWith(e => skiwi.observe.Log.println(onError(e))) *> IO.sleep(every)).foreverM

@@ -1,38 +1,24 @@
 <script lang="scala">
 import org.scalajs.dom
+import skiwi.web.Palette
 import skiwi.web.workspace.Listeners
 
 import scala.scalajs.js
 
 // 絵文字アイコンの選択. 親要素（position: relative）の下に開く. 外側クリック・Esc で閉じる.
-// at を指定すると画面座標に固定表示（スクロール領域の外へはみ出せるように）. head: 上に出す内容（名前付きスロット）
+// at を指定すると画面座標に固定表示（スクロール領域の外へはみ出せるように）. head: 上に出す内容（名前付きスロット）. headEl: 上に出す素の DOM（エディタから）
 case class Props(onSelect: Option[String] => Unit, onClose: Unit => Unit, allowNone: Boolean = true, noneLabel: String = "アイコンなし", at: Option[(Double, Double)] = None,
-                 head: Slot = Slot.empty)
+                 head: Slot = Slot.empty, headEl: Option[dom.Element] = None)
 
-case class State(custom: RV[String] = RV(""), root: ElementRef[dom.HTMLElement] = ElementRef(), ls: Listeners = new Listeners)
+case class State(custom: RV[String] = RV(""), root: ElementRef[dom.HTMLElement] = ElementRef(), headBox: ElementRef[dom.HTMLElement] = ElementRef(),
+                 ls: Listeners = new Listeners)
 
 def initState() = State()
 
-val Emojis: List[String] = List(
-  "📄", "📝", "📘", "📗", "📕", "📙", "📒", "📚", "📌", "📍", "📎", "🔖",
-  "💡", "ℹ️", "⚠️", "✅", "❌", "⛔", "❓", "❗", "🔥", "⭐", "✨", "🎯",
-  "🚀", "🛠️", "🔧", "⚙️", "🔒", "🔑", "🧪", "🧭", "🗂️", "📁", "🗃️", "📦",
-  "📊", "📈", "📉", "🗓️", "⏰", "⏳", "🔔", "📣", "💬", "👥", "👤", "🤝",
-  "🎉", "🏢", "🏠", "🌐", "💻", "🖥️", "📱", "☁️", "🐛", "🧩", "🚚", "💰",
-  "🧾", "📜", "✏️", "📐", "🎨", "🧠", "❤️", "💙", "💚", "💛", "💜", "🟢",
-)
-
-/** 文字列の先頭の絵文字（書記素）1つ. 入力欄に任意の絵文字を入れたとき用 */
-def firstGrapheme(s: String): String = {
-  val t = s.trim
-  if (t.isEmpty) ""
-  else {
-    val seg = js.Dynamic.newInstance(js.Dynamic.global.Intl.Segmenter)("ja", js.Dynamic.literal(granularity = "grapheme"))
-    js.Array.from(seg.segment(t).asInstanceOf[js.Iterable[js.Dynamic]]).headOption.map(_.segment.asInstanceOf[String]).getOrElse("")
-  }
-}
+def Emojis: List[String] = Palette.Emojis
 
 def mounted(s: State, props: Props): Unit = {
+  props.headEl.foreach(h => s.headBox.foreach(_.appendChild(h)))
   // 開いたクリック自体で閉じないよう、次のタスクで登録する
   dom.window.setTimeout(() => s.ls.on[dom.MouseEvent](dom.document, "mousedown") { e =>
     if (!s.root.get.exists(_.contains(e.target.asInstanceOf[dom.Node]))) props.onClose(())
@@ -49,7 +35,7 @@ def fixedStyle(p: Props): String = p.at.fold("") { case (x, y) =>
 }
 
 def applyCustom(s: State, p: Props): Unit = {
-  val g = firstGrapheme(s.custom.v)
+  val g = Palette.firstGrapheme(s.custom.v)
   if (g.nonEmpty) p.onSelect(Some(g))
 }
 
@@ -65,6 +51,7 @@ def onCustomKey(s: State, p: Props, e: dom.Event): Unit = {
 <template>
   <div ref="s.root" class="picker" :style="fixedStyle(props)" data-testid="icon-picker" @mousedown="event.stopPropagation()">
     <slot name="head"></slot>
+    <div v-if="props.headEl.isDefined" ref="s.headBox"></div>
     <div class="grid">
       <button v-for="e in Emojis" class="emoji" :title="e" @click="props.onSelect(Some(e))">{{ e }}</button>
     </div>

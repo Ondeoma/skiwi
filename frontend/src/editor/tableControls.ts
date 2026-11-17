@@ -1,8 +1,8 @@
 import type { Editor } from '@tiptap/core'
 import { CellSelection } from '@tiptap/pm/tables'
 import { confirmDialog } from '../ui/dialog'
-import { COLORS, type ColorId } from '../ui/palette'
-import { h, onDismiss } from '../ui/dom'
+import { COLORS, onDismiss, type ColorId } from '../lib'
+import { h } from '../ui/dom'
 
 type Chain = ReturnType<Editor['chain']>
 

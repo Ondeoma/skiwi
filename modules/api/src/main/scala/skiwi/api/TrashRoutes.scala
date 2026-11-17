@@ -32,7 +32,7 @@ final class TrashRoutes(
 
   /** 添付ファイルの実体を消す（失敗してもDB側の削除は戻さない）。 */
   private def dropBlobs(keys: List[String]): IO[Unit] =
-    blobs.traverse_(b => keys.traverse_(k => b.delete(k).handleErrorWith(e => IO.println(s"[trash] failed to delete blob $k: $e"))))
+    blobs.traverse_(b => keys.traverse_(k => b.delete(k).handleErrorWith(e => skiwi.observe.Log.println(s"[trash] failed to delete blob $k: $e"))))
 
   /** 期限切れのゴミ箱を完全に削除する（各ノードで動いても冪等）。 */
   def purgeLoop: IO[Unit] =

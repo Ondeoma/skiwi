@@ -129,12 +129,12 @@ final class BackupService(
 
   /** 実行して記録し、古いものを消す */
   def run(wsId: UUID, id: UUID, keep: Option[Int]): IO[Unit] =
-    build(wsId, id).attempt.flatMap {
+    skiwi.observe.Telemetry.span("backup.build", "workspace.id" -> wsId.toString)(build(wsId, id)).attempt.flatMap {
       case Right((key, size, pages, n)) =>
         backups.finish(id, key, size, pages, n) *>
           keep.traverse_(k => backups.prune(wsId, k).flatMap(keys => blobs.traverse_(bs => keys.traverse_(k => bs.delete(k).attempt.void))))
       case Left(e) =>
-        IO.println(s"[backup] failed for $wsId: $e") *> backups.fail(id, Option(e.getMessage).getOrElse(e.toString).take(500))
+        skiwi.observe.Log.println(s"[backup] failed for $wsId: $e") *> backups.fail(id, Option(e.getMessage).getOrElse(e.toString).take(500))
     }
 
   /** 定期バックアップ: 設定した時刻を過ぎていて、今日（設定の時刻以降）のものがまだなければ作る */

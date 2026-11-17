@@ -5,6 +5,7 @@ import io.circe.parser.parse
 import io.circe.syntax.*
 import org.scalajs.dom
 import skiwi.web.{ApiError, CustomCss, Debounced, JsModule, Prefs, Theme, Ui}
+import skiwi.web.editor.PageLinks
 import skiwi.web.parts.SandboxedHtml
 
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
@@ -91,7 +92,7 @@ def unmounted(s: State): Unit = {
   s.mq.v.foreach((mq, f) => mq.removeEventListener("change", f))
   s.doc.v.foreach(_._2.destroy())
   s.css.v.foreach(_.destroy())
-  JsModule.load("editor").foreach(_.setGuestContext(null))
+  PageLinks.setGuest(None)
 }
 
 def setSide(s: State, v: Boolean): Unit = {
@@ -110,7 +111,7 @@ def loadTree(s: State, props: Props): Unit = {
       s.hideHeader := t.hideHeader.contains(true)
       s.sidebarMode := t.sidebar.getOrElse("auto")
       s.hasReleases := t.releases.contains(true)
-      JsModule.load("editor").foreach(_.setGuestContext(js.Dynamic.literal(token = props.token, pages = GuestApi.toJs(t.pages.asJson))))
+      PageLinks.setGuest(Some((props.token, t.pages)))
       pageId(s, props).foreach(id => loadPage(s, props, id))
     case Failure(e) =>
       val st = e match { case a: ApiError => a.status; case _ => 0 }

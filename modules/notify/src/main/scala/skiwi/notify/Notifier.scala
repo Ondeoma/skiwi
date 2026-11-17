@@ -113,7 +113,9 @@ final class Notifier(
         case Right(mail) =>
           mailer match
             case None    => IO.pure(OutboxResult.Skip("mail is not configured"))
-            case Some(m) => m.send(mail).as(OutboxResult.Sent)
+            case Some(m) =>
+              skiwi.observe.Telemetry.span("mail.send", "kind" -> it.kind)(m.send(mail)).as(OutboxResult.Sent)
+                .flatTap(_ => skiwi.observe.Metrics.count("skiwi.mails.sent", "kind" -> it.kind))
       }
     }
 

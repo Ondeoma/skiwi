@@ -39,18 +39,18 @@ final class ClusterManager(val cfg: ClusterConfig, store: ClusterStore):
         old <- nodes.getAndSet(now)
         changed = old.map(_.id) != now.map(_.id)
         _ <- IO.whenA(changed)(
-               IO.println(s"[cluster] ${cfg.nodeId}: alive nodes = ${now.map(_.id).mkString(", ")}") *> IO.whenA(old.nonEmpty)(onChange)
+               skiwi.observe.Log.println(s"[cluster] ${cfg.nodeId}: alive nodes = ${now.map(_.id).mkString(", ")}") *> IO.whenA(old.nonEmpty)(onChange)
              )
       yield ()
     Periodic.run(Duration.Zero, cfg.heartbeatEvery)(e => s"[cluster] heartbeat failed: ${e.getMessage}")(tick)
 
   /** 停止時に登録を消し、他ノードがすぐに担当を引き継げるようにする。 */
-  def leave: IO[Unit] = store.remove(cfg.nodeId).handleErrorWith(e => IO.println(s"[cluster] leave failed: $e"))
+  def leave: IO[Unit] = store.remove(cfg.nodeId).handleErrorWith(e => skiwi.observe.Log.println(s"[cluster] leave failed: $e"))
 
   /** 起動時: 生存ノード一覧だけを読む（自分の登録は、HTTPサーバーが待ち受けを始めてから loop で行う。
     * 先に登録すると、他ノードがまだ接続できないこのノードへ転送してしまうため）。 */
   def refresh: IO[Unit] =
-    store.alive(cfg.deadAfter).flatMap(nodes.set).handleErrorWith(e => IO.println(s"[cluster] refresh failed: $e"))
+    store.alive(cfg.deadAfter).flatMap(nodes.set).handleErrorWith(e => skiwi.observe.Log.println(s"[cluster] refresh failed: $e"))
 
   /** 生存確認用の HTTP クライアント（使い回す） */
   private lazy val http = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(2)).build()

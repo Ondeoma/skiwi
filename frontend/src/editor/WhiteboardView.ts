@@ -1,9 +1,7 @@
 import { domNodeView } from './nodeView'
-import { isDark, onThemeChange } from '../ui/theme'
+import { download, guestContext, isDark, onThemeChange } from '../lib'
 import { handleOnlyDrag } from './dragHandle'
 import { parseSnapshot, type WhiteboardOptions } from './Whiteboard'
-import { guestContext } from './pageLinks'
-import { download } from './markdown'
 import { confirmDialog } from '../ui/dialog'
 import { h, setChildren } from '../ui/dom'
 import type { BoardHandle, Snapshot } from './whiteboard/board'
@@ -121,7 +119,7 @@ export const WhiteboardView = domNodeView<WhiteboardOptions>((c) => {
 
   async function exportPng() {
     const b = await board?.exportPng()
-    if (b) download('whiteboard.png', '', 'image/png', b)
+    if (b) download('whiteboard.png', b)
   }
   function comment() {
     if (full) toggleFull()

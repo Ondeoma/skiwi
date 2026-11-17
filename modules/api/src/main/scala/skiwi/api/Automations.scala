@@ -42,7 +42,7 @@ final class Automations(
         case false => IO.unit
         case true  => run(r, ev)
       }
-    }).handleErrorWith(e => IO.println(s"[automation] failed: $e"))
+    }).handleErrorWith(e => skiwi.observe.Log.println(s"[automation] failed: $e"))
 
   private def matches(t: io.circe.ACursor, ev: AutoEvent): Boolean =
     def s(k: String) = t.get[String](k).toOption.filter(_.nonEmpty)
@@ -65,7 +65,7 @@ final class Automations(
     v.asString.toList ++ v.asBoolean.map(_.toString).toList ++ v.asNumber.map(_.toString).toList ++ v.asArray.toList.flatten.flatMap(_.asString)
 
   private def run(r: AutomationRule, ev: AutoEvent): IO[Unit] =
-    perform(r, ev).attempt.flatMap {
+    skiwi.observe.Telemetry.span("automation.run", "automation.event" -> ev.kind)(perform(r, ev)).attempt.flatMap {
       case Right(_) => rules.recordRun(r.id, None)
       case Left(e)  => rules.recordRun(r.id, Some(Option(e.getMessage).getOrElse(e.toString).take(300)))
     }

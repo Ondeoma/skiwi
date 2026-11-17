@@ -123,37 +123,7 @@
 .drawio-overlay .warn { color: #b45309; }
 .drawio-overlay iframe { flex: 1; border: none; width: 100%; }
 
-/* --- ブロックの一覧（旧 ui/BlockPicker.vue） --- */
-.block-picker-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 900; padding: 16px; }
-.block-picker-backdrop .modal { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; width: min(920px, 100%); height: min(680px, 100%); display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,.3); overflow: hidden; }
-.block-picker-backdrop header { display: flex; align-items: center; gap: .8rem; padding: .8rem 1rem; border-bottom: 1px solid var(--line); }
-.block-picker-backdrop h2 { font-size: 1.05rem; margin: 0; white-space: nowrap; }
-.block-picker-backdrop header input { flex: 1; min-width: 0; padding: .4rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-.block-picker-backdrop .close { border: none; font-size: 1rem; color: var(--muted); }
-.block-picker-backdrop .body { flex: 1; overflow: auto; }
-.block-picker-backdrop table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-.block-picker-backdrop thead th { position: sticky; top: 0; z-index: 1; background: var(--side); text-align: left; font-weight: 600; font-size: .78rem; color: var(--muted); padding: .45rem .6rem; border-bottom: 1px solid var(--line); }
-.block-picker-backdrop tr.cat th { text-align: left; font-size: .8rem; color: var(--accent); padding: .7rem .6rem .25rem; border-bottom: 1px solid var(--line); }
-.block-picker-backdrop tbody tr:not(.cat) { cursor: pointer; }
-.block-picker-backdrop tbody tr.active { background: var(--hover); }
-.block-picker-backdrop td { padding: .35rem .6rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.block-picker-backdrop .c-icon { width: 48px; }
-.block-picker-backdrop .icon { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; background: var(--bg); }
-.block-picker-backdrop .name { font-weight: 600; white-space: nowrap; }
-.block-picker-backdrop .desc { color: var(--muted); }
-.block-picker-backdrop .c-kw { color: var(--muted); font-size: .8rem; width: 30%; }
-.block-picker-backdrop .empty { padding: 2rem; text-align: center; color: var(--muted); }
-.block-picker-backdrop footer { padding: .5rem 1rem; border-top: 1px solid var(--line); font-size: .78rem; color: var(--muted); }
-@media (max-width: 640px) { .block-picker-backdrop .c-kw { display: none; } }
-
-/* --- 絵文字アイコンの選択（旧 ui/IconPicker.vue と同じ見た目） --- */
-.icon-picker { position: absolute; z-index: 50; top: calc(100% + 4px); left: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: .5rem; box-shadow: 0 10px 30px rgba(0,0,0,.2); width: 336px; }
-.icon-picker .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1px; }
-.icon-picker .emoji { border: none; padding: 2px 0; font-size: 1.1rem; line-height: 1.5; border-radius: 4px; }
-.icon-picker .foot { display: flex; gap: .3rem; margin-top: .5rem; align-items: center; }
-.icon-picker .foot input { flex: 1; min-width: 0; padding: .2rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: .85rem; }
-.icon-picker .foot button { font-size: .8rem; white-space: nowrap; }
-.icon-picker .none { color: var(--muted); }
+/* ブロックの一覧（parts/BlockPicker.st）・絵文字アイコンの選択（parts/IconPicker.st）の見た目は、Scalactive の部品の中にある */
 
 /* ブロック単位の選択（Shift+↑/↓・⌘A）. 文字の選択の色は消し、ブロックごとに背景で示す */
 .ProseMirror.ProseMirror-noderangeselection *::selection { background: transparent; }

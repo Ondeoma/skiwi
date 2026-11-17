@@ -1,5 +1,5 @@
 import { domNodeView } from './nodeView'
-import { safeLinkUrl } from '../util/url'
+import { safeLinkUrl, unfurl } from '../lib'
 import { h, setChildren } from '../ui/dom'
 
 /** URL のカード。情報がなければ取りに行き（編集できる人だけが保存）、更新もできる */
@@ -14,9 +14,8 @@ export const LinkCardView = domNodeView((c) => {
     loading = true
     render()
     try {
-      const r = await fetch(`/api/unfurl?url=${encodeURIComponent(String(attrs().url))}`, { credentials: 'same-origin' })
-      if (!r.ok) return
-      const d = await r.json()
+      const d = await unfurl(String(attrs().url))
+      if (!d) return
       if (!c.editor.isDestroyed && c.editor.isEditable)
         c.updateAttributes({ title: d.title ?? null, description: d.description ?? null, image: d.image ?? null, siteName: d.siteName ?? null, icon: d.icon ?? null })
     } catch { /* 取れなくても URL のカードとして出す */ } finally { loading = false; render() }

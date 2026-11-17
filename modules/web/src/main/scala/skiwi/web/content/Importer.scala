@@ -5,6 +5,7 @@ import io.circe.syntax.*
 import org.scalajs.dom
 import skiwi.web.{Api, Dialog, Nav, Progress, Store}
 import skiwi.web.database.{Db, DbApi, DbOption, DbProp, DbView, Formula}
+import skiwi.web.editor.Drawio
 import skiwi.web.model.Page
 
 import scala.collection.mutable
@@ -368,8 +369,6 @@ object Importer {
       }
     }
 
-  private def isDrawioPng(name: String) = "(?i)\\.(drawio|dio)\\.png$".r.findFirstIn(name).isDefined
-  private def isDrawioXml(name: String) = "(?i)\\.(drawio|dio)$".r.findFirstIn(name).isDefined
   private val MxRe = "<mx(file|GraphModel)".r
   private def isMx(s: String) = MxRe.findFirstIn(s).isDefined
 
@@ -416,7 +415,7 @@ object Importer {
           images.get(imgPath).fold(Future.successful(())) { found =>
             val name = Some(src.split("/", -1).last).filter(_.nonEmpty).getOrElse("image")
             // draw.io の図: 図を埋め込んだ PNG（.drawio.png）、または Confluence の draw.io（「図名.png」と、図の XML の「図名」「図名.drawio」）
-            val embeddedF = if (isDrawioPng(name)) Io.drawioXmlFromPng(found.data) else Future.successful(None)
+            val embeddedF = if (Drawio.isPng(name)) Drawio.xmlFromPng(found.data) else Future.successful(None)
             embeddedF.flatMap { embedded =>
               val xmlFile = if (embedded.isDefined) None else {
                 val noPng = "(?i)\\.png$".r
@@ -431,7 +430,7 @@ object Importer {
                   xmlText = embedded.getOrElse(Bytes.utf8(xmlFile.get._2.data))
                   xmlAtt <- xmlFile.fold(Future.successful(Option.empty[Attachment]))(x =>
                     upload(page, x._2.data, s"$title.drawio", "application/xml").map(Some(_)))
-                  labels <- Io.drawioLabels(xmlText)
+                  labels <- Drawio.labelsOf(xmlText)
                 } yield replaceWith(img, drawioFigure(doc, Some(png.url), xmlAtt.map(_.url), title, labels))
               } else upload(page, found.data, name, found.mime).map { a =>
                 img.setAttribute("src", a.url)
@@ -467,14 +466,14 @@ object Importer {
             } catch { case _: Throwable => () } // 壊れたファイルはリンクのまま
             Future.successful(())
           } else {
-            val xmlText = if (isDrawioXml(path)) Some(Bytes.utf8(found.data)).filter(isMx) else None
+            val xmlText = if (Drawio.isXml(path)) Some(Bytes.utf8(found.data)).filter(isMx) else None
             xmlText match {
               case Some(xml) =>
                 // draw.io の図の XML（.drawio）は、図のブロックにする（最初に編集して保存したときに表示用の PNG ができる）
                 val title = "(?i)\\.(drawio|dio)$".r.replaceFirstIn(js.URIUtils.decodeURIComponent(path.split("/", -1).last), "")
                 for {
                   att <- upload(page, found.data, s"$title.drawio", "application/xml")
-                  labels <- Io.drawioLabels(xml)
+                  labels <- Drawio.labelsOf(xml)
                 } yield replaceWith(linkHost(a), drawioFigure(doc, None, Some(att.url), title, labels))
               case None =>
                 // そのほかの添付ファイル

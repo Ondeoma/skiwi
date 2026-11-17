@@ -22,7 +22,9 @@ final class AttachmentIndexer(
     timeout: FiniteDuration = 2.minutes
 ):
   /** 1件を取り出して保存する。失敗しても状態（error など）を記録し、同じものを何度も試さない。 */
-  def index(a: Attachment): IO[String] =
+  def index(a: Attachment): IO[String] = skiwi.observe.Telemetry.span("attachment.index", "content.type" -> a.contentType)(indexImpl(a))
+
+  private def indexImpl(a: Attachment): IO[String] =
     val result: IO[(String, String)] = TextExtract.kindOf(a.filename, a.contentType) match
       case None                    => IO.pure(("unsupported", ""))
       case Some(_) if a.size > maxBytes => IO.pure(("too_large", ""))
@@ -40,7 +42,7 @@ final class AttachmentIndexer(
                 }
             }
     permits.permit.use(_ => result)
-      .handleErrorWith(e => IO.println(s"[skiwi] text extraction failed for ${a.id} (${a.filename}): ${e.getClass.getSimpleName}: ${Option(e.getMessage).getOrElse("").take(200)}").as(("error", "")))
+      .handleErrorWith(e => skiwi.observe.Log.println(s"[skiwi] text extraction failed for ${a.id} (${a.filename}): ${e.getClass.getSimpleName}: ${Option(e.getMessage).getOrElse("").take(200)}").as(("error", "")))
       .flatMap((status, body) => attachments.saveText(a.id, status, body).as(status))
 
   /** アップロードの直後に、裏で取り出す */
@@ -51,5 +53,5 @@ final class AttachmentIndexer(
     val step = attachments.withoutText(10).flatMap { as =>
       if as.isEmpty then IO.sleep(1.minute)
       else as.traverse_(index) *> IO.sleep(1.second)
-    }.handleErrorWith(e => IO.println(s"[skiwi] attachment indexing failed: $e") *> IO.sleep(1.minute))
+    }.handleErrorWith(e => skiwi.observe.Log.println(s"[skiwi] attachment indexing failed: $e") *> IO.sleep(1.minute))
     IO.sleep(20.seconds) *> step.foreverM

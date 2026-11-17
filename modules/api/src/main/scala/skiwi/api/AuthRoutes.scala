@@ -50,9 +50,9 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
             case Some((verifier, nonce, back)) =>
               oidc.authenticate(code, verifier, nonce, Instant.now()).attempt.flatMap {
                 case Left(e) =>
-                  IO.println(s"[auth] login rejected: ${e.getMessage}") *> Forbidden("login rejected")
+                  skiwi.observe.Log.println(s"[auth] login rejected: ${e.getMessage}") *> Forbidden("login rejected")
                 case Right(id) =>
-                  store.upsertUser(id.sub, id.email, id.name).flatMap { user =>
+                  store.upsertUser(id.sub, id.email, id.name, id.picture).flatMap { user =>
                     store.isActive(user.id).flatMap {
                       case false =>
                         audit.user(user, "session", "auth.login.denied", Json.obj("reason" -> "inactive".asJson)) *>
@@ -62,6 +62,7 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
                           _      <- if scimManagesGroups then IO.unit else store.syncGroups(user.id, id.groups)
                           cookie <- sessions.issue(user)
                           _      <- audit.user(user, "session", "auth.login")
+                          _      <- skiwi.observe.Metrics.count("skiwi.logins")
                         yield redirect(back.flatMap(b => safeReturnTo(Some(b))).getOrElse("/")).addCookie(cookie)
                     }
                   }

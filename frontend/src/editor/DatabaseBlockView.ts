@@ -1,5 +1,5 @@
 import { domNodeView } from './nodeView'
-import { guestContext, onLinksChange } from './pageLinks'
+import { guestContext, onLinksChange } from '../lib'
 import { host } from '../ui/host'
 import { h, setChildren } from '../ui/dom'
 

@@ -43,7 +43,8 @@ final class SearchRoutes(store: Store, search: SearchStore, protected val sessio
             status.filter(st => st == "none" || UpdatePageReq.Statuses(st)),
             Option.when(owner.contains("me"))(s.user.id)
           )
-          hits <- search.search(q.take(200), wsId, filter = filter)
+          hits <- skiwi.observe.Telemetry.span("search", "search.filtered" -> (filter != SearchFilter()).toString)(search.search(q.take(200), wsId, filter = filter))
+          _    <- skiwi.observe.Metrics.count("skiwi.search.queries", "kind" -> (if q.trim.isEmpty then "filter" else "text"))
           // 見つかったページの権限をまとめて解決して絞り込む
           roles <- store.pagesAccess(hits.map(_.page.id), s)
           dtos = hits.flatMap { h =>

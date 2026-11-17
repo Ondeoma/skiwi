@@ -39,16 +39,16 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
       case Some(c) => withPage(req, c.pageId, Role.View)((s, p, r) => f(s, c, p, r))
     }
 
-  private def dto(s: AuthSession, r: Role, avatars: Map[UUID, Instant])(c: Comment) =
+  private def dto(s: AuthSession, r: Role, avatars: Map[UUID, String])(c: Comment) =
     val mine = c.authorId.contains(s.user.id)
     CommentDto(c.id, c.threadId, c.anchor, c.quote, if c.deletedAt.isDefined then "" else c.body, c.authorId, c.authorName,
       c.createdAt, c.updatedAt, c.resolvedAt, c.resolvedBy, c.deletedAt.isDefined,
       canEdit = mine && c.deletedAt.isEmpty, canDelete = (mine || r == Role.Edit) && c.deletedAt.isEmpty,
-      authorAvatarUrl = c.authorId.flatMap(a => avatars.get(a).map(AvatarRoutes.url(a, _))))
+      authorAvatarUrl = c.authorId.flatMap(avatars.get))
 
   /** 作者のアイコンの版を読んでから DTO にする */
   private def dtos(s: AuthSession, r: Role)(cs: List[Comment]): IO[List[CommentDto]] =
-    ops.avatarVersions(cs.flatMap(_.authorId).distinct).map(av => cs.map(dto(s, r, av)))
+    AvatarRoutes.urls(ops, cs.flatMap(_.authorId).distinct).map(av => cs.map(dto(s, r, av)))
   private def dto1(s: AuthSession, r: Role)(c: Comment): IO[CommentDto] = dtos(s, r)(List(c)).map(_.head)
 
   private val validAnchor = """^(text|wb):[0-9A-Za-z-]{1,64}$""".r
@@ -70,7 +70,8 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
               else
                 val root = parent.map(_.id)
                 for
-                  c        <- comments.create(id, root, if root.isDefined then None else b.anchor, if root.isDefined then None else b.quote.map(_.take(500)), b.body.trim, s.user.id)
+                  c        <- skiwi.observe.Telemetry.span("comment.create", "page.id" -> id.toString)(comments.create(id, root, if root.isDefined then None else b.anchor, if root.isDefined then None else b.quote.map(_.take(500)), b.body.trim, s.user.id))
+                  _        <- skiwi.observe.Metrics.count("skiwi.comments.created", "kind" -> (if root.isDefined then "reply" else "thread"))
                   excerpt   = Mentions.excerpt(c.body)
                   mentioned = LinkExtract.commentMentions(c.body) - s.user.id
                   _        <- mentions.notify("mention", id, mentioned, s.user.name, excerpt, Some(c.root))

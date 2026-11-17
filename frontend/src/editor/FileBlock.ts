@@ -1,5 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { isAttachmentPath } from '../util/url'
+import { isAttachmentPath } from '../lib'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {

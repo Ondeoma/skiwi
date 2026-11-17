@@ -18,23 +18,40 @@ import doobie.implicits.*
 import org.http4s.jdkhttpclient.JdkWSClient
 import skiwi.db.{Periodic, AccessRequestStore, AttachmentStore, ClusterStore, Database, DocStore, OpsStore, CommentStore, PgBus, ScimStore, SearchStore, ShareStore, Store, WebhookStore, DatabaseStore, AutomationStore, InboundStore, BackupStore, IntegrationStore}
 import skiwi.notify.{Notifier, SmtpMailer}
+import skiwi.observe.{HttpClientTelemetry, HttpTelemetry, Metrics, RumRoutes, Telemetry}
+import skiwi.push.{PushService, PushStore}
 import skiwi.storage.S3BlobStore
 
 import scala.concurrent.duration.*
 
 object Main extends IOApp.Simple:
 
+  // ログにトレースの ID・操作したユーザーを載せるため、IOLocal の文脈を Java のライブラリから見えるようにする
+  // （IORuntime を作る前に設定する必要がある. オブジェクトの初期化は main より先に動く）
+  Telemetry.prepare()
+
+  private val version = Option(getClass.getPackage.getImplementationVersion).orElse(sys.env.get("APP_VERSION")).getOrElse("dev")
+
+  /** スパン・メトリクス・アクセスログの対象（バックエンドのパス. 画面のファイル・/healthz は除く） */
+  private val tracedPaths = List("/api", "/auth", "/mcp", "/oauth", "/scim", "/ws")
+
   def run: IO[Unit] =
     for
       cfg <- Config.load
       n   <- migrateWithRetry(cfg)
-      _   <- IO.println(s"[skiwi] database migrated ($n migration(s) applied)")
+      _   <- skiwi.observe.Log.println(s"[skiwi] database migrated ($n migration(s) applied)")
       _ <- (for
+        _      <- Telemetry.resource("skiwi", version, runtime)
         xa     <- Database.transactor(cfg.db)
-        http   <- EmberClientBuilder.default[IO].build
+        _      <- gauges(xa)
+        // 外への呼び出しもトレースに出す（traceparent を付けて送る）
+        http   <- EmberClientBuilder.default[IO].build.map(HttpClientTelemetry(_))
         store   = new Store(xa)
         docs    = new DocStore(xa)
-        ops     = new OpsStore(xa)
+        pushSt  = new PushStore(xa)
+        push   <- Resource.eval(PushService.create(pushSt, http, cfg.publicUrl, "skiwi"))
+        // 画面内の通知を作ったら、同じ内容をプッシュ通知でも送る
+        ops     = new OpsStore(xa, new NoticePush(push).send)
         audit   = new Audit(ops)
         oidc   <- Resource.eval(OidcClient.create(cfg.oidc, http))
         sess    = new SessionAuth(store, ops, cfg.api)
@@ -45,7 +62,7 @@ object Main extends IOApp.Simple:
         collab  = new Collab(store, docs, sess, Some(ops), CollabConfig(), Some(bus), cluster, wsc,
                     onMentions = (pid, users, by) => store.userNames(by.toList).flatMap(n =>
                       mentions.notify("mention", pid, users -- by, n.values.toList.sorted.mkString("、"), "")))
-        _      <- Resource.eval(cluster.traverse_(c => c.refresh *> IO.println(s"[skiwi] cluster mode: node ${c.self} (${c.cfg.internalUrl})")))
+        _      <- Resource.eval(cluster.traverse_(c => c.refresh *> skiwi.observe.Log.println(s"[skiwi] cluster mode: node ${c.self} (${c.cfg.internalUrl})")))
         blobs  <- blobStore(cfg)
         _      <- Resource.eval(startupNotes(cfg))
         notifier = new Notifier(store, ops, cfg.smtp.map(new SmtpMailer(_)), cfg.publicUrl, cfg.api.adminGroups)
@@ -96,6 +113,7 @@ object Main extends IOApp.Simple:
                   ) ++ Option.when(blobs.isDefined)(indexer.loop)
         _      <- loops.traverse_(_.background)
         health  = healthRoutes(xa, cluster.map(_.self)) <+> clientConfigRoutes(cfg)
+        traced <- HttpTelemetry.middleware(tracedPaths)
         _      <- EmberServerBuilder.default[IO]
                     .withHost(ipv4"0.0.0.0")
                     .withPort(Port.fromInt(cfg.port).getOrElse(port"8080"))
@@ -104,11 +122,12 @@ object Main extends IOApp.Simple:
                     .withHttpWebSocketApp { wsb =>
                       val rest =
                         health <+> new AuthRoutes(oidc, store, sess, audit, cfg.api.scimManagesGroups).routes <+> api.routes <+> opsR.routes <+>
+                          RumRoutes.routes <+> new PushRoutes(pushSt, push, sess).routes <+>
                           search.routes <+> new ContentEditRoutes(store, docs, ops, sess, audit, collab.injectUpdate).routes <+> attach.routes <+> shareR.routes <+> trash.routes <+> extra.routes <+> commentR.routes <+> cssR.routes <+> copyR.routes <+> bulkR.routes <+> lockR.routes <+> autoR.routes <+> inboundR.routes <+> formR.routes <+> unfurlR.routes <+> integR.routes <+> new AvatarRoutes(ops, sess).routes <+> oauthR.routes <+> backupR.routes <+> hookR.routes <+> dbR.routes <+> collab.routes(wsb) <+> scim.fold(HttpRoutes.empty[IO])(_.routes)
                       // MCP（/mcp）。ツールは REST API を同じトークンで内部から呼ぶ
                       val backend = rest <+> new McpRoutes(rest, sess, cfg.publicUrl).routes
                       val all = cfg.staticDir.fold(backend)(d => backend <+> spa(d, shareR))
-                      Security.headers(cfg.publicUrl)(ErrorHandling.Custom.recoverWith(Security.bodyLimit(Security.csrf(cfg.publicUrl, cfg.api.cookieName)(all)).orNotFound)(handler))
+                      traced(Security.headers(cfg.publicUrl)(ErrorHandling.Custom.recoverWith(Security.bodyLimit(Security.csrf(cfg.publicUrl, cfg.api.cookieName)(all)).orNotFound)(handler)))
                     }
                     .build
         // HTTPサーバーが待ち受けを始めてからクラスタに登録する。停止時は逆順: ハートビート停止 → 登録削除 → サーバー停止
@@ -122,9 +141,23 @@ object Main extends IOApp.Simple:
   private def migrateWithRetry(cfg: AppConfig, attempt: Int = 1): IO[Int] =
     Database.migrate(cfg.db).handleErrorWith { e =>
       if attempt >= 60 then IO.raiseError(e)
-      else IO.println(s"[skiwi] database not ready (${e.getMessage.take(120)}); retry $attempt/60") *>
+      else skiwi.observe.Log.println(s"[skiwi] database not ready (${e.getMessage.take(120)}); retry $attempt/60") *>
         IO.sleep(2.seconds) *> migrateWithRetry(cfg, attempt + 1)
     }
+
+  /** DB から定期的に読むメトリクス（skorimako のダッシュボード・アラート用）。 */
+  private def gauges(xa: doobie.Transactor[IO]): Resource[IO, Unit] =
+    def q(sqlText: doobie.Fragment): IO[Long] = sqlText.query[Long].unique.transact(xa)
+    List(
+      Metrics.gauge("skiwi.users.active", "有効なユーザーの数")(q(sql"select count(*) from app_user where active")),
+      Metrics.gauge("skiwi.users.signed_in", "ログイン中（有効なセッションがある）のユーザーの数")(q(sql"select count(distinct user_id) from session where expires_at > now()")),
+      Metrics.gauge("skiwi.workspaces.total", "ワークスペースの数（ゴミ箱を除く）")(q(sql"select count(*) from workspace where deleted_at is null")),
+      Metrics.gauge("skiwi.pages.total", "ページの数（ゴミ箱を除く）")(q(sql"select count(*) from page where deleted_at is null")),
+      Metrics.gauge("skiwi.pages.edited_24h", "24時間以内に更新されたページの数")(q(sql"select count(*) from page where deleted_at is null and updated_at > now() - interval '24 hours'")),
+      Metrics.gauge("skiwi.shares.public", "ゲスト向けに公開中のページの数")(q(sql"select count(*) from page_share where expires_at is null or expires_at > now()")),
+      Metrics.gauge("skiwi.mail.outbox", "送信待ちのメールの数")(q(sql"select count(*) from mail_outbox where sent_at is null and not skipped")),
+      Metrics.gauge("skiwi.webhook.pending", "送信待ちの Webhook の数")(q(sql"select count(*) from webhook_delivery where sent_at is null and not skipped"))
+    ).sequence_
 
   /** 画面が使う設定（ログイン不要。秘密は含めない） */
   private def clientConfigRoutes(cfg: AppConfig): HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -139,24 +172,24 @@ object Main extends IOApp.Simple:
         case Right(true) => Ok(s"ok ${node.getOrElse("")}".trim)
         case Right(false) => ServiceUnavailable("database is read-only (not primary)")
         // 例外の内容（接続先など）は外に出さず、ログにだけ残す
-        case Left(e)      => IO.println(s"[skiwi] health check failed: ${e.getMessage}") *> ServiceUnavailable("database unavailable")
+        case Left(e)      => skiwi.observe.Log.println(s"[skiwi] health check failed: ${e.getMessage}") *> ServiceUnavailable("database unavailable")
       }
   }
 
   private def blobStore(cfg: AppConfig): Resource[IO, Option[skiwi.storage.BlobStore]] = cfg.s3 match
     case Some(c) => S3BlobStore.resource(c).evalTap(_.ensureBucket).map(b => Some(b))
-    case None    => Resource.eval(IO.println("[skiwi] WARNING: S3_ENDPOINT not set; attachments are disabled").as(None))
+    case None    => Resource.eval(skiwi.observe.Log.println("[skiwi] WARNING: S3_ENDPOINT not set; attachments are disabled").as(None))
 
   private def startupNotes(cfg: AppConfig): IO[Unit] =
-    (if cfg.smtp.isEmpty then IO.println("[skiwi] WARNING: SMTP_HOST not set; email notifications are disabled") else IO.unit) *>
-      (if cfg.scimToken.isEmpty then IO.println("[skiwi] SCIM is disabled (SCIM_TOKEN not set); groups are synced from the OIDC claim at login")
-       else IO.println("[skiwi] SCIM enabled at /scim/v2 (group membership is managed by SCIM)")) *>
-      IO.whenA(cfg.secretBox.isEmpty)(IO.println("[skiwi] ENCRYPTION_KEY not set; the skea/skawau integrations are disabled"))
+    (if cfg.smtp.isEmpty then skiwi.observe.Log.println("[skiwi] WARNING: SMTP_HOST not set; email notifications are disabled") else IO.unit) *>
+      (if cfg.scimToken.isEmpty then skiwi.observe.Log.println("[skiwi] SCIM is disabled (SCIM_TOKEN not set); groups are synced from the OIDC claim at login")
+       else skiwi.observe.Log.println("[skiwi] SCIM enabled at /scim/v2 (group membership is managed by SCIM)")) *>
+      IO.whenA(cfg.secretBox.isEmpty)(skiwi.observe.Log.println("[skiwi] ENCRYPTION_KEY not set; the skea/skawau integrations are disabled"))
 
   private val handler: PartialFunction[Throwable, IO[Response[IO]]] = {
     case ReadOnlyTokenError => Forbidden(ErrorDto("this API token is read-only"))
     case e: Security.BodyTooLarge => PayloadTooLarge(ErrorDto(e.getMessage))
-    case e => IO.println(s"[skiwi] unhandled error: $e") *> InternalServerError("internal error")
+    case e => IO(org.slf4j.LoggerFactory.getLogger("skiwi").error("unhandled error", e)) *> InternalServerError("internal error")
   }
 
   /** /s/{key} または /s/{key}/{pageKey} */

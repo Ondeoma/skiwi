@@ -1,5 +1,5 @@
 import { domNodeView } from './nodeView'
-import { isDark, onThemeChange } from '../ui/theme'
+import { isDark, onThemeChange } from '../lib'
 import { h } from '../ui/dom'
 
 let seq = 0

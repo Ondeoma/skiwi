@@ -8,17 +8,19 @@ skiwi は、チーム向けの Wiki です（ブロックエディタ、同時�
 | モジュール | 内容 |
 |---|---|
 | `modules/core` | ドメインモデル、権限解決(`Acl`)、並び順(`FractionalIndex`) — 純粋ロジック |
-| `modules/db` | doobie + Flyway。スキーマ(`V1`〜`V11`)と `Store` / `DocStore` / `OpsStore` / `ScimStore` / `DatabaseStore` |
+| `modules/db` | doobie + Flyway。スキーマ(`V1`〜`V16`)と `Store` / `DocStore` / `OpsStore` / `ScimStore` / `DatabaseStore` |
 | `modules/auth` | OIDC (Authorization Code + PKCE) クライアント |
 | `modules/storage` | 添付ファイルの保存先（S3互換ストレージ。開発は ScalaS3） |
 | `modules/notify` | メール通知（`mail_outbox` を送信するワーカー、SMTP） |
+| `modules/observe` | 観測（OpenTelemetry: otel4s）。HTTP・SQL・外への呼び出しのトレース、業務のメトリクス、ログ（トレースの ID・操作したユーザー付き）を OTLP で skorimako に送る |
+| `modules/push` | プッシュ通知（PWA. Web Push の暗号化と VAPID）。画面内の通知を作ったときに同じ内容を送る |
 | `modules/api` | http4s ルート（`/auth/*`, `/api/*`、検索、添付、版履歴、APIトークン、監査ログ、`/scim/v2`）、Cookieセッション／Bearerトークン |
 | `modules/collab` | 同時編集サーバー: WebSocketリレー、updateログの永続化、ログ圧縮、版の自動作成、接続中の権限再検証、ページの担当ノード決定・転送・ノード間配信 |
 | `modules/app` | 起動・設定（環境変数）、ビルド済みフロントの配信 |
 | `deploy/` | Dockerfile・Patroni/HAProxy設定（試験環境）と、VM構築用の設定ひな形（`deploy/vm/`） |
 | `modules/shared` | バックエンドとフロントエンド(Scala.js)で共有する API の型（circe）。日時は `Timestamp`（JVM では `Instant`、JS では ISO 文字列） |
 | `modules/web` | 画面（Scalactive・Scala.js の `.st`）。ルートは `App.st`（`/w/...` は `WorkspaceView` が描く）、共有の状態は `Store`、API は `Api` と画面ごとの `XxxApi` |
-| `frontend/` | Vite の入口と、JS のまま残す部分（エディタ: Tiptap + Yjs・ホワイトボード・draw.io・Mermaid と、JS のライブラリを呼ぶ小さな部分: marked・mammoth・fflate など）。Scala.js からは `window.skiwiLoad(名前)`（`src/bridge/`）で読み込む |
+| `frontend/` | Vite の入口と、JS のまま残す部分（エディタ: Tiptap・ProseMirror・Yjs・Excalidraw・Mermaid を直接使う部分と、JS のライブラリを呼ぶ小さな部分: marked・mammoth・fflate など）、PWA の Service Worker（`public/sw.js`）。Scala.js からは `window.skiwiLoad(名前)`（`src/bridge/`）で読み込む。エディタが使うライブラリに依らない処理（URL の検査・ページのリンク・draw.io・アップロード・絵文字・ブロックの一覧など）は Scala.js の `skiwi.web.editor`（`window.__skiwiLib`、型は `src/lib.ts`） |
 | `proto/` | 同時編集 + 日本語IME 検証用プロトタイプ（検証済み） |
 
 ## 権限モデル
@@ -72,6 +74,15 @@ export SCIM_TOKEN=$(openssl rand -base64 32)
 # export OAUTH_CLIENT_ID=skea OAUTH_CLIENT_SECRET=$(openssl rand -base64 24) OAUTH_CLIENT_REDIRECT_URI=https://skea.example.com/api/integrations/skiwi/callback
 sbt app/run
 ```
+
+観測（skorimako）・プッシュ通知（PWA）の環境変数（どれも任意）:
+
+| 変数 | 内容 |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` | ログ・メトリクス・トレースの送り先（skorimako の URL と `Authorization=Bearer sko_…`（ingest のキー））。未設定なら送らない。そのほか OpenTelemetry の標準の `OTEL_*` が使える |
+| `LOG_FORMAT` / `LOG_LEVEL` | 標準出力のログの形（`text`（既定）・`json`）と水準（既定 `INFO`）。ログにはトレースの ID と操作したユーザーが付く |
+| `SKORIMAKO_RUM_TOKEN` / `SKORIMAKO_RUM_URL` / `SKORIMAKO_RUM_SAMPLE_RATE` | 画面のブラウザの観測（skorimako の RUM）。トークンは skorimako の管理の画面で登録したアプリのもの。URL を省略すると `SKORIMAKO_URL` |
+| `VAPID_SUBJECT` | プッシュ通知（PWA）の連絡先（`mailto:…` か `https://…`。省略すると `PUBLIC_URL`）。VAPID の鍵は初回の起動で作って DB に保存する |
 
 ### 3ノード構成
 各ノードに `NODE_ID`（一意な名前）、`NODE_URL`（他ノードから届くこのノードのURL）、`CLUSTER_SECRET`（全ノード共通、16文字以上）を設定する。

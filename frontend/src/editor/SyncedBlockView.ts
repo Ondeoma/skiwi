@@ -1,6 +1,6 @@
 import { domNodeView } from './nodeView'
-import { pageHref } from './pageLinks'
-import { copyWithFlash, h } from '../ui/dom'
+import { copyWithFlash, pageHref } from '../lib'
+import { h } from '../ui/dom'
 
 /** 同期ブロック（元）: 上に説明と「埋め込み用リンクをコピー」「解除」のボタン */
 export const SyncedBlockView = domNodeView((c) => {

@@ -2,8 +2,8 @@ import { Node, mergeAttributes } from '@tiptap/core'
 import { PluginKey } from '@tiptap/pm/state'
 import Suggestion from '@tiptap/suggestion'
 import { menuRenderer } from './suggestionMenu'
-import { api4 } from '../api'
-import { mentionMenu, type MentionUser } from './MentionMenu'
+import { searchUsers, type MentionUser } from '../lib'
+import { mentionMenu } from './MentionMenu'
 
 /** 本文中の @メンション。保存されるとサーバーが新しくメンションされた人に通知する（閲覧できる人だけ）。 */
 export const Mention = Node.create({
@@ -37,9 +37,8 @@ export const Mention = Node.create({
           const q = query.trim()
           if (!q) return []
           const my = ++seq
-          const r = await api4.directory(q).catch(() => [])
-          if (my !== seq) return []
-          return r.filter((d) => d.principalType === 'user').slice(0, 8).map((d) => ({ id: d.id, name: d.name, detail: d.detail }))
+          const r = await searchUsers(q, 8)
+          return my !== seq ? [] : r
         },
         command: ({ editor, range, props }) => {
           editor.chain().focus().insertContentAt(range, [

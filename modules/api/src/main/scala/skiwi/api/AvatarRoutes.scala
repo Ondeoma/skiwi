@@ -26,7 +26,11 @@ final class AvatarRoutes(ops: OpsStore, protected val sessions: SessionAuth, max
       authed(req) { _ =>
         val versioned = req.uri.query.params.contains("v")
         ops.avatar(id).flatMap {
-          case None => err(Status.NotFound, "no avatar").map(_.putHeaders(Header.Raw(CIString("Cache-Control"), "private, max-age=300")))
+          // 自分で登録したアイコンがなければ IdP のアイコンへ
+          case None => ops.pictures(List(id)).flatMap(_.get(id) match
+              case Some(pic) => Response[IO](Status.Found).putHeaders(Header.Raw(CIString("Location"), pic),
+                  Header.Raw(CIString("Cache-Control"), "private, max-age=300")).pure[IO]
+              case None => err(Status.NotFound, "no avatar").map(_.putHeaders(Header.Raw(CIString("Cache-Control"), "private, max-age=300"))))
           case Some((ct, data, _)) =>
             Response[IO](Status.Ok).withBodyStream(fs2.Stream.chunk(fs2.Chunk.array(data))).putHeaders(
               Header.Raw(CIString("Content-Length"), data.length.toString),
@@ -61,6 +65,10 @@ object AvatarRoutes:
   private val Types = Set("image/png", "image/jpeg", "image/webp")
 
   def url(userId: UUID, version: Instant): String = s"/api/users/$userId/avatar?v=${version.toEpochMilli}"
+
+  /** 表示するアイコンの URL（自分で登録したもの → IdP のもの）. どちらもない人は含まない */
+  def urls(ops: OpsStore, userIds: List[UUID]): IO[Map[UUID, String]] =
+    (ops.avatarVersions(userIds), ops.pictures(userIds)).mapN((vs, pics) => pics ++ vs.map((id, v) => id -> url(id, v)))
 
   /** 先頭のバイトが、名乗った種類の画像のものか */
   private[api] def looksLike(contentType: String, d: Array[Byte]): Boolean =

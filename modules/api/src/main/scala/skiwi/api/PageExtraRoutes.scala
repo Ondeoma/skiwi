@@ -7,7 +7,7 @@ import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 import skiwi.core.*
-import skiwi.db.{DocStore, OpsStore, Store}
+import skiwi.db.{DocStore, NotificationRow, OpsStore, Store}
 
 import java.time.Instant
 import java.util.UUID
@@ -31,6 +31,16 @@ final case class NotificationDto(
     due: Option[String] = None,
     requestId: Option[String] = None
 ) derives Encoder.AsObject
+
+object NotificationDto:
+  /** 通知の行から（role・excerpt などは detail の JSON から取り出す）。画面のベルとプッシュ通知で使う */
+  def of(n: NotificationRow): NotificationDto =
+    val detail = io.circe.parser.parse(n.detail).toOption.map(_.hcursor)
+    def field(k: String) = detail.flatMap(_.get[String](k).toOption)
+    NotificationDto(n.id, n.kind, n.actors, field("role"), n.pageId, n.pageTitle, n.pageIcon, n.pageWorkspaceId.orElse(n.workspaceId),
+      n.workspaceName.orElse(field("workspace")), n.createdAt, n.readAt.isDefined,
+      field("excerpt").filter(_.nonEmpty), field("threadId"), field("due"), field("requestId"))
+
 final case class NotificationsDto(unread: Int, items: List[NotificationDto]) derives Encoder.AsObject
 final case class MarkReadReq(ids: Option[List[Long]]) derives Decoder
 final case class FavoritePageDto(page: PageDto, workspaceName: String) derives Encoder.AsObject
@@ -82,7 +92,7 @@ final class PageExtraRoutes(protected val store: Store, docs: DocStore, ops: Ops
 
     // ------------------------------------------------------------ 最近
     case req @ POST -> Root / "api" / "pages" / UUIDVar(id) / "visit" =>
-      withPage(req, id, Role.View)((s, _, _) => ops.recordVisit(s.user.id, id) *> NoContent())
+      withPage(req, id, Role.View)((s, _, _) => ops.recordVisit(s.user.id, id) *> skiwi.observe.Metrics.count("skiwi.pages.viewed") *> NoContent())
 
     case req @ GET -> Root / "api" / "recent" =>
       authed(req) { s =>
@@ -125,7 +135,7 @@ final class PageExtraRoutes(protected val store: Store, docs: DocStore, ops: Ops
                   case false => err(Status.Conflict, "page already has content")
                   case true =>
                     docs.saveCompaction(id, y, b.content, b.text, Set.empty, Set.empty, s.user.id, Set(s.user.id)) *>
-                      ops.enqueuePageEdited(id, Set(s.user.id), 300, 1800) *>
+                      ops.enqueuePageEdited(id, Set(s.user.id), 300, 1800) *> skiwi.observe.Metrics.count("skiwi.pages.updated", "via" -> "import") *>
                       audit.log(s, "page.import", "page", id, Json.obj("title" -> p.title.asJson)) *> NoContent()
                 }
           case _ => err(Status.BadRequest, "invalid body")
@@ -191,16 +201,7 @@ final class PageExtraRoutes(protected val store: Store, docs: DocStore, ops: Ops
           canSee <- store.pagesAccess(rows.flatMap(_.pageId), s)
           ok     = rows.filter(_.pageId.forall(canSee.contains))
           count <- ops.unreadNotifications(s.user.id)
-          items  = ok.map { n =>
-                     val detail = io.circe.parser.parse(n.detail).toOption
-                     NotificationDto(n.id, n.kind, n.actors, detail.flatMap(_.hcursor.get[String]("role").toOption),
-                       n.pageId, n.pageTitle, n.pageIcon, n.pageWorkspaceId.orElse(n.workspaceId),
-                       n.workspaceName.orElse(detail.flatMap(_.hcursor.get[String]("workspace").toOption)), n.createdAt, n.readAt.isDefined,
-                       detail.flatMap(_.hcursor.get[String]("excerpt").toOption).filter(_.nonEmpty),
-                       detail.flatMap(_.hcursor.get[String]("threadId").toOption),
-                       detail.flatMap(_.hcursor.get[String]("due").toOption),
-                       detail.flatMap(_.hcursor.get[String]("requestId").toOption))
-                   }
+          items  = ok.map(NotificationDto.of)
           resp  <- Ok(NotificationsDto(count, items))
         yield resp
       }

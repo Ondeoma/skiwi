@@ -1,5 +1,5 @@
 import { domNodeView } from './nodeView'
-import { guestContext, guestHref, onLinksChange, pageHref, pageInfo } from './pageLinks'
+import { guestContext, guestHref, onLinksChange, pageHref, pageInfo } from '../lib'
 import { host, pageById } from '../ui/host'
 import { h } from '../ui/dom'
 

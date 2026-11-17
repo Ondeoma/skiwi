@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { DueDateView } from './DueDateView'
-import { ymd } from '../ui/date'
+import { ymd } from '../lib'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {

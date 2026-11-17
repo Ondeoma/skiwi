@@ -34,7 +34,7 @@ final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String,
   /** 出来事を積む（失敗してもリクエストは止めない） */
   def emit(event: String, pageId: UUID, actor: String, extra: Json = Json.obj(), delay: Int = 0): IO[Unit] =
     hooks.enqueue(event, pageId, Json.obj("actor" -> actor.asJson).deepMerge(extra).noSpaces, delay).void
-      .handleErrorWith(e => IO.println(s"[webhook] failed to enqueue $event: $e"))
+      .handleErrorWith(e => skiwi.observe.Log.println(s"[webhook] failed to enqueue $event: $e"))
 
   private def sign(secret: String, body: String): String =
     val mac = Mac.getInstance("HmacSHA256")
@@ -119,6 +119,14 @@ final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String,
     }
 
   def deliver(it: WebhookItem): IO[OutboxResult] =
+    skiwi.observe.Telemetry.span("webhook.deliver", "webhook.event" -> it.event)(deliverImpl(it)).flatTap { r =>
+      skiwi.observe.Metrics.count("skiwi.webhook.deliveries", "result" -> (r match
+        case OutboxResult.Sent     => "sent"
+        case _: OutboxResult.Retry => "retry"
+        case _                     => "skip"))
+    }
+
+  private def deliverImpl(it: WebhookItem): IO[OutboxResult] =
     if !it.enabled then IO.pure(OutboxResult.Skip("disabled"))
     else message(it).flatMap {
       case Left(reason) => IO.pure(OutboxResult.Skip(reason))

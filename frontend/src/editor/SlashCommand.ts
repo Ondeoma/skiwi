@@ -3,7 +3,8 @@ import { PluginKey } from '@tiptap/pm/state'
 import Suggestion from '@tiptap/suggestion'
 import { menuRenderer } from './suggestionMenu'
 import { slashMenu } from './SlashMenu'
-import { filterItems, showAllItem, slashItems, type SlashContext, type SlashItem } from './commands'
+import { showAllItem, slashItems, type SlashContext, type SlashItem } from './commands'
+import { filterBlocks } from '../lib'
 
 /** 「/」で開くブロック挿入メニュー。 */
 export const SlashCommand = Extension.create<{ ctx: SlashContext }>({
@@ -19,7 +20,7 @@ export const SlashCommand = Extension.create<{ ctx: SlashContext }>({
         startOfLine: false,
         allowSpaces: false,
         // 末尾に常に「すべてのブロックを表示」（入力中の語は一覧の検索欄に引き継ぐ）
-        items: ({ query }) => [...filterItems(all, query), showAllItem(all, query)],
+        items: ({ query }) => [...filterBlocks(all, query), showAllItem(all, query)],
         command: ({ editor, range, props }) => props.run(editor, range),
         render: menuRenderer<SlashItem>(slashMenu),
       }),

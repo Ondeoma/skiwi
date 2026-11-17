@@ -1,7 +1,7 @@
 /**
  * 取り込み・書き出し・複製のうち、JS のライブラリが要るところだけ（段取りは Scala の skiwi.web.content）.
  * Scala からは JsModule.load("io") で使う.
- *   marked（Markdown → HTML）・mammoth（Word → HTML）・fflate（ZIP）・Tiptap のスキーマ / Yjs（本文 → サーバーに保存する形）・draw.io の PNG / XML
+ *   marked（Markdown → HTML）・mammoth（Word → HTML）・fflate（ZIP）・Tiptap のスキーマ / Yjs（本文 → サーバーに保存する形）
  */
 import { elementFromString, getSchema } from '@tiptap/core'
 import { DOMParser as PMDOMParser, Node as PMNode, type Schema } from '@tiptap/pm/model'
@@ -10,8 +10,7 @@ import * as Y from 'yjs'
 import { marked } from 'marked'
 import { unzipSync, zipSync } from 'fflate'
 import { contentExtensions } from '../editor/extensions'
-import { labelsOf, xmlFromPng } from '../editor/drawioUtil'
-import { bytesToBase64 } from '../util/bytes'
+import { toBase64 } from '../lib'
 
 /** 本文のスキーマ（ページごとに作り直すと重いので、最初に使うときに1回だけ作る） */
 let schemaCache: Schema | null = null
@@ -22,7 +21,7 @@ export function encodeJson(json: Record<string, unknown>) {
   const schema = contentSchema()
   const ydoc = prosemirrorJSONToYDoc(schema, json, 'default')
   const node = PMNode.fromJSON(schema, json)
-  return { ydoc: bytesToBase64(Y.encodeStateAsUpdate(ydoc)), content: json, text: node.textBetween(0, node.content.size, '\n', '\n') }
+  return { ydoc: toBase64(Y.encodeStateAsUpdate(ydoc)), content: json, text: node.textBetween(0, node.content.size, '\n', '\n') }
 }
 
 /** HTML → encodeJson と同じ形（generateJSON と同じ変換を、使い回すスキーマで行う） */
@@ -45,9 +44,3 @@ export const unzip = (data: Uint8Array): Record<string, Uint8Array> => unzipSync
 
 /** ZIP を作る */
 export const zip = (files: Record<string, Uint8Array>): Uint8Array => zipSync(files, { level: 6 })
-
-/** PNG に埋め込まれた draw.io の図の XML（なければ・読めなければ null） */
-export const drawioXmlFromPng = (data: Uint8Array): Promise<string | null> => xmlFromPng(data.slice().buffer as ArrayBuffer).catch(() => null)
-
-/** draw.io の図の中の文字（検索用） */
-export const drawioLabels = (xml: string): Promise<string> => labelsOf(xml)

@@ -97,6 +97,7 @@ final class ContentEditRoutes(
             for
               _ <- inject(page.id, update)
               _ <- docs.saveServerEdit(page.id, update, doc(blocks), MarkdownParse.plainText(blocks), s.user.id, before)
+              _ <- skiwi.observe.Metrics.count("skiwi.pages.updated", "via" -> "api")
               _ <- (ops.enqueuePageEdited(page.id, Set(s.user.id), 300, 1800),
                     audit.log(s, "page.edit", "page", page.id, summary.deepMerge(Json.obj("title" -> page.title.asJson, "from" -> from.asJson)))).parTupled
               r <- Ok(summary.deepMerge(Json.obj("pageId" -> page.id.asJson, "blocks" -> blocks.size.asJson)))

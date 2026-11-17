@@ -7,13 +7,18 @@ ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature", "-Wunused:imports"
 val http4sV = "0.23.30"
 val circeV  = "0.14.10"
 val doobieV = "1.0.0-RC8"
+val otel4sV = "1.2.0"
+val otelV   = "1.68.0"
+val otelInstV = "2.33.1-alpha"
 
 lazy val commonTest = Seq(
   libraryDependencies ++= Seq(
     "org.scalameta" %% "munit"               % "1.0.4" % Test,
     "org.typelevel" %% "munit-cats-effect"   % "2.0.0" % Test
   ),
-  Test / fork := true
+  Test / fork := true,
+  // テストのログの設定（project/test-resources/logback-test.xml. 全モジュールで共通）
+  Test / unmanagedResourceDirectories += (ThisBuild / baseDirectory).value / "project" / "test-resources"
 )
 
 // バックエンドとフロントエンド(Scala.js)で共有する API の型
@@ -43,7 +48,7 @@ lazy val core = (project in file("modules/core"))
   .settings(commonTest)
 
 lazy val db = (project in file("modules/db"))
-  .dependsOn(core)
+  .dependsOn(core, observe)
   .settings(commonTest)
   .settings(
     libraryDependencies ++= Seq(
@@ -84,7 +89,9 @@ lazy val storage = (project in file("modules/storage"))
   )
 
 lazy val notifier = (project in file("modules/notify"))
-  .dependsOn(core, db % "compile;test->test") // circe-parser は db から。テストは db の DbSuite を使う
+  // circe-parser は db から。テストは db の DbSuite を使う
+  // observe は db 経由でも入るが、"compile;test->test" の指定では observe のライブラリ（otel4s など）がクラスパスに入らないため直接も指定する
+  .dependsOn(core, observe, db % "compile;test->test")
   .settings(commonTest)
   .settings(
     libraryDependencies ++= Seq(
@@ -92,8 +99,40 @@ lazy val notifier = (project in file("modules/notify"))
     )
   )
 
+// 観測（OpenTelemetry: otel4s-oteljava）. ログ・メトリクス・トレースを OTLP で skorimako に送る
+lazy val observe = (project in file("modules/observe"))
+  .settings(commonTest)
+  .settings(
+    libraryDependencies ++= Seq(
+      "org.typelevel"   %% "otel4s-oteljava"                 % otel4sV,
+      "org.typelevel"   %% "otel4s-oteljava-context-storage" % otel4sV,
+      "org.typelevel"   %% "otel4s-instrumentation-metrics"  % otel4sV,
+      "io.opentelemetry" % "opentelemetry-exporter-otlp"     % otelV,
+      "io.opentelemetry.instrumentation" % "opentelemetry-logback-appender-1.0" % otelInstV,
+      "io.opentelemetry.instrumentation" % "opentelemetry-logback-mdc-1.0"      % otelInstV,
+      "io.opentelemetry.instrumentation" % "opentelemetry-runtime-telemetry"    % otelInstV,
+      "org.http4s"      %% "http4s-server"                   % http4sV,
+      "org.http4s"      %% "http4s-client"                   % http4sV,
+      "org.http4s"      %% "http4s-circe"                    % http4sV,
+      "org.http4s"      %% "http4s-dsl"                      % http4sV,
+      "ch.qos.logback"   % "logback-classic"                 % "1.5.18",
+      "org.tpolecat"    %% "doobie-core"                     % doobieV
+    )
+  )
+
+// プッシュ通知（PWA. Web Push の暗号化と VAPID は JDK の暗号の機能だけで実装）
+lazy val push = (project in file("modules/push"))
+  .dependsOn(db, observe)
+  .settings(commonTest)
+  .settings(
+    libraryDependencies ++= Seq(
+      "org.http4s" %% "http4s-client" % http4sV,
+      "io.circe"   %% "circe-core"    % circeV
+    )
+  )
+
 lazy val api = (project in file("modules/api"))
-  .dependsOn(core, db % "compile;test->test", auth, storage, shared.jvm) // テストは db の DbSuite を使う
+  .dependsOn(core, db % "compile;test->test", auth, storage, shared.jvm, observe, push) // テストは db の DbSuite を使う
   .settings(commonTest)
   .settings(
     libraryDependencies ++= Seq(
@@ -126,5 +165,5 @@ lazy val app = (project in file("modules/app"))
   )
 
 lazy val root = (project in file("."))
-  .aggregate(shared.jvm, shared.js, web, core, db, auth, storage, notifier, api, collab, app)
+  .aggregate(shared.jvm, shared.js, web, core, db, auth, storage, notifier, observe, push, api, collab, app)
   .settings(name := "skiwi", publish / skip := true)

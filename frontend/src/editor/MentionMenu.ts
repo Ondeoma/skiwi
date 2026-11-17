@@ -1,7 +1,6 @@
 import { listMenu, pickOnMouseDown } from './suggestionMenu'
 import { h, setChildren } from '../ui/dom'
-
-export interface MentionUser { id: string; name: string; detail: string | null }
+import type { MentionUser } from '../lib'
 
 /** 「@」で開くユーザーの候補 */
 export function mentionMenu() {

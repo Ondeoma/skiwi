@@ -1,4 +1,4 @@
-import type { IntegrationStatus, Me, Page, ServiceName, Workspace } from '../api'
+import type { IntegrationStatus, Me, Page, ServiceName, Workspace } from '../types'
 
 /**
  * Scalactive（Scala.js）の画面が用意する機能（skiwi.web.Host.exposeToJs が window.__skiwiHost に置く）.

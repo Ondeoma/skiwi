@@ -95,6 +95,7 @@ object Store {
     for {
       m <- Api.me()
       _ = me := Some(m)
+      _ = Observe.setUser(m.id)
       ws <- Api.workspaces()
     } yield {
       workspaces := ws

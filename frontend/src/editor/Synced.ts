@@ -55,16 +55,3 @@ export const SyncedRef = Node.create<{ depth: number }>({
     return { insertSyncedRef: (attrs) => ({ commands }) => commands.insertContent({ type: this.name, attrs }) }
   },
 })
-
-/** 文書の中の同期ブロックを探す（埋め込み先の選択用） */
-export function findSyncedBlocks(doc: unknown): { id: string; text: string; node: Record<string, unknown> }[] {
-  const out: { id: string; text: string; node: Record<string, unknown> }[] = []
-  const textOf = (n: any): string => (n.text ?? '') + (n.content ?? []).map(textOf).join(' ')
-  const walk = (n: any) => {
-    if (!n || typeof n !== 'object') return
-    if (n.type === 'syncedBlock' && n.attrs?.id) out.push({ id: n.attrs.id, text: textOf(n).replace(/\s+/g, ' ').trim(), node: n })
-    ;(n.content ?? []).forEach(walk)
-  }
-  walk(doc)
-  return out
-}

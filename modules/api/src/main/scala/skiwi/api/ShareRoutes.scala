@@ -467,6 +467,7 @@ final class ShareRoutes(
         v.find(pageKey) match
           case None => err(Status.NotFound, "not found")
           case Some(p) =>
+            skiwi.observe.Metrics.count("skiwi.public.views") *>
             (v.content(p.id), store.cssLayers(p.id), store.guestHtmlLayers(p.id), store.isFullWidth(p.id)).flatMapN { (content, css, html, wide) =>
               Ok(GuestContentDto(guest(p), forGuest(key, v.pages.map(_.id).toSet)(content), css.map(_.css),
                 top = html.flatMap(_.top), bottom = html.reverse.flatMap(_.bottom), fullWidth = wide))

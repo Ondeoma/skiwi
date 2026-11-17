@@ -1,8 +1,8 @@
 import { Extension, Node, mergeAttributes } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { LinkCardView } from './LinkCardView'
-import { parsePageUrl } from './pageLinks'
-import { safeLinkUrl } from '../util/url'
+import { parsePageUrl } from '../lib'
+import { safeLinkUrl } from '../lib'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {

@@ -63,9 +63,10 @@ trait RouteSupport extends Http4sDsl[IO]:
     case _: StoreError.NotFound => err(Status.NotFound, e.message)
     case _: StoreError.Invalid  => err(Status.BadRequest, e.message)
 
-  /** ログインしていなければ 401。 */
+  /** ログインしていなければ 401。操作したユーザーを、トレース（スパンの属性）とこの中のログに載せる。 */
   protected def authed(req: Request[IO])(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
-    sessions.fromRequest(req).flatMap(_.fold(err(Status.Unauthorized, "unauthorized"))(f))
+    sessions.fromRequest(req).flatMap(_.fold(err(Status.Unauthorized, "unauthorized"))(s =>
+      skiwi.observe.Telemetry.withUser(s.user.id.toString, s.user.name)(f(s))))
 
   /** 管理者のみ（それ以外は 403）。 */
   protected def admin(req: Request[IO])(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =

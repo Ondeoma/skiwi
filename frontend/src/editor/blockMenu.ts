@@ -1,11 +1,11 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PMNode } from '@tiptap/pm/model'
-import { COLORS } from '../ui/palette'
+import { COLORS, onDismiss } from '../lib'
 import { alertDialog, alertError, confirmDialog } from '../ui/dialog'
-import { openPagePicker } from '../ui/pagePicker'
+import { host } from '../ui/host'
 import { appendToPage } from '../ui/moveBlock'
 import { BLOCK_TYPES } from './BlockAttrs'
-import { h, onDismiss, setChildren } from '../ui/dom'
+import { h, setChildren } from '../ui/dom'
 
 type Chain = ReturnType<Editor['chain']>
 const TURN: { label: string; icon: string; run: (c: Chain) => Chain }[] = [
@@ -84,7 +84,7 @@ export function openBlockMenu(parent: HTMLElement, p: { editor: Editor; node: PM
   }
   async function moveTo() {
     if (node.type.name === 'whiteboard') { done(); await alertDialog('ホワイトボードは別のページへ移動できません（中身はこのページに保存されているため）'); return }
-    const target = await openPagePicker()
+    const target = await host().pickPage()
     if (!target) return
     if (target.id === p.pageId) { await alertDialog('同じページです'); return }
     if (!(await confirmDialog(`このブロックを「${target.title || '無題'}」の末尾へ移動しますか？`, { okLabel: '移動' }))) return

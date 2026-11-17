@@ -80,9 +80,9 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
     client.flatMap {
       case Some(_) => IO.unit
       case None => validate(raw, hasSecret = false) match
-        case Left(msg) => IO.println(s"[skiwi] OAUTH_CLIENT_* is invalid and ignored: $msg")
+        case Left(msg) => skiwi.observe.Log.println(s"[skiwi] OAUTH_CLIENT_* is invalid and ignored: $msg")
         case Right(v)  => save(v, None) *> audit.system("system", "integration.oauth_client.seed", "integration", v.clientId) *>
-                            IO.println(s"[skiwi] registered OAuth client '${v.clientId}' from OAUTH_CLIENT_*")
+                            skiwi.observe.Log.println(s"[skiwi] registered OAuth client '${v.clientId}' from OAUTH_CLIENT_*")
     }
 
   private def clientDto(c: Option[OAuthClient]): IO[OAuthClientDto] = c match

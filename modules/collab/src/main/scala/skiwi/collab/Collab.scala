@@ -17,6 +17,7 @@ import skiwi.collab.{Protocol as Wire}
 import skiwi.auth.Crypto
 import skiwi.core.*
 import skiwi.db.{DocStore, OpsStore, Periodic, PgBus, Store}
+import skiwi.observe.{Metrics, Telemetry}
 
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -171,19 +172,22 @@ final class Collab(
       )
     }.flatTap { seq =>
       bus.traverse_(_.publish(Collab.UpdateChannel, s"$nodeId|$pageId|$seq")
-        .handleErrorWith(e => IO.println(s"[collab] notify failed: ${e.getMessage}"))) *>
+        .handleErrorWith(e => skiwi.observe.Log.println(s"[collab] notify failed: ${e.getMessage}"))) *>
         room.traverse_(r => r.sinceSnapshot.updateAndGet(_ + 1).flatMap { n =>
           if n >= cfg.compactAfterUpdates then requestCompaction(r) else scheduleCompaction(r)
         })
     }
 
   private def onUpdate(room: Room, c: Conn, payload: ByteVector): IO[Unit] =
-    room.versionAuthors.update(_ + c.userId) *> room.recentEditors.update(_ + c.userId) *>
-      ingest(Some(room), room.pageId, payload, Some(c)).void
+    Telemetry.span("collab.update", "page.id" -> room.pageId.toString)(
+      room.versionAuthors.update(_ + c.userId) *> room.recentEditors.update(_ + c.userId) *>
+        ingest(Some(room), room.pageId, payload, Some(c)).void
+    ) *> Metrics.count("skiwi.collab.updates", "via" -> "client")
 
   /** サーバーで作った update（API・MCP での本文の変更）を、クライアントからの update と同じく保存して配る。保存した seq を返す。 */
   def injectUpdate(pageId: UUID, update: Array[Byte]): IO[Long] =
-    localRoom(pageId).flatMap(ingest(_, pageId, ByteVector(update), None))
+    Telemetry.span("collab.inject", "page.id" -> pageId.toString)(localRoom(pageId).flatMap(ingest(_, pageId, ByteVector(update), None)))
+      .flatTap(_ => Metrics.count("skiwi.collab.updates", "via" -> "server"))
 
   /** 最後のupdateから一定時間後に圧縮を要求する（連続更新の間は延期）。 */
   private def scheduleCompaction(room: Room): IO[Unit] =
@@ -221,7 +225,7 @@ final class Collab(
         c.captured.modify(m => (m - token, m.get(token))).flatMap {
           case None => IO.unit // 要求がこのクライアントに届いた記録がない
           case Some(known) =>
-            for
+            Telemetry.span("collab.compact", "page.id" -> room.pageId.toString)(for
               authors <- room.versionAuthors.get
               editors <- room.recentEditors.getAndSet(Set.empty)
               res <- docs.saveCompaction(room.pageId, update.toArray, doc, text, known.seqs, known.snaps, c.userId, authors, cfg.versionEvery)
@@ -232,8 +236,8 @@ final class Collab(
               _ <- notifyEdited(room.pageId, editors)
               _ <- if res.newMentions.isEmpty then IO.unit
                    else onMentions(room.pageId, res.newMentions, if editors.isEmpty then Set(c.userId) else editors)
-                          .handleErrorWith(e => IO.println(s"[collab] failed to notify mentions: $e"))
-            yield ()
+                          .handleErrorWith(e => skiwi.observe.Log.println(s"[collab] failed to notify mentions: $e"))
+            yield ())
         }
     }
 
@@ -241,15 +245,16 @@ final class Collab(
   private def notifyEdited(pageId: UUID, editors: Set[UUID]): IO[Unit] =
     (ops, editors.nonEmpty) match
       case (Some(o), true) =>
+        Metrics.count("skiwi.pages.updated", "via" -> "collab") *>
         o.enqueuePageEdited(pageId, editors, cfg.notifyQuiet.toSeconds.toInt, cfg.notifyMaxDelay.toSeconds.toInt).void
-          .handleErrorWith(e => IO.println(s"[collab] failed to enqueue notification: $e"))
+          .handleErrorWith(e => skiwi.observe.Log.println(s"[collab] failed to enqueue notification: $e"))
       case _ => IO.unit
 
   // ---------------------------------------------------------------- ノード間
 
   /** 文書の全構成要素をルームの全員へ流し直す（取りこぼしの回復。Yjsなので重複は無害）。 */
   private def resync(room: Room): IO[Unit] =
-    docs.load(room.pageId).flatMap { parts =>
+    Telemetry.span("collab.resync", "page.id" -> room.pageId.toString)(docs.load(room.pageId)).flatMap { parts =>
       parts.snapshots.traverse_((id, y) => room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(y)), Some(Item.Snap(id))))) *>
         parts.updates.traverse_((seq, u) => room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(u)), Some(Item.Upd(seq)))))
     }
@@ -270,7 +275,7 @@ final class Collab(
 
   /** バス（LISTEN接続）の接続・再接続時。切断中の通知は失われるので、開いている全ルームを流し直す。 */
   private val onBusConnected: IO[Unit] =
-    registry.get.flatMap(_.values.toList.traverse_((r, _) => resync(r).handleErrorWith(e => IO.println(s"[collab] resync failed: $e"))))
+    registry.get.flatMap(_.values.toList.traverse_((r, _) => resync(r).handleErrorWith(e => skiwi.observe.Log.println(s"[collab] resync failed: $e"))))
 
   /** ノード間メッセージの購読（Mainで起動する）。 */
   val busLoop: IO[Unit] = bus match
@@ -285,7 +290,7 @@ final class Collab(
 
   /** 権限が変わり得る操作の後に呼ぶ。自ノードを再検証し、他ノードにも知らせる。 */
   val accessChanged: IO[Unit] =
-    revalidate *> bus.traverse_(_.publish(Collab.AccessChannel, nodeId).handleErrorWith(e => IO.println(s"[collab] notify failed: $e")))
+    revalidate *> bus.traverse_(_.publish(Collab.AccessChannel, nodeId).handleErrorWith(e => skiwi.observe.Log.println(s"[collab] notify failed: $e")))
 
   /** 担当でないページの接続を閉じ、クライアントに担当ノードへ繋ぎ直させる。生存ノードが変わったときと定期的に呼ぶ
     * （担当ノードへ転送できず自ノードで受けた接続を、担当ノードが応答するようになったら戻すため）。 */
@@ -302,7 +307,7 @@ final class Collab(
             cl.reachable(group.head._1).flatMap {
               case true =>
                 group.traverse_ { (o, pageId, list) =>
-                  IO.println(s"[cluster] page $pageId belongs to ${o.id}; closing ${list.size} local connection(s)") *>
+                  skiwi.observe.Log.println(s"[cluster] page $pageId belongs to ${o.id}; closing ${list.size} local connection(s)") *>
                     list.traverse_(_.stop.complete(()).void)
                 }
               case false => IO.unit // 担当ノードがまだ応答しない: このノードで処理を続ける
@@ -327,7 +332,7 @@ final class Collab(
         case Some(s) => store.pagesAccess(group.map(_.pageId), s).map(_.map { case (pid, (_, r)) => pid -> (if s.readOnly then Role.View else r) })
       }
       check.attempt.flatMap {
-        case Left(e)      => IO.println(s"[collab] revalidation failed for client(s) ${group.map(_.id).mkString(",")}: $e")
+        case Left(e)      => skiwi.observe.Log.println(s"[collab] revalidation failed for client(s) ${group.map(_.id).mkString(",")}: $e")
         case Right(roles) => group.traverse_(c => applyRole(c, roles.get(c.pageId)))
       }
     })
@@ -368,7 +373,8 @@ final class Collab(
       conn   = new Conn(id, pageId, s.user.id, reauth, authKey, role, roomD, stop, deliv, capt)
       send: Stream[IO, WebSocketFrame] =
         (for
-          _    <- Stream.bracket(conns.update(_ + (id -> conn)))(_ => conns.update(_ - id))
+          _    <- Stream.bracket(conns.update(_ + (id -> conn)) *> Metrics.upDown("skiwi.collab.connections", 1))(_ =>
+                    conns.update(_ - id) *> Metrics.upDown("skiwi.collab.connections", -1))
           room <- Stream.resource(acquire(pageId)).evalTap(roomD.complete)
           _    <- Stream.bracket(role.get.flatMap(r => if r == Role.Edit then room.editors.update(_ + id) else IO.unit))(_ => room.editors.update(_ - id))
           _    <- Stream.bracket(IO.unit)(_ => aware.get.flatMap(m =>
@@ -404,15 +410,15 @@ final class Collab(
             val canEdit = r == Role.Edit
             Wire.parse(data) match
               case Wire.Inbound.Update(p) =>
-                if canEdit && p.size <= cfg.maxUpdateBytes then onUpdate(room, conn, p) else IO.unit
+                if canEdit && p.size <= cfg.maxUpdateBytes then Telemetry.withUser(s.user.id.toString, s.user.name)(onUpdate(room, conn, p)) else IO.unit
               case Wire.Inbound.Awareness if data.size > cfg.maxAwarenessBytes => IO.unit
               case Wire.Inbound.Awareness =>
                 aware.update(m => Wire.awarenessClients(data).foldLeft(m) { case (acc, (c, clock, removed)) =>
                   if removed then acc - c else acc + (c -> clock)
                 }) *> room.topic.publish1(Out(id, None, data)).void
               case Wire.Inbound.CompactResponse(tok, upd, json, text) =>
-                if canEdit then onCompactResponse(room, conn, tok, upd, json, text) else IO.unit
-              case Wire.Inbound.Malformed => IO.println(s"[collab] malformed frame from client $id on $pageId")
+                if canEdit then Telemetry.withUser(s.user.id.toString, s.user.name)(onCompactResponse(room, conn, tok, upd, json, text)) else IO.unit
+              case Wire.Inbound.Malformed => skiwi.observe.Log.println(s"[collab] malformed frame from client $id on $pageId")
               case Wire.Inbound.Ignored   => IO.unit
           }
         case _ => IO.unit
@@ -424,15 +430,16 @@ final class Collab(
     // 再検証用: リクエストの認証情報だけを保持して後から引き直す
     val authOnly = Request[IO](method = Method.GET, headers = req.headers)
     val authKey  = List(CIString("Cookie"), CIString("Authorization")).flatMap(n => req.headers.get(n).toList.flatMap(_.toList.map(_.value))).mkString("\n")
-    sessions.fromRequest(req).flatMap {
+    Telemetry.span("collab.connect", "page.id" -> pageId.toString)(sessions.fromRequest(req).flatMap {
       case None => Response[IO](Status.Unauthorized).pure[IO]
       case Some(s) =>
-        store.pageAccess(pageId, s).flatMap {
+        Telemetry.withUser(s.user.id.toString, s.user.name)(store.pageAccess(pageId, s).flatMap {
           case None => NotFound()
           case Some((_, role)) =>
-            connection(pageId, if s.readOnly then Role.View else role, s, sessions.fromRequest(authOnly), authKey, wsb)
-        }
-    }
+            Metrics.count("skiwi.collab.sessions", "role" -> (if s.readOnly then Role.View else role).asString) *>
+              connection(pageId, if s.readOnly then Role.View else role, s, sessions.fromRequest(authOnly), authKey, wsb)
+        })
+    })
 
   // ---------------------------------------------------------------- WebSocket（担当ノードへ転送）
 
@@ -453,12 +460,12 @@ final class Collab(
         val headers = Headers(req.headers.headers.filter(h => keep(h.name))).put(Header.Raw(ForwardHeader, cl.cfg.secret))
         val base = owner.url.stripSuffix("/").replaceFirst("^http", "ws")
         val wsReq = WSRequest(Uri.unsafeFromString(s"$base/ws/pages/$pageId")).withHeaders(headers)
-        client.connectHighLevel(wsReq).allocated.timeout(2.seconds).attempt.flatMap {
+        Telemetry.span("collab.proxy", "page.id" -> pageId.toString, "owner" -> owner.id)(client.connectHighLevel(wsReq).allocated.timeout(2.seconds).attempt).flatMap {
           case Left(e) =>
             Collab.handshakeStatus(e) match
               case Some(code) => Status.fromInt(code).toOption.map(st => Response[IO](st)).pure[IO]
               case None =>
-                IO.println(s"[cluster] cannot reach owner ${owner.id} for page $pageId (${e.getMessage}); serving locally").as(None)
+                skiwi.observe.Log.println(s"[cluster] cannot reach owner ${owner.id} for page $pageId (${e.getMessage}); serving locally").as(None)
           case Right((up, release)) =>
             release.memoize.flatMap { rel =>
               val toClient: Stream[IO, WebSocketFrame] = up.receiveStream.collect {

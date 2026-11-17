@@ -1,6 +1,6 @@
 import { domNodeView } from './nodeView'
-import { COLORS, type ColorId } from '../ui/palette'
-import { openIconPicker } from '../ui/iconPicker'
+import { COLORS, type ColorId } from '../lib'
+import { openIconPicker } from '../lib'
 import { h } from '../ui/dom'
 
 /** パネル（アイコンと背景色のある囲み）。編集中はアイコンのボタンでアイコン・色を変える */

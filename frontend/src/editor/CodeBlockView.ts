@@ -1,6 +1,7 @@
 import { domNodeView } from './nodeView'
 import { LANGUAGES, languageLabel } from './CodeBlock'
-import { copyWithFlash, h, setChildren } from '../ui/dom'
+import { copyWithFlash } from '../lib'
+import { h, setChildren } from '../ui/dom'
 
 /** コードブロック: 言語の選択（編集中）・言語名（表示中）とコピーのボタン */
 export const CodeBlockView = domNodeView((c) => {

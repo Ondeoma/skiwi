@@ -12,14 +12,26 @@ import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
 
-/** API の呼び出しでのエラー（frontend/src/api.ts の ApiError と同じ）. body: エラー応答の本文（JSON） */
+/** API の呼び出しでのエラー. body: エラー応答の本文（JSON） */
 final case class ApiError(status: Int, message: String, body: Option[Json] = None) extends Exception(message)
 
 /**
- * バックエンドの API（frontend/src/api.ts の request と同じ約束: 401 はログインへ、エラーは {"error": ...}）.
+ * バックエンドの API（401 はログインへ、エラーは {"error": ...}）. エディタ（JS）の取得・送信もここを通す（editor.EditorLib）.
  * 画面ごとの API は、この get・send・del などを使って各画面のファイル（XxxApi）に書く.
  */
 object Api {
+
+  /** fetch の設定（同じオリジンの Cookie を付ける. body は JSON の文字列）. */
+  def init(method: dom.HttpMethod, body: Option[String] = None): dom.RequestInit = {
+    val i = new dom.RequestInit {}
+    i.method = method
+    i.credentials = dom.RequestCredentials.`same-origin`
+    body.foreach { b =>
+      i.headers = js.Dictionary("Content-Type" -> "application/json")
+      i.body = b
+    }
+    i
+  }
 
   /**
    * redirectOn401=false: 未ログインでもログイン画面へ飛ばさず ApiError(401) にする（ゲスト表示など）.
@@ -27,19 +39,15 @@ object Api {
    */
   def request(method: dom.HttpMethod, url: String, body: Option[Json | dom.Blob | dom.FormData] = None,
               redirectOn401: Boolean = true): Future[Option[Json]] = {
-    val init = new dom.RequestInit {}
-    init.method = method
-    init.credentials = dom.RequestCredentials.`same-origin`
+    val req = init(method, body.collect { case j: Json => j.noSpaces })
     body.foreach {
-      case f: dom.FormData => init.body = f
+      case f: dom.FormData => req.body = f
       case b: dom.Blob =>
-        init.headers = js.Dictionary("Content-Type" -> b.`type`)
-        init.body = b
-      case j: Json =>
-        init.headers = js.Dictionary("Content-Type" -> "application/json")
-        init.body = j.noSpaces
+        req.headers = js.Dictionary("Content-Type" -> b.`type`)
+        req.body = b
+      case _: Json => ()
     }
-    dom.fetch(url, init).toFuture.flatMap { res =>
+    dom.fetch(url, req).toFuture.flatMap { res =>
       if (res.status == 401 && redirectOn401) {
         // 未ログイン: IdPへ
         dom.window.location.href = "/auth/login"

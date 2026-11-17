@@ -122,7 +122,7 @@ final class PageCopyRoutes(
                   else approvers(id).flatMap { us =>
                     val detail = Json.obj("requestId" -> ar.id.toString.asJson, "role" -> role.asJson, "excerpt" -> msg.asJson).dropNullValues.noSpaces
                     ops.enqueueNotice("access_request", us - s.user.id, Some(id), s.user.name, detail, mail = true).void
-                  }.handleErrorWith(e => IO.println(s"[notify] failed to enqueue access request: $e"))
+                  }.handleErrorWith(e => skiwi.observe.Log.println(s"[notify] failed to enqueue access request: $e"))
                 notify *> Accepted(AccessStatusDto("pending", Some(role)))
               }
           }

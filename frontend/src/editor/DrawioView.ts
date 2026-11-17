@@ -1,16 +1,8 @@
 import { domNodeView } from './nodeView'
 import type { DrawioOptions } from './Drawio'
 import { alertDialog, alertError } from '../ui/dialog'
-import { fetchAttachment } from '../util/url'
-import { dataUrlToFile, drawioFileName, drawioUrl, editorSrc, labelsOf, urlToDataUrl } from './drawioUtil'
+import { dataUrlToFile, drawioEditorSrc, drawioFileName, drawioLabels, drawioTitle, drawioUrl, fetchAttachment, urlToDataUrl } from '../lib'
 import { h, setChildren } from '../ui/dom'
-
-/** 図のページ名（既定の「ページ-1」以外）を題名にする */
-function titleOf(xml: string): string | null {
-  const m = /<diagram[^>]*\bname="([^"]*)"/.exec(xml)
-  const n = m?.[1]?.replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim()
-  return n && !/^(Page|ページ)-\d+$/.test(n) ? n : null
-}
 
 /** draw.io の図: ふだんは PNG を表示し、編集は diagrams.net のエディタ（埋め込みモード）を全画面で開いて行う */
 export const DrawioView = domNodeView<DrawioOptions>((c) => {
@@ -37,7 +29,7 @@ export const DrawioView = domNodeView<DrawioOptions>((c) => {
     if (!base) { await alertDialog('draw.io のエディタが設定されていません（管理者が DRAWIO_URL を空にしています）。'); return }
     if (!upload) { await alertDialog('ここでは図を編集できません。'); return }
     if (overlay) return
-    const src = editorSrc(base)
+    const src = drawioEditorSrc(base)
     origin = new URL(src).origin
     statusEl = h('span', { class: 'st' })
     stuckEl = h('span', { class: 'warn', hidden: true }, 'エディタを読み込めません。インターネットにつながらない環境では、管理者が社内に draw.io を置いて DRAWIO_URL を設定してください。')
@@ -73,9 +65,10 @@ export const DrawioView = domNodeView<DrawioOptions>((c) => {
     const upload = c.extension.options.uploadFile!
     try {
       setStatus('保存中…')
-      const title = titleOf(lastXml) ?? c.node().attrs.title
+      // 図のページ名（既定の「ページ-1」以外）を題名にする
+      const title = drawioTitle(lastXml) ?? c.node().attrs.title
       const url = await upload(dataUrlToFile(dataUrl, drawioFileName(title)))
-      const text = await labelsOf(lastXml)
+      const text = await drawioLabels(lastXml)
       c.updateAttributes({ src: url, xmlSrc: null, title, text })
       setStatus('')
       if (exitAfter) close()

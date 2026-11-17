@@ -14,23 +14,19 @@ import * as encoding from 'lib0/encoding'
 import * as syncProtocol from 'y-protocols/sync'
 import 'katex/dist/katex.min.css'
 import './editor.css'
-import { uploadAttachment, type Attachment, type DocState, type Role } from '../api'
+import type { DocState, Role } from '../types'
 import { buildExtensions, contentExtensions } from './extensions'
 import { restoreBoards } from './whiteboard/restore'
 import { MSG, answerCompactRequests, connectPage, onRole } from './collab'
 import { alertDialog, promptDialog } from '../ui/dialog'
 import { host } from '../ui/host'
-import { COLORS } from '../ui/palette'
-import { pickFiles } from '../ui/fileDrop'
-import { knownEmbedUrl } from './Embed'
-import { isDrawioPng, isDrawioXml, labelsOf, xmlFromPng } from './drawioUtil'
-import { bytesToBase64 } from '../util/bytes'
-import { safeAvatarUrl, type Person } from '../ui/avatar'
+import {
+  COLORS, drawStatus as drawStatusInto, knownEmbedUrl, people, pickFiles, selectArticleOnModA, toBase64, uploadAttachment, uploadFiles, type Person,
+} from '../lib'
 import { h, setChildren } from '../ui/dom'
 import { openBlockMenu } from './blockMenu'
 import { tableControls } from './tableControls'
 
-export { pageHref, guestHref, setGuestContext } from './pageLinks'
 
 export interface CreateOptions {
   pageId: string
@@ -86,17 +82,7 @@ export function create(el: HTMLElement, opts: CreateOptions): EditorHandle {
   const root = h('div', { class: 'skiwi-editor' }, statusEl, area)
   el.append(root)
 
-  function drawStatus() {
-    statusEl.className = `status ${revoked ? 'disconnected' : state}`
-    setChildren(statusEl,
-      h('span', null, revoked ? '● このページへのアクセス権がなくなりました'
-        : state === 'connected' && synced ? '● 同期済み'
-          : state === 'connected' ? '● 同期中…'
-            : state === 'connecting' ? '● 接続中…'
-              : '● オフライン（再接続します。編集は保持されます）'),
-      !canEdit && !revoked && h('span', null, ' ・ 閲覧のみ'),
-      uploading > 0 && h('span', { 'data-testid': 'uploading' }, ` ・ アップロード中…（${uploading}件）`))
-  }
+  const drawStatus = () => drawStatusInto(statusEl, revoked, state, synced, canEdit, uploading)
 
   // --- オフライン/切断中の編集を救済する -------------------------------------------------
   // サーバーはstate vectorを持たないため、切断中・接続前のローカル編集は
@@ -125,52 +111,25 @@ export function create(el: HTMLElement, opts: CreateOptions): EditorHandle {
   // --- 添付ファイル ------------------------------------------------------------------------
   const pickFile = async (accept: string) => (await pickFiles(accept))[0] ?? null
 
-  /** アップロードした添付を本文に入れる形に（画像は画像として、それ以外はファイルのカード） */
-  /** drawio: draw.io の図のファイル（.drawio.png・.drawio）なら、図の中の文字 */
-  function nodeOf(a: Attachment, drawio?: string | null) {
-    if (drawio != null) {
-      const title = a.filename.replace(/\.(drawio|dio)(\.png)?$/i, '')
-      return isDrawioPng(a.filename)
-        ? { type: 'drawio', attrs: { src: a.url, title, text: drawio } }
-        : { type: 'drawio', attrs: { xmlSrc: a.url, title, text: drawio } }
-    }
-    const isImage = a.contentType.startsWith('image/') && a.contentType !== 'image/svg+xml'
-    return isImage
-      ? { type: 'image', attrs: { src: a.url, alt: a.filename } }
-      : { type: 'fileBlock', attrs: { id: a.id, url: a.url, filename: a.filename, size: a.size, contentType: a.contentType } }
-  }
-
   /** ページの中に置くデータベース: 既存のものを選ぶか、このページの子ページとして新しく作る（Scala の Host.pickDatabase） */
   const pickDatabase = (): Promise<string | null> => host().pickDatabase(opts.pageId)
 
   async function uploadAt(file: File, pos?: number) { await uploadMany([file], pos) }
 
   /** 複数のファイルを同時にアップロードし、選んだ順に入れる（貼り付けはカーソルの位置、ドロップは落とした位置）。
-   *  貼り付けた画像に名前がない（スクリーンショットなど）ときは、日時から名前を付ける。 */
+   *  名前の付け方・draw.io の図の扱い・アップロードは Scala（editor.Uploads） */
   async function uploadMany(files: File[], pos?: number) {
     if (!editor.isEditable || !files.length) return
     uploading += files.length
     drawStatus()
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
-    const named = files.map((f, i) => (!f.name || /^image\.(png|jpe?g|gif|webp)$/i.test(f.name))
-      ? new File([f], `貼り付け-${stamp}${files.length > 1 ? `-${i + 1}` : ''}.${(f.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`, { type: f.type })
-      : f)
     try {
-      // draw.io の図（図を埋め込んだ PNG・図の XML）は、画像・ファイルではなく図のブロックにする
-      const drawio = await Promise.all(named.map(async (f) => {
-        try {
-          const xml = isDrawioPng(f.name) ? await xmlFromPng(await f.arrayBuffer()) : isDrawioXml(f.name) ? await f.text() : null
-          return xml && xml.includes('<mx') ? await labelsOf(xml) : null
-        } catch { return null }
-      }))
-      const results = await Promise.allSettled(named.map((f) => uploadAttachment(opts.pageId, f)))
-      const ok = results.flatMap((r, i) => (r.status === 'fulfilled' ? [nodeOf(r.value, drawio[i])] : []))
-      if (ok.length && !editor.isDestroyed) {
-        if (pos != null) editor.chain().insertContentAt(Math.min(pos, editor.state.doc.content.size), ok).run()
-        else editor.chain().focus().insertContent(ok).run()
+      const { nodes, failed } = await uploadFiles(opts.pageId, files)
+      if (nodes.length && !editor.isDestroyed) {
+        const content = nodes as JSONContent[]
+        if (pos != null) editor.chain().insertContentAt(Math.min(pos, editor.state.doc.content.size), content).run()
+        else editor.chain().focus().insertContent(content).run()
       }
-      const failed = results.map((r, i) => (r.status === 'rejected' ? `・${named[i].name}: ${(r.reason as Error).message}` : '')).filter(Boolean)
-      if (failed.length) await alertDialog(`アップロードに失敗したファイルがあります:\n${failed.join('\n')}`)
+      if (failed) await alertDialog(failed)
     } finally {
       uploading -= files.length
       drawStatus()
@@ -223,14 +182,7 @@ export function create(el: HTMLElement, opts: CreateOptions): EditorHandle {
 
   // --- 開いている人（awareness） ------------------------------------------------------------
   function emitPresence() {
-    const people = new Map<string, Person>()
-    provider.awareness.getStates().forEach((st, client) => {
-      if (client === provider.awareness.clientID || !st.user?.name) return
-      const cur = people.get(st.user.name)
-      const editing = st.mode === 'edit' || !!cur?.editing
-      people.set(String(st.user.name), { name: String(st.user.name), color: /^#[0-9a-f]{6}$/i.test(String(st.user.color)) ? st.user.color : '#888888', editing, avatar: safeAvatarUrl(st.user.avatar) ?? cur?.avatar ?? null })
-    })
-    opts.onPresence?.([...people.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja')))
+    opts.onPresence?.(people(provider.awareness.getStates(), provider.awareness.clientID))
   }
   provider.awareness.on('change', emitPresence)
   // サーバーは awareness を中継するだけで、後から来た人に今の状態を送らない。
@@ -440,7 +392,7 @@ export function create(el: HTMLElement, opts: CreateOptions): EditorHandle {
     editor,
     setEditable(b) { editable = b; if (!editor.isDestroyed) applyEditable() },
     getState: () => ({
-      ydoc: bytesToBase64(Y.encodeStateAsUpdate(ydoc)),
+      ydoc: toBase64(Y.encodeStateAsUpdate(ydoc)),
       content: editor.getJSON(),
       text: editor.getText({ blockSeparator: '\n' }),
     }),
@@ -478,27 +430,8 @@ export function create(el: HTMLElement, opts: CreateOptions): EditorHandle {
 /**
  * 読み取り専用の表示（ゲスト・印刷・版の履歴のプレビュー）。el の中に作る。
  * opts.testid: 表示の外枠の data-testid（例: guest-content）/ opts.class: 外枠のクラス（例: 'editor-area readonly'）
+ * opts.selectAll: ⌘A で本文だけを選ぶ（ゲスト向けのページなど、本文が主役の画面）
  */
-/**
- * ⌘A / Ctrl+A を、入力欄やエディタの外（表示モードなど）で押したとき、ページ全体ではなく本文（dom の中）だけを選ぶ.
- * ダイアログを開いているときは何もしない. 戻り値で解除
- */
-function selectArticleOnModA(dom: () => HTMLElement): () => void {
-  const onKey = (e: KeyboardEvent) => {
-    if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'a' || e.defaultPrevented) return
-    const t = e.target
-    if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return
-    if (document.querySelector('[role=dialog], [aria-modal=true]')) return
-    const el = dom()
-    if (!el.isConnected) return
-    e.preventDefault()
-    window.getSelection()?.selectAllChildren(el)
-  }
-  document.addEventListener('keydown', onKey)
-  return () => document.removeEventListener('keydown', onKey)
-}
-
-/** selectAll: ⌘A で本文だけを選ぶ（ゲスト向けのページなど、本文が主役の画面） */
 export function renderStatic(el: HTMLElement, content: unknown, opts: { testid?: string; class?: string; selectAll?: boolean } = {}) {
   const box = h('div', { 'data-testid': opts.testid, class: opts.class })
   el.append(box)

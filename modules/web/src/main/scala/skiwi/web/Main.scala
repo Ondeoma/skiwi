@@ -17,7 +17,13 @@ object Main {
     ScalactiveConfig.scrollToTopOnNavigate = false
     Theme.apply()
     Host.exposeToJs()
+    editor.EditorLib.exposeToJs()
+    // 編集中のエディタ以外にファイルを落としても、ブラウザがファイルを開いてページから離れないようにする
+    editor.EditorDom.installFileDropGuard()
     EmbedViews.register()
+    // skorimako のブラウザの観測（設定があるときだけ）と、PWA（ホーム画面に追加・オフラインで開く・プッシュ通知）
+    Observe.start()
+    Pwa.register()
     // 存在しない URL はトップへ. 開いた直後の URL も確かめるよう、RouterComponent を描く前に登録する
     Fallback.install(App.known)
     App()(dom.document.body, AddMethod.appendS(IdSelector("app"))).init()

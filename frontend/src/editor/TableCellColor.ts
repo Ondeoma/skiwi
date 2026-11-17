@@ -1,5 +1,5 @@
 import { TableCell, TableHeader } from '@tiptap/extension-table'
-import { isColor } from '../ui/palette'
+import { isColor } from '../lib'
 
 /** セル背景色。色名（palette.ts）を data-bg に保存し、実際の色はCSSで決める（ダークモード対応）。 */
 const backgroundColor = {

@@ -3,7 +3,7 @@ import { PluginKey } from '@tiptap/pm/state'
 import Suggestion from '@tiptap/suggestion'
 import { menuRenderer } from './suggestionMenu'
 import { emojiMenu } from './EmojiMenu'
-import { findEmoji, type EmojiItem } from './emojiData'
+import { findEmoji, type EmojiItem } from '../lib'
 
 /** 「:」＋名前で絵文字を入れる（例: :いいね → 👍）。1文字以上入れると候補を出す */
 export const EmojiSuggest = Extension.create({

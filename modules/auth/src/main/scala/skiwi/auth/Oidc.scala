@@ -22,7 +22,7 @@ final case class OidcConfig(
     scopes: List[String] = List("openid", "profile", "email")
 )
 
-final case class Identity(sub: String, email: Option[String], name: String, groups: List[String])
+final case class Identity(sub: String, email: Option[String], name: String, groups: List[String], picture: Option[String] = None)
 
 final case class ProviderMetadata(issuer: String, authorizationEndpoint: Uri, tokenEndpoint: Uri)
 
@@ -91,7 +91,7 @@ object IdToken:
         .orElse(email)
         .getOrElse(sub)
       val groups = c.downField(cfg.groupsClaim).as[List[String]].getOrElse(Nil)
-      Identity(sub, email, name, groups)
+      Identity(sub, email, name, groups, c.get[String]("picture").toOption.filter(_.nonEmpty))
 
 /** OIDCプロバイダ向けクライアント（Authorization Code + PKCE）。 */
 final class OidcClient private (cfg: OidcConfig, http: Client[IO], meta: Ref[IO, Option[ProviderMetadata]]):

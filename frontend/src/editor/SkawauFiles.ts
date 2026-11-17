@@ -1,8 +1,9 @@
 import type { Mark, Node as PMNode } from '@tiptap/pm/model'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import type { SkawauFile } from '../api'
+import type { SkawauFile } from '../types'
 import { host } from '../ui/host'
-import { chip, eachTextblock, isCode, linkedExtension, linkedInline, linkedWidget, textblockText, type LinkedState } from './linkedDecorations'
+import { skawauChip, skawauPatterns, skawauTitle } from '../lib'
+import { eachTextblock, isCode, linkedExtension, linkedInline, linkedWidget, textblockText, type LinkedState } from './linkedDecorations'
 
 /**
  * 本文中の skawau のファイル・フォルダのリンク（{skawau の URL}/view/{ID}・/files/{ID}・/office/{ID}）に、ファイル名を出す（docs/skawau-integration.md）。
@@ -10,8 +11,6 @@ import { chip, eachTextblock, isCode, linkedExtension, linkedInline, linkedWidge
  * 文字を付けたリンク（[資料](URL)）は、文字はそのままで、マウスを乗せるとファイル名が出る。コードの中は対象外。
  */
 const skawau = () => host().integration<SkawauFile>('skawau')
-const ID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** inLink: リンクの付いた文字（クリックはリンクに任せる）。raw: 見えている文字が URL そのもの */
 export interface FileLinkMatch { from: number; to: number; id: string; url: string; raw: boolean; inLink: boolean }
@@ -20,9 +19,7 @@ const linkOf = (c: PMNode): Mark | undefined => c.marks.find((m) => m.type.name 
 
 /** skawau のリンクの位置。id は小文字にそろえる */
 export function findFileLinks(doc: PMNode, base: string): FileLinkMatch[] {
-  const prefix = `${escapeRe(base.replace(/\/+$/, ''))}/(?:view|files|office)/(${ID})`
-  const hrefRe = new RegExp(`^${prefix}(?:[/?#].*)?$`)
-  const textRe = new RegExp(`${prefix}(?![0-9A-Za-z-])(?:[/?#][^\\s]*)?`, 'g')
+  const { href: hrefRe, text: textRe } = skawauPatterns(base)
   const out: FileLinkMatch[] = []
   eachTextblock(doc, (node, start) => {
     // リンクの付いた文字: 同じ href が続く範囲をまとめる
@@ -48,29 +45,6 @@ export function findFileLinks(doc: PMNode, base: string): FileLinkMatch[] {
   return out.sort((a, b) => a.from - b.from)
 }
 
-/** 種類のアイコン（フォルダ・画像・表計算など。ほかは 📄） */
-export function fileIcon(f: Pick<SkawauFile, 'name' | 'isDir' | 'mimeType'>): string {
-  if (f.isDir) return '📁'
-  const mime = f.mimeType ?? ''
-  const ext = f.name.toLowerCase().split('.').pop() ?? ''
-  if (mime.startsWith('image/')) return '🖼️'
-  if (mime.startsWith('video/')) return '🎬'
-  if (mime.startsWith('audio/')) return '🎵'
-  if (/^(xlsx?|ods|csv)$/.test(ext) || mime.includes('spreadsheet')) return '📊'
-  if (/^(pptx?|odp)$/.test(ext) || mime.includes('presentation')) return '📽️'
-  if (/^(zip|gz|tgz|7z|rar|tar)$/.test(ext)) return '🗜️'
-  return '📄'
-}
-
-/** 線の SVG アイコンで出す種類（画像・動画）のクラス. ほかは fileIcon の絵文字 */
-export function fileIconClass(f: Pick<SkawauFile, 'isDir' | 'mimeType'>): string | null {
-  const mime = f.mimeType ?? ''
-  if (f.isDir) return null
-  if (mime.startsWith('image/')) return 'ico ico-image'
-  if (mime.startsWith('video/')) return 'ico ico-video'
-  return null
-}
-
 function build(doc: PMNode): LinkedState {
   const s = skawau().status()
   if (!s?.enabled || !s.url) return { deco: DecorationSet.empty, keys: [] }
@@ -78,24 +52,12 @@ function build(doc: PMNode): LinkedState {
   const decos: Decoration[] = []
   for (const f of found) {
     const file = s.connected ? skawau().item(f.id) : undefined
-    const title = !s.connected ? 'skawau と連携するとファイル名を表示します'
-      : file ? `${file.name}（skawau）` : file === null ? 'skawau で見つからないか、見る権限がありません' : 'skawau のファイル'
+    const title = skawauTitle(s.connected, file)
     const named = !!file && f.raw
     const attrs = { class: `skawau-link${named ? ' named' : ''}`, title, 'data-testid': 'skawau-link' }
     decos.push(f.inLink ? Decoration.inline(f.from, f.to, attrs) : linkedInline(f.from, f.to, f.url, attrs))
     if (named) {
-      decos.push(linkedWidget(f.to, `skawau:${f.url}:${file.name}\u0000${file.isDir}`, () =>
-        chip('skawau-chip', f.url, `${file.name} を skawau で開く`, (a) => {
-          a.dataset.testid = 'skawau-chip'
-          const i = document.createElement('span')
-          const ic = fileIconClass(file)
-          if (ic) i.className = ic
-          else i.textContent = fileIcon(file)
-          const n = document.createElement('span')
-          n.className = 'linked-name'
-          n.textContent = file.name
-          a.append(i, n)
-        })))
+      decos.push(linkedWidget(f.to, `skawau:${f.url}:${file.name}\u0000${file.isDir}`, () => skawauChip(f.url, file)))
     }
   }
   return { deco: DecorationSet.create(doc, decos), keys: [...new Set(found.map((f) => f.id))] }

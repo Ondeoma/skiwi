@@ -1,34 +1,14 @@
 import type { Editor, Range } from '@tiptap/core'
 import { PANEL_PRESETS } from './Panel'
 import { alertDialog, chooseDialog, promptDialog } from '../ui/dialog'
-import { openBlockPicker } from '../ui/blockPicker'
-import { openPagePicker } from '../ui/pagePicker'
-import { api, okOrNull } from '../api'
-import { findSyncedBlocks } from './Synced'
+import { host } from '../ui/host'
+import { blockCategory, findSyncedBlocks, openBlockPicker, pageContent, type BlockItemView } from '../lib'
 
-/** ブロックの分類（一覧モーダルでの見出し・並び順）。 */
-export const CATEGORIES = ['基本', 'リスト', '構成・装飾', '表・メディア', '技術・図'] as const
-export type Category = (typeof CATEGORIES)[number]
-
-export interface SlashItem {
-  title: string
-  description: string
-  icon: string
-  /** 線の SVG アイコン（例: 'ico ico-image'。あれば icon の代わりに出す） */
-  iconClass?: string
-  keywords: string[]
-  category?: Category
+/** 「/」の項目. 分類（一覧での見出し）・絞り込み・一覧のモーダルは Scala（editor.Blocks・parts/BlockPicker） */
+export interface SlashItem extends BlockItemView {
   /** 'all' = 「すべてのブロックを表示」（一覧モーダルを開く特別な項目） */
   special?: 'all'
   run: (editor: Editor, range: Range) => void
-}
-
-const CATEGORY_OF: Record<string, Category> = {
-  'テキスト': '基本', '見出し1': '基本', '見出し2': '基本', '見出し3': '基本', '引用': '基本', '区切り線': '基本', 'ページへのリンク': '基本',
-  '箇条書きリスト': 'リスト', '番号付きリスト': 'リスト', 'ToDoリスト': 'リスト', '期限': 'リスト', '担当者': 'リスト',
-  '開閉ブロック': '構成・装飾', '段組み（2列）': '構成・装飾', '段組み（3列）': '構成・装飾', '段組み（列数を指定）': '構成・装飾', '目次': '構成・装飾', '同期ブロックを作成': '構成・装飾', '同期ブロックを埋め込む': '構成・装飾',
-  'データベース（ページ内）': '表・メディア', '表': '表・メディア', 'ホワイトボード': '表・メディア', '画像': '表・メディア', 'ファイル': '表・メディア', '埋め込み': '表・メディア', 'ブックマーク': '表・メディア',
-  'コード': '技術・図', '数式ブロック': '技術・図', 'インライン数式': '技術・図', 'Mermaid図': '技術・図', 'draw.io 図': '技術・図',
 }
 
 /** スラッシュコマンドの外部依存（ファイル選択・入力ダイアログ）。 */
@@ -92,10 +72,10 @@ export function slashItems(ctx: SlashContext): SlashItem[] {
     { title: '同期ブロックを埋め込む', description: '別のページの同期ブロック・ページ全体を読み取り専用で表示', icon: '⧉', keywords: ['synced', 'embed', 'transclusion', 'include', 'どうき', 'うめこみ', 'さんしょう'],
       run: async (e, r) => {
         chain(e, r).run()
-        const p = await openPagePicker()
+        const p = await host().pickPage()
         if (!p || e.isDestroyed) return
-        const res = await okOrNull(api.pageContent(p.id))
-        const blocks = res ? findSyncedBlocks(res.content) : []
+        const content = await pageContent(p.id).catch(() => null)
+        const blocks = content ? findSyncedBlocks(content) : []
         let blockId: string | null = null
         if (blocks.length) {
           const v = await chooseDialog(`「${p.title || '無題'}」のどこを埋め込みますか？`, [
@@ -112,7 +92,7 @@ export function slashItems(ctx: SlashContext): SlashItem[] {
     { title: 'ページへのリンク', description: 'skiwi 内のページへのリンク（タイトルを自動表示）', icon: '↗', keywords: ['link', 'page', 'mention', 'りんく', 'ぺーじ', 'さんしょう'],
       run: async (e, r) => {
         chain(e, r).run()
-        const p = await openPagePicker()
+        const p = await host().pickPage()
         if (e.isDestroyed) return
         e.commands.focus()
         if (p) e.chain().focus().insertPageLink({ pageId: p.id, workspaceId: p.workspaceId, title: p.title }).run()
@@ -146,7 +126,7 @@ export function slashItems(ctx: SlashContext): SlashItem[] {
     { title: '区切り線', description: '水平線', icon: '—', keywords: ['hr', 'divider', 'line', 'くぎり'],
       run: (e, r) => chain(e, r).setHorizontalRule().run() },
   ]
-  for (const it of items) it.category ??= CATEGORY_OF[it.title] ?? (it.title.endsWith('パネル') ? '構成・装飾' : '基本')
+  for (const it of items) it.category ??= blockCategory(it.title)
   return items
 }
 
@@ -162,10 +142,4 @@ export function showAllItem(blocks: SlashItem[], query: string): SlashItem {
       if (picked) { const pos = e.state.selection.from; picked.run(e, { from: pos, to: pos }) }
     },
   }
-}
-
-export function filterItems(items: SlashItem[], query: string): SlashItem[] {
-  const q = query.trim().toLowerCase()
-  if (!q) return items
-  return items.filter((i) => i.title.toLowerCase().includes(q) || i.description.toLowerCase().includes(q) || i.keywords.some((k) => k.includes(q)))
 }

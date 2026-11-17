@@ -131,7 +131,7 @@
   - 本文の大きさ：`/api` は16MB、取り込みは64MB、それ以外（`/auth`・`/oauth`・`/scim`）は1MBまで。添付ファイルは各ルートの上限（100MB）。JSON の入れ子は256段まで。
   - ヘッダ：`X-Content-Type-Options: nosniff`・`Referrer-Policy: strict-origin-when-cross-origin`・`X-Frame-Options: SAMEORIGIN`、https なら HSTS。
   - サーバーから外への接続（リンクのカード・Webhook）は、社内・特殊用途のアドレスへは行いません（`NetGuard`。`UNFURL_ALLOW_PRIVATE`・`WEBHOOK_ALLOW_PRIVATE` で許可）。
-  - 本文の属性に入った URL（埋め込み・リンクカード・ファイル・図）は、画面に出す直前に検査します（`frontend/src/util/url.ts`）。同時編集では属性を好きな値にできるためです。
+  - 本文の属性に入った URL（埋め込み・リンクカード・ファイル・図）は、画面に出す直前に検査します（Scala.js の `skiwi.web.editor.SafeUrl`）。同時編集では属性を好きな値にできるためです。
 
 ## 6. 検索（日本語）
 

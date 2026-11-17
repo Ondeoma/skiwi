@@ -144,7 +144,7 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
 
   private def dropCache(svc: LinkedService, uid: UUID) = cache.update(_.filterNot(e => e._1._1 == svc.name && e._1._2 == uid))
 
-  private def warn(svc: LinkedService, what: String)(e: Any) = IO.println(s"[${svc.name}] $what failed: $e")
+  private def warn(svc: LinkedService, what: String)(e: Any) = skiwi.observe.Log.println(s"[${svc.name}] $what failed: $e")
 
   /** 認可コードをアクセストークンに替える */
   private def exchange(svc: LinkedService, s: IntegrationSettings, code: String, verifier: String): IO[Option[String]] =

@@ -10,7 +10,7 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
 import scala.scalajs.js.typedarray.Uint8Array
 
-// 取り込み・書き出し・複製が使う API（frontend/src/api.ts の api.pageContent・api.importContent・uploadAttachment・copyApi.duplicate と同じ）
+// 取り込み・書き出し・複製・エディタのアップロードが使う API
 
 final case class Attachment(id: String, url: String, filename: String = "", contentType: String = "", size: Double = 0) derives Codec.AsObject
 
@@ -69,17 +69,10 @@ object Io {
   def zip(files: Seq[(String, Uint8Array)]): Future[Uint8Array] =
     io.map(_.zip(js.Dictionary(files*)).asInstanceOf[Uint8Array])
 
-  /** PNG に埋め込まれた draw.io の図の XML */
-  def drawioXmlFromPng(data: Uint8Array): Future[Option[String]] =
-    io.flatMap(_.drawioXmlFromPng(data).asInstanceOf[js.Promise[String | Null]].toFuture).map(x => Option(x.asInstanceOf[String]))
-
-  /** draw.io の図の中の文字（検索用） */
-  def drawioLabels(xml: String): Future[String] = io.flatMap(_.drawioLabels(xml).asInstanceOf[js.Promise[String]].toFuture)
-
 }
 
 /** バイト列・文字列の補助 */
-private[content] object Bytes {
+private[web] object Bytes {
 
   def fromBuffer(b: js.Any): Uint8Array = new Uint8Array(b.asInstanceOf[js.typedarray.ArrayBuffer])
 
@@ -91,11 +84,33 @@ private[content] object Bytes {
 
   def utf8Bytes(s: String): Uint8Array = js.Dynamic.newInstance(js.Dynamic.global.TextEncoder)().encode(s).asInstanceOf[Uint8Array]
 
+  /** バイト列 → base64（大きな配列でも引数の上限を超えないように分けて変換する） */
+  def toBase64(u: Uint8Array): String = {
+    val sb = new StringBuilder
+    var i = 0
+    while (i < u.length) {
+      val part = u.subarray(i, math.min(i + 0x8000, u.length))
+      sb ++= js.Dynamic.global.String.fromCharCode.applyDynamic("apply")(null, part).asInstanceOf[String]
+      i += 0x8000
+    }
+    dom.window.btoa(sb.result())
+  }
+
   def fromBase64(b64: String): Uint8Array = {
     val s = dom.window.atob(b64)
     val u = new Uint8Array(s.length)
     (0 until s.length).foreach(i => u(i) = s.charAt(i).toShort)
     u
+  }
+
+  /** Blob → data: URL */
+  def dataUrl(blob: dom.Blob): Future[String] = {
+    val p = scala.concurrent.Promise[String]()
+    val r = new dom.FileReader()
+    r.onload = _ => p.success(r.result.toString)
+    r.onerror = _ => p.failure(new Exception("ファイルを読めませんでした"))
+    r.readAsDataURL(blob)
+    p.future
   }
 
   def file(data: Uint8Array, name: String, mime: String): dom.File =

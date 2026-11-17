@@ -2,6 +2,7 @@
 import io.circe.syntax.*
 import org.scalajs.dom
 import skiwi.web.{Api, JsModule, Nav, Ui}
+import skiwi.web.editor.PageLinks
 
 import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
@@ -38,7 +39,7 @@ def mounted(s: State, props: Props): Unit = {
 }
 
 def unmounted(props: Props): Unit =
-  if (props.token.isDefined) JsModule.load("editor").foreach(_.setGuestContext(null))
+  if (props.token.isDefined) PageLinks.setGuest(None)
 
 /** 起点の下を深さ優先で並べる（番号付き） */
 def order(all: List[GuestPage], rootId: String, withChildren: Boolean): List[(GuestPage, Int, String)] = {
@@ -64,7 +65,7 @@ def load(s: State, props: Props): Future[Unit] = {
   val listed: Future[(List[(GuestPage, Int, String)], String => Future[js.Any])] = props.token match {
     case Some(token) =>
       GuestApi.tree(token).map { t =>
-        JsModule.load("editor").foreach(_.setGuestContext(js.Dynamic.literal(token = token, pages = GuestApi.toJs(t.pages.asJson))))
+        PageLinks.setGuest(Some((token, t.pages)))
         (order(t.pages, t.rootId, s.children.v), (id: String) => GuestApi.page(token, id).map(r => GuestApi.toJs(r.content)))
       }
     case None =>

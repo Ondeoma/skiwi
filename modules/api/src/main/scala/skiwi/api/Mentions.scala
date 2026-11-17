@@ -14,7 +14,7 @@ final class Mentions(store: Store, ops: OpsStore, sessions: SessionAuth):
 
   def notify(kind: String, pageId: UUID, users: Set[UUID], byName: String, excerpt: String, threadId: Option[UUID] = None): IO[Unit] =
     canView(pageId, users).flatMap(us => ops.enqueuePageNotice(kind, pageId, us, byName, excerpt.take(200), threadId).void)
-      .handleErrorWith(e => IO.println(s"[notify] failed to enqueue $kind: $e"))
+      .handleErrorWith(e => skiwi.observe.Log.println(s"[notify] failed to enqueue $kind: $e"))
 
 object Mentions:
   private val Markup = """@\[([^\]]*)\]\([0-9a-fA-F-]{36}\)""".r

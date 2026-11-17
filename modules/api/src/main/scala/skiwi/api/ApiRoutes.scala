@@ -69,7 +69,7 @@ final class ApiRoutes(
           case Some(pid) => ops.enqueueShared(pid, to, s.user.name, role.asString).void
           case None      => ops.enqueueSharedWorkspace(to, s.user.name, role.asString, wsName.getOrElse(""), wsId).void
       }
-    }.handleErrorWith(e => IO.println(s"[notify] failed to enqueue share notification: $e"))
+    }.handleErrorWith(e => skiwi.observe.Log.println(s"[notify] failed to enqueue share notification: $e"))
 
   private def versionDto(v: skiwi.db.VersionMeta) = VersionDto(v.id, v.createdAt, v.label, v.createdBy, v.authors)
 
@@ -86,8 +86,8 @@ final class ApiRoutes(
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     case req @ GET -> Root / "api" / "me" =>
-      authed(req)(s => ops.avatarVersion(s.user.id).flatMap(v =>
-        Ok(MeDto(s.user.id, s.user.name, s.user.email, s.groups.map(_.name), s.isAdmin, v.map(AvatarRoutes.url(s.user.id, _))))))
+      authed(req)(s => AvatarRoutes.urls(ops, List(s.user.id)).flatMap(av =>
+        Ok(MeDto(s.user.id, s.user.name, s.user.email, s.groups.map(_.name), s.isAdmin, av.get(s.user.id)))))
 
     // ------------------------------------------------------------ directory（共有ダイアログ用）
     case req @ GET -> Root / "api" / "directory" =>
@@ -172,9 +172,10 @@ final class ApiRoutes(
             case Left(m) => err(Status.BadRequest, m)
             case Right(pl) =>
               editUnder(s, id, b.parentId) {
-                store.createPage(id, b.parentId, pl, b.title.getOrElse(""), b.icon, s.user.id).flatMap {
+                skiwi.observe.Telemetry.span("page.create", "workspace.id" -> id.toString)(store.createPage(id, b.parentId, pl, b.title.getOrElse(""), b.icon, s.user.id)).flatMap {
                   case Left(e) => fromStore(e)
                   case Right(p) =>
+                    skiwi.observe.Metrics.count("skiwi.pages.created", "via" -> (if s.via == AuthVia.Session then "ui" else "api")) *>
                     // 作成者は自動でウォッチする（他の人の更新をメールで受け取る）
                     ops.setWatch(p.id, s.user.id, on = true) *>
                       // 作成直後は無題のことが多いので、タイトルが付くのを少し待ってから送る

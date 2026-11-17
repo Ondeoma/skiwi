@@ -1,5 +1,5 @@
 import { Extension, Mark, mergeAttributes } from '@tiptap/core'
-import { COLORS } from '../ui/palette'
+import { isColor } from '../lib'
 
 /** ブロックへのリンク用の ID（リンクをコピーしたときに付ける）。data-block-id として描画する */
 export const BLOCK_TYPES = ['paragraph', 'heading', 'blockquote', 'codeBlock', 'bulletList', 'orderedList', 'taskList', 'details', 'table',
@@ -22,7 +22,6 @@ export const BlockId = Extension.create({
   },
 })
 
-const isColor = (v: unknown) => typeof v === 'string' && COLORS.some((c) => c.id === v)
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {

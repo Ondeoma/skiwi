@@ -54,9 +54,10 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
 
   // ---------------------------------------------------------------- users / groups
 
-  def upsertUser(sub: String, email: Option[String], name: String): IO[User] = tx(
-    sql"""insert into app_user (oidc_sub, email, name) values ($sub, $email, $name)
-          on conflict (oidc_sub) do update set email = excluded.email, name = excluded.name
+  /** ログインのたびに作成・更新する（メール・名前・アイコンの URL は IdP の値に合わせる）. */
+  def upsertUser(sub: String, email: Option[String], name: String, picture: Option[String] = None): IO[User] = tx(
+    sql"""insert into app_user (oidc_sub, email, name, picture_url) values ($sub, $email, $name, $picture)
+          on conflict (oidc_sub) do update set email = excluded.email, name = excluded.name, picture_url = excluded.picture_url
           returning id, oidc_sub, email, name""".query[User].unique
   )
 

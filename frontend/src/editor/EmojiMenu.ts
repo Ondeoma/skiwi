@@ -1,4 +1,4 @@
-import type { EmojiItem } from './emojiData'
+import type { EmojiItem } from '../lib'
 import { listMenu, pickOnMouseDown } from './suggestionMenu'
 import { h, setChildren } from '../ui/dom'
 

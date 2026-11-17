@@ -296,7 +296,7 @@ object Dlg {
   private def p2(n: Int): String = if (n < 10) s"0$n" else n.toString
 
   /** この端末の時刻での日付 YYYY-MM-DD */
-  def ymd(d: js.Date): String = s"${d.getFullYear().toInt}-${p2(d.getMonth().toInt + 1)}-${p2(d.getDate().toInt)}"
+  def ymd(d: js.Date): String = skiwi.web.database.Formula.ymd(d)
 
   /** この端末の時刻での日時 YYYY-MM-DDTHH:mm（input[type=datetime-local] の値） */
   def localDateTime(d: js.Date): String = s"${ymd(d)}T${p2(d.getHours().toInt)}:${p2(d.getMinutes().toInt)}"
