@@ -157,7 +157,7 @@ def pubInherited(s: State): Option[InheritedShare] = s.pub.v.flatMap(_.inherited
 </script>
 
 <template>
-  <div class="backdrop" @click.self="props.onClose(())">
+  <div class="backdrop" @mousedown="Backdrop.down(event)" @mouseup="Backdrop.up(event)" @click="Backdrop.click(event)(props.onClose(()))">
     <div class="dialog" role="dialog" aria-label="共有">
       <h2>共有 ― {{ Dlg.untitled(props.title) }} <HelpLink to="sharing" /></h2>
       <p v-if="s.loading.v" class="muted">読み込み中…</p>

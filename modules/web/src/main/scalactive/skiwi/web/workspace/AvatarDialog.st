@@ -1,6 +1,6 @@
 <script lang="scala">
 import org.scalajs.dom
-import skiwi.web.{Api, Store}
+import skiwi.web.{Api, Backdrop, Store}
 import skiwi.web.parts.Avatar
 
 import scala.concurrent.Future
@@ -58,7 +58,7 @@ def shownUrl(s: State): Option[String] = s.preview.v.orElse(Store.me.v.flatMap(_
 </script>
 
 <template>
-  <div class="backdrop" @click.self="props.onClose(())" @keydown="onKey(props, event)">
+  <div class="backdrop" @mousedown="Backdrop.down(event)" @mouseup="Backdrop.up(event)" @click="Backdrop.click(event)(props.onClose(()))" @keydown="onKey(props, event)">
     <form class="dialog" role="dialog" aria-label="アイコンの設定" data-testid="avatar-dialog" @submit.prevent="save(s, props)">
       <h2>🖼 アイコンの設定</h2>
       <div class="body">

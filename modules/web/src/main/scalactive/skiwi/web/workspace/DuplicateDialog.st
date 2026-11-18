@@ -1,6 +1,6 @@
 <script lang="scala">
 import org.scalajs.dom
-import skiwi.web.{Dialog, Nav, Progress, Store}
+import skiwi.web.{Backdrop, Dialog, Nav, Progress, Store}
 import skiwi.web.content.Duplicate
 import skiwi.web.model.*
 
@@ -61,7 +61,7 @@ def wsLabel(p: Props, w: Workspace): String = w.name + (if (w.id == p.page.works
 </script>
 
 <template>
-  <div class="backdrop" @click.self="props.onClose(())">
+  <div class="backdrop" @mousedown="Backdrop.down(event)" @mouseup="Backdrop.up(event)" @click="Backdrop.click(event)(props.onClose(()))">
     <form class="dialog" role="dialog" aria-label="ページを複製" data-testid="duplicate-dialog" @submit.prevent="run(s, props)">
       <h2>⧉ ページを複製</h2>
       <label class="field">
