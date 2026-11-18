@@ -142,6 +142,7 @@ object Markdown {
           val t = if (truthy(n.attr("title"))) str(n.attr("title")) else str(n.attr("url"))
           s"[${escapeText(t)}](${str(n.attr("url"))})"
         case "databaseBlock" => "（📊 データベース）"
+        case "smohuaForm" => "（📋 フォームの回答）"
         case "toc" => ""
         case "whiteboard" => boardOf(n.o("attrs").flatMap(_.asObject).getOrElse(JsonObject.empty))
         case "syncedRef" => s"[🔗 同期ブロック](${pageLinkHref(n)})"

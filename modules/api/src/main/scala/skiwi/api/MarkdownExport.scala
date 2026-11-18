@@ -64,6 +64,7 @@ final class MarkdownExport(url: String => String, whiteboard: JsonObject => Stri
       case "embed"          => s"[${str(a, "src")}](${str(a, "src")})"
       case "linkCard"       => s"[${escape(Option(str(a, "title")).filter(_.nonEmpty).getOrElse(str(a, "url")))}](${str(a, "url")})"
       case "databaseBlock"  => "（📊 データベース）"
+      case "smohuaForm"     => "（📋 フォームの回答）"
       case "toc"            => ""
       case "whiteboard"     => whiteboard(a)
       case "syncedRef"      => s"[🔗 同期ブロック](${url(s"/w/${str(a, "workspaceId")}/p/${str(a, "pageId")}")})"

@@ -4,9 +4,9 @@ import skiwi.web.Dialog
 
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 
-// 外部サービス（skea・skawau）との連携. 管理者が設定したものだけ出す.
+// 外部サービス（skea・skawau・smohua）との連携. 管理者が設定したものだけ出す.
 //  - part="notice": 連携の結果のお知らせ（ヘッダに常に置く. 表示のときに状態を読み込む）
-//  - part="links": 「skea と連携」「skawau と連携」（名前のメニューの中）
+//  - part="links": 「skea と連携」「skawau と連携」「smohua と連携」（名前のメニューの中）
 case class Props(part: String)
 
 /** notice: (ok / ng, 文) */
@@ -19,6 +19,7 @@ final case class Texts(shows: String, lost: String)
 val texts: Map[String, Texts] = Map(
   "skea" -> Texts("本文のタスクIDにタイトルと状態が出ます", "本文のタスクIDには、タイトルと状態が出なくなります（リンクは残ります）"),
   "skawau" -> Texts("本文のファイルのリンクにファイル名が出ます", "本文のファイルのリンクは、URL のままの表示に戻ります"),
+  "smohua" -> Texts("ページに置いた「フォームの回答」のブロックに、回答の集計と一覧が出ます", "ページに置いた「フォームの回答」のブロックには、回答が出なくなります（ブロックは残ります）"),
 )
 
 def message(name: String, r: String): (String, String) = r match {

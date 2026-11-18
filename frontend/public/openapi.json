@@ -2743,18 +2743,19 @@
     "tags": [
      "連携"
     ],
-    "summary": "外部サービス（skea・skawau）との連携の状態",
+    "summary": "外部サービス（skea・skawau・smohua）との連携の状態",
     "parameters": [
      {
       "name": "service",
       "in": "path",
       "required": true,
-      "description": "連携先（skea・skawau）",
+      "description": "連携先（skea・skawau・smohua）",
       "schema": {
        "type": "string",
        "enum": [
         "skea",
-        "skawau"
+        "skawau",
+        "smohua"
        ]
       }
      }
@@ -2806,18 +2807,19 @@
     "tags": [
      "連携"
     ],
-    "summary": "skea のタスク・skawau のファイルをまとめて読む",
+    "summary": "skea のタスク・skawau のファイル・smohua のフォームをまとめて読む",
     "parameters": [
      {
       "name": "service",
       "in": "path",
       "required": true,
-      "description": "連携先（skea・skawau）",
+      "description": "連携先（skea・skawau・smohua）",
       "schema": {
        "type": "string",
        "enum": [
         "skea",
-        "skawau"
+        "skawau",
+        "smohua"
        ]
       }
      }
@@ -2835,7 +2837,7 @@
           "items": {
            "type": "string"
           },
-          "description": "skea: タスクID（例: SKEA-123。設定したプロジェクトキーのものだけ使う）。skawau: ファイルの ID（小文字の UUID）。100件まで"
+          "description": "skea: タスクID（例: SKEA-123。設定したプロジェクトキーのものだけ使う）。skawau: ファイルの ID（小文字の UUID）。smohua: フォームの ID（小文字の UUID）。100件まで"
          }
         }
        }
@@ -2906,9 +2908,101 @@
                 "nullable": true
                }
               }
+             },
+             {
+              "type": "object",
+              "properties": {
+               "key": {
+                "type": "string",
+                "format": "uuid",
+                "description": "フォームの ID（小文字）"
+               },
+               "title": {
+                "type": "string"
+               },
+               "status": {
+                "type": "string",
+                "description": "draft・open・closed"
+               },
+               "responses": {
+                "type": "integer"
+               },
+               "lastResponseAt": {
+                "type": "string",
+                "nullable": true
+               },
+               "url": {
+                "type": "string"
+               }
+              }
              }
             ]
            }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "未認証"
+     },
+     "403": {
+      "description": "権限がない（閲覧のみ・読み取り専用トークンでの書き込み）"
+     },
+     "404": {
+      "description": "見つからない（閲覧権限がない場合も404）"
+     }
+    }
+   }
+  },
+  "/api/integrations/smohua/items/{formId}/{kind}": {
+   "get": {
+    "tags": [
+     "連携"
+    ],
+    "summary": "smohua のフォームの回答の集計・一覧を読む",
+    "parameters": [
+     {
+      "name": "formId",
+      "in": "path",
+      "required": true,
+      "description": "フォームの ID（小文字の UUID）",
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     },
+     {
+      "name": "kind",
+      "in": "path",
+      "required": true,
+      "description": "summary（集計）・responses（新しいものから50件）",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "summary",
+        "responses"
+       ]
+      }
+     }
+    ],
+    "description": "自分の権限で読む（そのフォームを見られなければ 404）。キャッシュしない。連携していない・連携が切れたときは connected=false で data は null。",
+    "responses": {
+     "200": {
+      "description": "成功",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "connected": {
+           "type": "boolean"
+          },
+          "data": {
+           "type": "object",
+           "nullable": true,
+           "description": "smohua の応答（GET /api/forms/{ID}/summary・responses）"
           }
          }
         }
@@ -2938,12 +3032,13 @@
       "name": "service",
       "in": "path",
       "required": true,
-      "description": "連携先（skea・skawau）",
+      "description": "連携先（skea・skawau・smohua）",
       "schema": {
        "type": "string",
        "enum": [
         "skea",
-        "skawau"
+        "skawau",
+        "smohua"
        ]
       }
      }

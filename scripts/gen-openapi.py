@@ -114,13 +114,18 @@ op("post", "/api/hooks/{token}", "連携", "受信用の Webhook（認証不要�
    resp=S(pageId=UUID, url=STR), status="201", desc="ワークスペースの「📥 受信用の Webhook」で作った URL。作った人の権限で動く。1分に60件まで。")
 SKEA_TASK = S(key=STR, title=STR, status=S(name=STR, category=STR, color={**STR, "description": "#RRGGBB など"}), url={**STR, "description": "{skea の URL}/tasks/{key}"})
 SKAWAU_FILE = S(key={**UUID, "description": "ファイルの ID（小文字）"}, name=STR, isDir=BOOL, mimeType={**STR, "nullable": True})
-SVC = P("service", "連携先（skea・skawau）", {"type": "string", "enum": ["skea", "skawau"]})
-op("get", "/api/integrations/{service}", "連携", "外部サービス（skea・skawau）との連携の状態", [SVC], resp=S(enabled=BOOL, url={**STR, "nullable": True}, projectKeys=arr(STR), connected=BOOL),
+SMOHUA_FORM = S(key={**UUID, "description": "フォームの ID（小文字）"}, title=STR, status={**STR, "description": "draft・open・closed"}, responses={"type": "integer"}, lastResponseAt={**STR, "nullable": True}, url=STR)
+SVC = P("service", "連携先（skea・skawau・smohua）", {"type": "string", "enum": ["skea", "skawau", "smohua"]})
+op("get", "/api/integrations/{service}", "連携", "外部サービス（skea・skawau・smohua）との連携の状態", [SVC], resp=S(enabled=BOOL, url={**STR, "nullable": True}, projectKeys=arr(STR), connected=BOOL),
    desc="enabled: 管理者が設定済み（サーバーに ENCRYPTION_KEY があるときだけ）。connected: 自分が連携済み。projectKeys は skea だけ。連携（許可）はブラウザで GET /api/integrations/{service}/connect から行う。")
-op("post", "/api/integrations/{service}/lookup", "連携", "skea のタスク・skawau のファイルをまとめて読む", [SVC],
-   body=S(keys={**arr(STR), "description": "skea: タスクID（例: SKEA-123。設定したプロジェクトキーのものだけ使う）。skawau: ファイルの ID（小文字の UUID）。100件まで"}),
-   resp=S(connected=BOOL, items={"type": "array", "items": {"oneOf": [SKEA_TASK, SKAWAU_FILE]}}),
+op("post", "/api/integrations/{service}/lookup", "連携", "skea のタスク・skawau のファイル・smohua のフォームをまとめて読む", [SVC],
+   body=S(keys={**arr(STR), "description": "skea: タスクID（例: SKEA-123。設定したプロジェクトキーのものだけ使う）。skawau: ファイルの ID（小文字の UUID）。smohua: フォームの ID（小文字の UUID）。100件まで"}),
+   resp=S(connected=BOOL, items={"type": "array", "items": {"oneOf": [SKEA_TASK, SKAWAU_FILE, SMOHUA_FORM]}}),
    desc="自分の権限で読む（見られないものは返らない）。60秒キャッシュする。連携していない・連携が切れたときは connected=false。")
+op("get", "/api/integrations/smohua/items/{formId}/{kind}", "連携", "smohua のフォームの回答の集計・一覧を読む",
+   [P("formId", "フォームの ID（小文字の UUID）", UUID), P("kind", "summary（集計）・responses（新しいものから50件）", {"type": "string", "enum": ["summary", "responses"]})],
+   resp=S(connected=BOOL, data={"type": "object", "nullable": True, "description": "smohua の応答（GET /api/forms/{ID}/summary・responses）"}),
+   desc="自分の権限で読む（そのフォームを見られなければ 404）。キャッシュしない。連携していない・連携が切れたときは connected=false で data は null。")
 op("delete", "/api/integrations/{service}/connection", "連携", "外部サービスとの連携を解除する", [SVC], status="204")
 op("post", "/api/pages/lookup", "ページ", "ページのタイトルをまとめて読む", body=S(ids={**arr(UUID), "description": "ページID。100件まで（超えると 400）"}),
    resp=S(pages=arr(S(id=UUID, workspaceId=UUID, title=STR, icon={**STR, "nullable": True}))),

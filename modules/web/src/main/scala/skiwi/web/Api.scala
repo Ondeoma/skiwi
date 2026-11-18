@@ -102,7 +102,8 @@ object Api {
 
   def me(): Future[Me] = get[Me]("/api/me")
 
-  def logout(): Future[Unit] = exec(dom.HttpMethod.POST, "/auth/logout")
+  /** ログアウトして、次に開く URL（IdP のログアウト画面か「/」）を返す. */
+  def logout(): Future[String] = post[Json]("/auth/logout").map(_.hcursor.get[String]("redirect").getOrElse("/"))
 
   def setAvatar(image: dom.Blob): Future[Option[String]] =
     request(dom.HttpMethod.PUT, "/api/me/avatar", Some(image)).map(j => as[Json](j).hcursor.get[Option[String]]("avatarUrl").toOption.flatten)

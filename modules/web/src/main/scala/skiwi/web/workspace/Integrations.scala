@@ -16,7 +16,7 @@ import scala.scalajs.js.JSConverters.*
 final case class IntegrationState(enabled: Boolean, connected: Boolean)
 
 /**
- * 外部サービス（skea・skawau）ひとつとの連携の状態と、項目（タスク・ファイル）のキャッシュ（旧 ui/integration.ts）.
+ * 外部サービス（skea・skawau・smohua）ひとつとの連携の状態と、項目（タスク・ファイル・フォーム）のキャッシュ（旧 ui/integration.ts）.
  * ログイン中の画面で共有する. ゲスト向けの公開ページでは使わない（API を呼ばない）.
  * 状態と項目は API の JSON のまま持ち、エディタ（JS）へは window.__skiwiHost.integration(name) で渡す.
  */
@@ -48,6 +48,9 @@ final class Integration(val name: String) {
     Integrations.refresh()
     fire()
   }
+
+  /** 連携先の URL（管理者が設定したもの） */
+  def url: Option[String] = current.flatMap(_.hcursor.get[String]("url").toOption)
 
   def status: Option[IntegrationState] = current.map(j => IntegrationState(bool(j, "enabled"), bool(j, "connected")))
 
@@ -135,13 +138,14 @@ final class Integration(val name: String) {
 
 }
 
-/** skea・skawau の連携（画面の表示はリアクティブな status を見る） */
+/** skea・skawau・smohua の連携（画面の表示はリアクティブな status を見る） */
 object Integrations {
 
   val skea = new Integration("skea")
   val skawau = new Integration("skawau")
+  val smohua = new Integration("smohua")
 
-  val all: List[Integration] = List(skea, skawau)
+  val all: List[Integration] = List(skea, skawau, smohua)
 
   val Names: List[String] = all.map(_.name)
 

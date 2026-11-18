@@ -93,12 +93,13 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
 
   // ---------------------------------------------------------------- sessions / oidc state
 
-  def createSession(tokenHash: Array[Byte], userId: UUID, expiresAt: Instant): IO[Unit] = tx(
-    sql"insert into session (token_hash, user_id, expires_at) values ($tokenHash, $userId, $expiresAt)".update.run.void
+  def createSession(tokenHash: Array[Byte], userId: UUID, expiresAt: Instant, idToken: Option[String] = None): IO[Unit] = tx(
+    sql"insert into session (token_hash, user_id, expires_at, id_token) values ($tokenHash, $userId, $expiresAt, $idToken)".update.run.void
   )
 
-  def deleteSession(tokenHash: Array[Byte]): IO[Unit] = tx(
-    sql"delete from session where token_hash = $tokenHash".update.run.void
+  /** セッションを消し、IdP からログアウトするための id_token を返す. */
+  def deleteSession(tokenHash: Array[Byte]): IO[Option[String]] = tx(
+    sql"delete from session where token_hash = $tokenHash returning id_token".query[Option[String]].option.map(_.flatten)
   )
 
   def findSession(tokenHash: Array[Byte], now: Instant): IO[Option[(User, List[Group])]] = tx {

@@ -18,7 +18,7 @@ def mounted(s: State): Unit =
 
 def unmounted(s: State): Unit = s.ls.clear()
 
-def logout(): Unit = Api.logout().onComplete(_ => org.scalajs.dom.window.location.href = "/")
+def logout(): Unit = Api.logout().onComplete(r => org.scalajs.dom.window.location.href = r.getOrElse("/"))
 
 def meName = Store.me.v.map(_.name).getOrElse("")
 

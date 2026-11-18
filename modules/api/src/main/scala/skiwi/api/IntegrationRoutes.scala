@@ -22,17 +22,20 @@ final case class SaveIntegrationSettingsReq(url: String, clientId: String, clien
 /** ログイン中のユーザーから見た連携の状態 */
 final case class IntegrationStatusDto(enabled: Boolean, url: Option[String], projectKeys: List[String], connected: Boolean) derives Encoder.AsObject
 final case class LookupReq(keys: List[String]) derives Decoder
-/** items: サービスごとの形（skea はタスク、skawau はファイル）。見つからない・見られないものは入らない */
+/** items: サービスごとの形（skea はタスク、skawau はファイル、smohua はフォーム）。見つからない・見られないものは入らない */
 final case class LookupDto(connected: Boolean, items: List[Json]) derives Encoder.AsObject
+/** 項目1つの詳しい中身（smohua のフォームの集計・回答）。data は相手の応答のまま。連携していない・連携が切れたときは connected=false で data は null */
+final case class DetailDto(connected: Boolean, data: Json) derives Encoder.AsObject
 
 /** 復号済みの連携の設定 */
 final case class IntegrationSettings(url: String, clientId: String, clientSecret: Option[String], projectKeys: List[String])
 
 /**
- * 連携先のサービスごとの違い（docs/skea-integration.md・docs/skawau-integration.md）。
+ * 連携先のサービスごとの違い（docs/skea-integration.md・docs/skawau-integration.md・docs/smohua-integration.md）。
  * どちらも OAuth 2.0 の認可コード + PKCE で、相手の `/oauth/authorize`・`/oauth/token`・`/oauth/revoke` を使う。
  * @param lookupPath 項目をまとめて読む相手の API（Bearer）。リクエストは `{requestField: [...]}`
  * @param parse      相手の応答から (キー, 画面に返す項目) を取り出す（形が違うものは捨てる）
+ * @param details    項目1つの詳しい中身を読む相手の API（種類 → キーからパスを作る。GET・Bearer）。ページの中のブロックが使う
  */
 final case class LinkedService(
   name: String,
@@ -41,6 +44,7 @@ final case class LinkedService(
   usesProjectKeys: Boolean,
   isKey: (IntegrationSettings, String) => Boolean,
   parse: (Json, IntegrationSettings) => List[(String, Json)],
+  details: Map[String, String => String] = Map.empty,
 ):
   def complete(s: IntegrationSettings): Boolean =
     s.url.nonEmpty && s.clientId.nonEmpty && s.clientSecret.exists(_.nonEmpty) && (!usesProjectKeys || s.projectKeys.nonEmpty)
@@ -72,7 +76,23 @@ object LinkedService:
       }
     })
 
-  val all: List[LinkedService] = List(skea, skawau)
+  /**
+   * smohua: ページの中に置いたブロックに、フォームの回答（集計・一覧）を出す。キーはフォームの ID（UUID、小文字にそろえる）。
+   * 題名・状態・回答の数は lookup で、集計と回答は details（summary・responses）で、本人の smohua の権限で読む
+   */
+  val smohua: LinkedService = LinkedService("smohua", "/api/forms/lookup", "ids", usesProjectKeys = false,
+    isKey = (_, k) => Uuid.matches(k) && k == k.toLowerCase,
+    parse = (j, s) => items(j, "forms") { c =>
+      (c.get[String]("id").map(_.toLowerCase), c.get[String]("title")).mapN { (id, title) =>
+        id -> Json.obj("key" -> id.asJson, "title" -> title.asJson, "status" -> c.get[String]("status").getOrElse("").asJson,
+          "responses" -> c.get[Int]("responses").getOrElse(0).asJson, "lastResponseAt" -> c.get[Option[String]]("lastResponseAt").toOption.flatten.asJson,
+          // リンクは設定した URL から作る（相手の応答の URL はそのまま使わない）
+          "url" -> s"${s.url}/forms/$id/responses".asJson)
+      }
+    },
+    details = Map("summary" -> (id => s"/api/forms/$id/summary"), "responses" -> (id => s"/api/forms/$id/responses?limit=50")))
+
+  val all: List[LinkedService] = List(skea, skawau, smohua)
 
   private def items(j: Json, field: String)(f: io.circe.ACursor => io.circe.Decoder.Result[(String, Json)]): List[(String, Json)] =
     j.hcursor.downField(field).values.toList.flatten.flatMap(t => f(t.hcursor).toOption)
@@ -94,8 +114,8 @@ object IntegrationRoutes:
     p + (if p.contains('?') then "&" else "?") + s"$name=$v" + hash
 
 /**
- * 外部サービス（skea・skawau）との連携。各ユーザーが OAuth 2.0（認可コード + PKCE）で相手を許可し、
- * 発行された読み取り専用のトークンを暗号化して保存する。本文中の項目（タスク・ファイル）は、本人のトークンで相手から読む。
+ * 外部サービス（skea・skawau・smohua）との連携。各ユーザーが OAuth 2.0（認可コード + PKCE）で相手を許可し、
+ * 発行された読み取り専用のトークンを暗号化して保存する。本文中の項目（タスク・ファイル・フォームの回答）は、本人のトークンで相手から読む。
  * box（ENCRYPTION_KEY）がなければ連携の機能は使えない（503）。パスは /api/integrations/{サービス名}/…。
  */
 final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStore, protected val sessions: SessionAuth, audit: Audit,
@@ -307,6 +327,31 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
                     case None => notConnected
                     case Some(tok) => items(svc, s.user.id, cfg, tok, b.keys.filter(svc.isKey(cfg, _)).distinct)
                   }
+              }
+          }
+        }
+      }
+
+    /** 項目1つの詳しい中身（smohua のフォームの集計 summary・回答 responses）。本人のトークンで相手から読んで、そのまま返す（キャッシュしない） */
+    case req @ GET -> Root / "api" / "integrations" / Svc(svc) / "items" / key / kind if svc.details.contains(kind) =>
+      authed(req) { s =>
+        withBox(svc) { _ =>
+          val notConnected = Ok(DetailDto(connected = false, Json.Null))
+          active(svc).flatMap {
+            case None => notConnected
+            case Some((_, cfg)) if !svc.isKey(cfg, key) => err(Status.BadRequest, "キーの形が正しくありません")
+            case Some((bx, cfg)) =>
+              token(svc, bx, s.user.id).flatMap {
+                case None => notConnected
+                case Some(tok) =>
+                  val get = Request[IO](Method.GET, endpoint(cfg, svc.details(kind)(key)))
+                    .putHeaders(Authorization(Credentials.Token(AuthScheme.Bearer, tok)), Accept(MediaType.application.json))
+                  http.run(get).use { r =>
+                    if r.status == Status.Unauthorized then st.deleteToken(svc.name, s.user.id) *> dropCache(svc, s.user.id) *> notConnected
+                    else if r.status == Status.NotFound || r.status == Status.Forbidden then err(Status.NotFound, s"${svc.name} で見つからないか、見る権限がありません")
+                    else if r.status.isSuccess then r.as[Json].flatMap(j => Ok(DetailDto(connected = true, j)))
+                    else warn(svc, s"detail $kind")(r.status.code) *> err(Status.BadGateway, s"${svc.name} から取得できませんでした")
+                  }.timeout(10.seconds).handleErrorWith(e => warn(svc, s"detail $kind")(e) *> err(Status.BadGateway, s"${svc.name} から取得できませんでした"))
               }
           }
         }

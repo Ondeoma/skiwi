@@ -3,6 +3,7 @@ import { PANEL_PRESETS } from './Panel'
 import { alertDialog, chooseDialog, promptDialog } from '../ui/dialog'
 import { host } from '../ui/host'
 import { blockCategory, findSyncedBlocks, openBlockPicker, pageContent, type BlockItemView } from '../lib'
+import { smohuaFormId } from './SmohuaForm'
 
 /** 「/」の項目. 分類（一覧での見出し）・絞り込み・一覧のモーダルは Scala（editor.Blocks・parts/BlockPicker） */
 export interface SlashItem extends BlockItemView {
@@ -111,6 +112,15 @@ export function slashItems(ctx: SlashContext): SlashItem[] {
       run: async (e, r) => { chain(e, r).run(); const f = await ctx.pickFile('*/*'); if (f) await ctx.upload(f) } },
     { title: 'データベース（ページ内）', description: 'データベースを表・ボードなどでこのページの中に表示する（新しく作るか、既存のものを選ぶ）', icon: '📊', keywords: ['database', 'table', 'board', 'inline', 'linked', 'でーたべーす', 'ひょう', 'ぼーど'],
       run: async (e, r) => { chain(e, r).run(); const id = await ctx.pickDatabase?.(); if (id) e.chain().focus().insertDatabaseBlock(id).run() } },
+    { title: 'フォームの回答（smohua）', description: 'smohua のフォームで集めた回答（集計・一覧）をこのページの中に表示する', icon: '📋', keywords: ['smohua', 'form', 'survey', 'answer', 'response', 'ふぉーむ', 'あんけーと', 'かいとう', 'しゅうけい'],
+      run: async (e, r) => {
+        chain(e, r).run()
+        const u = await ask('表示するフォームの URL（smohua のフォームの画面の URL）か ID')
+        if (!u) return
+        const id = smohuaFormId(u)
+        if (id) e.chain().focus().insertSmohuaForm(id).run()
+        else await alertDialog('smohua のフォームの URL か ID を指定してください')
+      } },
     { title: 'ブックマーク', description: 'URL をタイトル・説明・画像付きのカードにする', icon: '🔖', keywords: ['bookmark', 'link', 'card', 'url', 'ぶっくまーく', 'かーど', 'りんく'],
       run: async (e, r) => { chain(e, r).run(); const u = await ask('カードにするURL'); if (u && !e.chain().focus().insertLinkCard(u).run()) await alertDialog('http(s) のURLを指定してください') } },
     { title: '埋め込み', description: 'YouTube・Vimeo・Figma・Google ドキュメント／ドライブ・Loom・Miro など、または任意のURL(https)', icon: '▶', keywords: ['embed', 'youtube', 'video', 'iframe', 'うめこみ'],

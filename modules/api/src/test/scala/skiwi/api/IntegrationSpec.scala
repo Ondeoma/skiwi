@@ -15,7 +15,7 @@ import skiwi.db.*
 import java.time.Instant
 import java.util.{Base64, UUID}
 
-/** skea・skawau 連携: 管理者の設定・許可画面へのリダイレクト・コードの交換・タスクの取得・連携の解除。skea・skawau はメモリ内の偽物。TEST_DATABASE_URL が必要。 */
+/** skea・skawau・smohua 連携: 管理者の設定・許可画面へのリダイレクト・コードの交換・タスクの取得・連携の解除。skea・skawau はメモリ内の偽物。TEST_DATABASE_URL が必要。 */
 class IntegrationSpec extends DbSuite:
 
   private val apiCfg = ApiConfig(adminGroups = Set("skea-admins"), cookieSecure = false)
@@ -54,6 +54,21 @@ class IntegrationSpec extends DbSuite:
         seen.update(s => s.copy(lookups = (req.headers.get[Authorization], ids) :: s.lookups)) *>
           Ok(Json.obj("files" -> ids.filterNot(_.startsWith("0")).map(id => Json.obj(
             "id" -> id.toUpperCase.asJson, "name" -> s"file-${id.take(4)}.txt".asJson, "isDir" -> id.startsWith("d").asJson, "mimeType" -> Json.Null)).asJson))
+      }
+    // smohua: フォームの題名・回答の数（0 で始まる ID は見られない）と、集計
+    case req @ POST -> Root / "api" / "forms" / "lookup" =>
+      req.as[Json].flatMap { j =>
+        val ids = j.hcursor.get[List[String]]("ids").getOrElse(Nil)
+        seen.update(s => s.copy(lookups = (req.headers.get[Authorization], ids) :: s.lookups)) *>
+          Ok(Json.obj("forms" -> ids.filterNot(_.startsWith("0")).map(id => Json.obj("id" -> id.asJson, "title" -> "懇親会の出欠".asJson, "status" -> "open".asJson,
+            "responses" -> 12.asJson, "lastResponseAt" -> "2026-11-17T01:02:03Z".asJson, "url" -> "https://evil.example/x".asJson)).asJson))
+      }
+    case req @ GET -> Root / "api" / "forms" / id / "summary" =>
+      val tok = req.headers.get[Authorization].collect { case Authorization(Credentials.Token(_, t)) => t }.getOrElse("")
+      revoked.get.flatMap { rv =>
+        if rv.contains(tok) then IO.pure(Response[IO](Status.Unauthorized))
+        else if id.startsWith("0") then NotFound(Json.obj("error" -> "フォームが見つかりません".asJson))
+        else Ok(Json.obj("formId" -> id.asJson, "title" -> "懇親会の出欠".asJson, "total" -> 12.asJson, "questions" -> Json.arr()))
       }
   }.orNotFound
 
@@ -282,6 +297,50 @@ class IntegrationSpec extends DbSuite:
         _ = assertEquals(items.head.hcursor.get[String]("name"), Right("file-a1b2.txt"))
         seen <- env.seen.get
         _ = assertEquals(seen.lookups.map(_._2), List(List(f1, d1, gone)))
+      yield ()
+    }
+  }
+
+  test("smohua: lookup forms and relay the summary of a form with the user's token; revoked token disconnects") {
+    val f1 = "a1b2c3d4-0000-4000-8000-00000000000a"
+    val gone = "01b2c3d4-0000-4000-8000-00000000000b"
+    run {
+      for
+        (_, at) <- user("smohua-admin", List("skea-admins"))
+        (r0, j0) <- call(at, Method.PUT, "/api/admin/integrations/smohua", Some(Json.obj("url" -> "https://smohua.test".asJson, "clientId" -> "skiwi".asJson, "clientSecret" -> "x".asJson)))
+        _ = assertEquals(r0.status, Status.Ok)
+        _ = assertEquals(j0.hcursor.get[String]("redirectUri"), Right("https://skiwi.example.com/api/integrations/smohua/callback"))
+        (u, ut) <- user("smohua-user")
+        // 連携する前は connected=false（相手には問い合わせない）
+        (_, d0) <- call(ut, Method.GET, s"/api/integrations/smohua/items/$f1/summary")
+        _ = assertEquals((d0.hcursor.get[Boolean]("connected"), d0.hcursor.downField("data").focus), (Right(false), Some(Json.Null)))
+        (r, _) <- call(ut, Method.GET, "/api/integrations/smohua/connect?returnTo=/")
+        _ = assertEquals(r.headers.get[Location].get.uri.renderString.takeWhile(_ != '?'), "https://smohua.test/oauth/authorize")
+        (cb, _) <- call(ut, Method.GET, s"/api/integrations/smohua/callback?code=good&state=${r.headers.get[Location].get.uri.query.params("state")}")
+        _ = assertEquals(cb.headers.get[Location].map(_.uri.renderString), Some("/?smohua=connected"))
+        (_, j) <- call(ut, Method.POST, "/api/integrations/smohua/lookup", Some(Json.obj("keys" -> List(f1, gone, "x").asJson)))
+        items = j.hcursor.downField("items").values.get.toList
+        _ = assertEquals(items.map(_.hcursor.get[String]("key").toOption.get), List(f1))
+        _ = assertEquals((items.head.hcursor.get[String]("title"), items.head.hcursor.get[Int]("responses")), (Right("懇親会の出欠"), Right(12)))
+        // リンクは設定した URL から作る（相手が返した URL は使わない）
+        _ = assertEquals(items.head.hcursor.get[String]("url"), Right(s"https://smohua.test/forms/$f1/responses"))
+        (rs, d) <- call(ut, Method.GET, s"/api/integrations/smohua/items/$f1/summary")
+        _ = assertEquals((rs.status, d.hcursor.get[Boolean]("connected"), d.hcursor.downField("data").get[Int]("total")), (Status.Ok, Right(true), Right(12)))
+        (nf, _) <- call(ut, Method.GET, s"/api/integrations/smohua/items/$gone/summary")
+        _ = assertEquals(nf.status, Status.NotFound)
+        (bad, _) <- call(ut, Method.GET, "/api/integrations/smohua/items/not-a-uuid/summary")
+        _ = assertEquals(bad.status, Status.BadRequest)
+        // 知らない種類・詳しい中身のないサービスにはルートがない
+        (unknown, _) <- call(ut, Method.GET, s"/api/integrations/smohua/items/$f1/secrets")
+        _ = assertEquals(unknown.status, Status.NotFound)
+        (skea, _) <- call(ut, Method.GET, s"/api/integrations/skea/items/$f1/summary")
+        _ = assertEquals(skea.status, Status.NotFound)
+        // 相手でトークンが失効していたら、連携を外す
+        tok <- env.ist.token("smohua", u.id).map(_.flatMap(box.decrypt(_, s"smohua.token:${u.id}")).get)
+        _ <- env.revokedTokens.update(_ + tok)
+        (_, d2) <- call(ut, Method.GET, s"/api/integrations/smohua/items/$f1/summary")
+        _ = assertEquals(d2.hcursor.get[Boolean]("connected"), Right(false))
+        _ <- env.ist.token("smohua", u.id).map(t => assertEquals(t, None))
       yield ()
     }
   }

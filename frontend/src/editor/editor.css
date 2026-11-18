@@ -84,6 +84,12 @@
 .db-block .db-grip { position: absolute; left: -1.4rem; top: .6rem; color: var(--muted); cursor: grab; font-size: .8rem; letter-spacing: -2px; }
 .db-block .db-guest { color: var(--muted); font-size: .85rem; border: 1px dashed var(--line); border-radius: 6px; padding: .5rem .8rem; }
 
+/* --- smohua のフォームの回答（中身は Scalactive の部品 SmohuaFormView） --- */
+.smohua-block { margin: .8em 0; }
+.smohua-block .smohua-inner { position: relative; }
+.smohua-block .db-grip { position: absolute; left: -1.4rem; top: .6rem; color: var(--muted); cursor: grab; font-size: .8rem; letter-spacing: -2px; }
+.smohua-block .db-guest { color: var(--muted); font-size: .85rem; border: 1px dashed var(--line); border-radius: 6px; padding: .5rem .8rem; }
+
 /* --- リンクのカード（旧 LinkCardView.vue） --- */
 .link-card-wrap { position: relative; margin: .5em 0; }
 .link-card-wrap .link-card { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; text-decoration: none; color: inherit; min-height: 5.5rem; }

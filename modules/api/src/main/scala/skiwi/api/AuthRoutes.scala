@@ -14,7 +14,7 @@ import java.time.Instant
 
 /** /auth/login → IdP → /auth/callback → セッションCookie発行。 */
 /** scimManagesGroups=true のとき、ログイン時のgroupsクレームでグループ所属を上書きしない（SCIMを正とする）。 */
-final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, audit: Audit, scimManagesGroups: Boolean = false)
+final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, audit: Audit, scimManagesGroups: Boolean = false, publicUrl: String = "")
     extends Http4sDsl[IO]:
 
   private def redirect(to: String): Response[IO] =
@@ -60,7 +60,7 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
                       case true =>
                         for
                           _      <- if scimManagesGroups then IO.unit else store.syncGroups(user.id, id.groups)
-                          cookie <- sessions.issue(user)
+                          cookie <- sessions.issue(user, id.idToken)
                           _      <- audit.user(user, "session", "auth.login")
                           _      <- skiwi.observe.Metrics.count("skiwi.logins")
                         yield redirect(back.flatMap(b => safeReturnTo(Some(b))).getOrElse("/")).addCookie(cookie)
@@ -70,9 +70,16 @@ final class AuthRoutes(oidc: OidcClient, store: Store, sessions: SessionAuth, au
           }.map(_.addCookie(stateCookie("", 0)))
         case _ => BadRequest("missing state or code")
 
+    // ログアウト: セッションを消し、IdP にもログアウトを頼む（IdP のログインが残っていると、すぐにログインし直してしまうため）.
+    // 返す redirect は次に開く URL（IdP のログアウト画面か「/」）
     case req @ POST -> Root / "auth" / "logout" =>
       sessions.fromRequest(req).attempt.flatMap { who =>
         who.toOption.flatten.traverse_(s => audit.log(s, "auth.logout", "user", s.user.id)) *>
-          sessions.revoke(req).map(c => Response[IO](Status.NoContent).addCookie(c))
+          sessions.revoke(req).flatMap { (idToken, c) =>
+            (if publicUrl.isEmpty then IO.pure(None) else oidc.logoutUri(idToken, s"${publicUrl.stripSuffix("/")}/")).map { idp =>
+              Response[IO](Status.Ok).withEntity(Json.obj("redirect" -> idp.fold("/")(_.renderString).asJson).noSpaces)
+                .withContentType(headers.`Content-Type`(MediaType.application.json)).addCookie(c)
+            }
+          }
       }
   }

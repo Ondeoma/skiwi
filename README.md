@@ -92,7 +92,7 @@ scripts/ha-up.sh && (cd frontend && npm run test:ha)   # Docker上の3ノード�
 ```
 
 ### IdP 側の設定
-OIDC に対応した IdP なら使える（`OIDC_ISSUER` の `/.well-known/openid-configuration` からエンドポイントを取得する）。
+OIDC に対応した IdP なら使える（`OIDC_ISSUER` の `/.well-known/openid-configuration` からエンドポイントを取得する）。 ログアウトでは IdP からもログアウトし（`end_session_endpoint`）、`${PUBLIC_URL}/` に戻る（sruru 以外の IdP では、この戻り先も登録する）。
 - クライアント: 機密クライアント（client secret あり）。トークンエンドポイントへは `client_secret_post` で認証する。
 - Redirect URI: `${PUBLIC_URL}/auth/callback`
 - Scopes: `openid` `profile` `email`
@@ -330,6 +330,12 @@ skea／skawau との連携・APIトークン・API の説明書・管理者向�
 - **連携（各ユーザー）**: 画面右上の自分のアイコンのメニューの「🔗 skea と連携」「🔗 skawau と連携」→ 相手の許可画面（OAuth 2.0 認可コード + PKCE S256）→ 戻ると、読み取り専用のトークンを AES-GCM で暗号化して保存する（`integration_connection`）。state と code_verifier は DB に10分保存（複数ノード対応）。解除は相手の `/oauth/revoke` を呼んでから削除。
 - **表示**: ProseMirror の decoration だけで行い、本文は書き換えない（`frontend/src/editor/SkeaTasks.ts`・`SkawauFiles.ts`、共通部分は `linkedDecorations.ts`）。コードブロック・インラインコードの中は対象外。閲覧中はクリックで開き、編集中は Ctrl/⌘+クリックか、横の表示のクリックで新しいタブに開く。skawau は、貼り付けたままの URL を閲覧中は隠して「📄 ファイル名」だけにし、文字を付けたリンクは文字のまま（マウスを乗せると名前）。未連携の人には何も足さない（skea はリンクだけ）。ゲスト向けの公開ページ・版のプレビューでは何もしない。
 - **取得**: `POST /api/integrations/{skea|skawau}/lookup {keys}`（100件まで）で本人のトークンを使い、skea の `/api/tasks/lookup`・skawau の `/api/files/lookup` を呼ぶ。(サービス, ユーザー, キー) ごとに60秒キャッシュ。相手が 401 を返したら連携を消して `connected:false`。
+
+### smohua 連携（ページの中にフォームの回答を表示する）
+エディタの `/` →「フォームの回答（smohua）」で、smohua（フォーム）で集めた回答の集計と一覧を表示するブロックを置ける。取り決めは [docs/smohua-integration.md](docs/smohua-integration.md)。
+- 設定・連携・トークンの保存は skea・skawau と同じ（「外部連携」の「skiwi → smohua」、メニューの「🔗 smohua と連携」。`LinkedService.smohua`）。
+- **ブロック**: ノード `smohuaForm`（属性 `formId`。`frontend/src/editor/SmohuaForm.ts`）。中身は Scalactive の部品 `SmohuaFormView.st`（`host().mountView('smohuaForm')`）。回答は本文に保存せず、開くたびに読む。ゲスト向けの公開ページでは表示しない。
+- **取得**: `GET /api/integrations/smohua/items/{フォームの ID}/summary`・`…/responses` が、本人のトークンで smohua の `/api/forms/{ID}/summary`・`/responses?limit=50` を呼んで返す（そのフォームを見られない人には 404）。
 
 ### 逆向き: skea → skiwi（skea にページのタイトルを出す）
 skiwi が OAuth 2.0 の認可サーバーになり、skea のタスクに書いた skiwi のページのリンクにタイトルを出す（取り決めは [docs/skea-integration.md](docs/skea-integration.md) の後半）。

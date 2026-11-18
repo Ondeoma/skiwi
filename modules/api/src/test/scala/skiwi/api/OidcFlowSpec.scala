@@ -40,7 +40,8 @@ class OidcFlowSpec extends DbSuite:
               Ok(Json.obj(
                 "issuer" -> issuer.asJson,
                 "authorization_endpoint" -> "https://idp.test/authorize".asJson,
-                "token_endpoint" -> "https://idp.test/token".asJson))
+                "token_endpoint" -> "https://idp.test/token".asJson,
+                "end_session_endpoint" -> "https://idp.test/logout".asJson))
             case req @ POST -> Root / "token" =>
               req.as[UrlForm].flatMap { f =>
                 tokenForm.set(Some(f)) *> nonce.get.flatMap { n =>
@@ -62,7 +63,7 @@ class OidcFlowSpec extends DbSuite:
           ops = new OpsStore(xa)
           sess = new SessionAuth(store, ops, apiCfg)
           audit = new Audit(ops)
-          app = (new AuthRoutes(oidc, store, sess, audit).routes <+> new ApiRoutes(store, new DocStore(xa), ops, sess, audit).routes).orNotFound
+          app = (new AuthRoutes(oidc, store, sess, audit, publicUrl = "https://skiwi.test").routes <+> new ApiRoutes(store, new DocStore(xa), ops, sess, audit).routes).orNotFound
 
           // 1) /auth/login → IdPへのリダイレクト (PKCE S256, state, nonce)
           login <- app.run(Request[IO](Method.GET, uri"/auth/login"))
@@ -105,9 +106,14 @@ class OidcFlowSpec extends DbSuite:
           replay <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")).addCookie("skiwi_login_state", stateCk.content))
           _ = assertEquals(replay.status, Status.BadRequest)
 
-          // 5) ログアウト後は401
+          // 5) ログアウト後は401. IdP にもログアウトを頼む（id_token_hint と戻り先を付けた end_session_endpoint を返す）
           lo <- app.run(Request[IO](Method.POST, uri"/auth/logout").addCookie("skiwi_session", setCookie.content))
-          _ = assertEquals(lo.status, Status.NoContent)
+          _ = assertEquals(lo.status, Status.Ok)
+          loJson <- lo.as[Json]
+          idp = Uri.unsafeFromString(loJson.hcursor.get[String]("redirect").toOption.get)
+          _ = assertEquals(idp.copy(query = Query.empty).renderString, "https://idp.test/logout")
+          _ = assertEquals(idp.query.params.get("post_logout_redirect_uri"), Some("https://skiwi.test/"))
+          _ = assert(idp.query.params.get("id_token_hint").exists(_.nonEmpty))
           after <- app.run(Request[IO](Method.GET, uri"/api/me").addCookie("skiwi_session", setCookie.content))
           _ = assertEquals(after.status, Status.Unauthorized)
         yield ()

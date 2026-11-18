@@ -36,6 +36,7 @@ import { BlockId, TextColor } from './BlockAttrs'
 import { EmojiSuggest } from './EmojiSuggest'
 import { LinkCard, UrlPaste } from './LinkCard'
 import { DatabaseBlock } from './DatabaseBlock'
+import { SmohuaForm } from './SmohuaForm'
 import { Drawio } from './Drawio'
 import { BlockRange, SelectionKeys } from './SelectionKeys'
 import { SkawauFiles } from './SkawauFiles'
@@ -193,6 +194,7 @@ export function contentExtensions(
     TextColor,
     LinkCard,
     DatabaseBlock,
+    SmohuaForm,
     Drawio.configure({ uploadFile: whiteboard?.uploadFile ?? undefined }),
   ]
 }

@@ -49,6 +49,15 @@ summary: 管理者の権限、監査ログ、公開中のページ、定期バ�
 
 - client_secret・URL・client_id の扱い、`ENCRYPTION_KEY`、監査ログは skea 連携と同じです。
 
+## smohua 連携の設定
+
+同じ「外部連携」の画面の「skiwi → smohua」。ページに置いたブロックに、smohua のフォームで集めた回答を出します（使い方は [smohua のフォームの回答を表示する](/help/automation#smohuaのフォームの回答を表示するsmohua連携)）。
+
+1. 画面に出る **redirect_uri** を、smohua の管理者に伝えて、skiwi をクライアントとして登録してもらいます（smohua の `OAUTH_CLIENTS`）。
+2. smohua で決めた client_id・client_secret と、smohua の URL を入れて「保存」。
+
+- client_secret・URL・client_id の扱い、`ENCRYPTION_KEY`、監査ログは skea 連携と同じです。
+
 ### skea → skiwi（ページのタイトルの表示）
 
 同じ画面の下の段で、skea を skiwi のクライアントとして登録すると、skea のタスクに書いた skiwi のページのリンクにタイトルが出ます。

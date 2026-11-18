@@ -3,7 +3,7 @@ import { isColor } from '../lib'
 
 /** ブロックへのリンク用の ID（リンクをコピーしたときに付ける）。data-block-id として描画する */
 export const BLOCK_TYPES = ['paragraph', 'heading', 'blockquote', 'codeBlock', 'bulletList', 'orderedList', 'taskList', 'details', 'table',
-  'image', 'panel', 'fileBlock', 'embed', 'mermaid', 'whiteboard', 'columns', 'toc', 'syncedBlock', 'syncedRef', 'linkCard', 'databaseBlock', 'horizontalRule']
+  'image', 'panel', 'fileBlock', 'embed', 'mermaid', 'whiteboard', 'columns', 'toc', 'syncedBlock', 'syncedRef', 'linkCard', 'databaseBlock', 'smohuaForm', 'horizontalRule']
 
 export const BlockId = Extension.create({
   name: 'blockId',

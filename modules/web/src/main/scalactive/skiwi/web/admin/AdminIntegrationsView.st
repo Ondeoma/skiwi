@@ -6,10 +6,11 @@ import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.util.{Failure, Success}
 
-// 管理者: 外部サービスとの連携の設定（docs/skea-integration.md・docs/skawau-integration.md）。
+// 管理者: 外部サービスとの連携の設定（docs/skea-integration.md・docs/skawau-integration.md・docs/smohua-integration.md）。
 //  - skiwi → skea: 本文のタスクID に skea のタスクのタイトル・状態を出す（skiwi が skea のクライアント）
 //  - skea → skiwi: skea に skiwi のページのタイトルを出す（skea が skiwi のクライアント）
 //  - skiwi → skawau: 本文のファイルのリンクにファイル名を出す（skiwi が skawau のクライアント）
+//  - skiwi → smohua: ページに置いたブロックに、フォームの回答を出す（skiwi が smohua のクライアント）
 
 // ---------------------------------------------------------------- skea → skiwi（skea をクライアントとして登録する）
 case class State(client: RV[Option[OAuthClientSettings]] = RV(None),
@@ -124,6 +125,14 @@ def secretPlaceholder(s: State): String =
       閲覧中は URL の代わりに「📄 ファイル名」を出します。ファイル名は各ユーザーが「skawau と連携」で許可した、本人の skawau の権限で読みます。
     </p>
     <IntegrationSettingsForm svc="skawau" />
+
+    <h2 class="dir">skiwi → smohua（フォームの回答の表示）</h2>
+    <p class="muted">
+      ページに置いた「フォームの回答（smohua）」のブロック（<code>/</code> のメニューから追加）に、smohua のフォームで集めた回答の集計と一覧を表示します。
+      回答は各ユーザーが「smohua と連携」で許可した、本人の smohua の権限で読みます（そのフォームを見られない人には表示されません）。
+      smohua の <code>OAUTH_CLIENTS</code> に、下の「リダイレクト URI」で skiwi を登録してください。
+    </p>
+    <IntegrationSettingsForm svc="smohua" />
   </main>
 </template>
 

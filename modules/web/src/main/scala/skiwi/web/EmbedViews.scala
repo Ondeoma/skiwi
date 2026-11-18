@@ -1,6 +1,7 @@
 package skiwi.web
 
 import skiwi.web.database.DatabaseView
+import skiwi.web.workspace.SmohuaFormView
 
 import scala.scalajs.js
 
@@ -17,6 +18,8 @@ object EmbedViews {
       Embeds.render(el)(DatabaseView(pageId = str(p, "pageId").getOrElse(""), wid = str(p, "wid").getOrElse(""), embedded = true,
         localViews = str(p, "views"), onViews = v => onViews.foreach(_(v))))
     }
+    // smohua のフォームの回答（editor/SmohuaForm）. formId: フォームの ID
+    Embeds.register("smohuaForm")((el, p) => Embeds.render(el)(SmohuaFormView(formId = str(p, "formId").getOrElse(""))))
   }
 
 }

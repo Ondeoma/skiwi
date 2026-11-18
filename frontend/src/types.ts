@@ -33,7 +33,7 @@ export interface DocState { ydoc: string; content: unknown; text: string; label?
 /** ゲスト向けに公開中のページ */
 export interface GuestPage { id: string; parentId: string | null; position: string; title: string; icon: string | null; updatedAt: string; slug?: string | null }
 
-export type ServiceName = 'skea' | 'skawau'
+export type ServiceName = 'skea' | 'skawau' | 'smohua'
 export interface IntegrationStatus { enabled: boolean; url: string | null; projectKeys: string[]; connected: boolean }
 /** skea のタスク */
 export interface SkeaTask { key: string; title: string; status: { name: string; category: string; color: string }; url: string }

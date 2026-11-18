@@ -6,8 +6,8 @@ import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.util.{Failure, Success}
 
-// 管理者: skiwi が外部サービス（skea・skawau）のクライアントになる連携の設定。client_secret は書き込みだけ（設定済みかどうかだけ表示する）。
-// svc: skea / skawau. projectKeys: skea のタスクIDのように、対象を絞るキーを入れる欄を出す
+// 管理者: skiwi が外部サービス（skea・skawau・smohua）のクライアントになる連携の設定。client_secret は書き込みだけ（設定済みかどうかだけ表示する）。
+// svc: skea / skawau / smohua. projectKeys: skea のタスクIDのように、対象を絞るキーを入れる欄を出す
 case class Props(svc: String, projectKeys: Boolean = false)
 
 case class State(current: RV[Option[IntegrationSettings]] = RV(None),
