@@ -24,6 +24,18 @@ def safeReturnTo(raw: Option[String]): Option[String] = raw.map(_.trim).filter(_
   case Some(p) =>
     Option.when(p.startsWith("/") && !p.startsWith("//") && !p.contains('\\') && !p.exists(_ < ' ') && p.length <= 2000 && Uri.fromString(p).isRight)(p)
 
+/** 接続元のアドレス。ロードバランサー（HAProxy の option forwardfor）が X-Forwarded-For の最後に付けたもの、なければ TCP の接続元 */
+def clientAddress(req: Request[IO]): String =
+  req.headers.get(org.typelevel.ci.CIString("X-Forwarded-For")).flatMap(_.toList.lastOption)
+    .flatMap(_.value.split(',').lastOption).map(_.trim).filter(_.nonEmpty)
+    .orElse(req.remoteAddr.map(_.toString)).getOrElse("-")
+
+/** 名前（前後の空白を除いて1〜max文字）。正しくなければ None */
+def validName(raw: String, max: Int = 100): Option[String] = Some(raw.trim).filter(n => n.nonEmpty && n.length <= max)
+
+/** ワークスペースの名前の長さの上限 */
+val MaxWorkspaceName = 200
+
 /** リクエスト本文の JSON の入れ子の上限（本文の JSON はふつう数十段） */
 val MaxJsonDepth = 256
 
@@ -65,21 +77,25 @@ trait RouteSupport extends Http4sDsl[IO]:
 
   /** ログインしていなければ 401。操作したユーザーを、トレース（スパンの属性）とこの中のログに載せる。 */
   protected def authed(req: Request[IO])(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
-    sessions.fromRequest(req).flatMap(_.fold(err(Status.Unauthorized, "unauthorized"))(s =>
+    sessions.fromRequest(req).flatMap(_.fold(err(Status.Unauthorized, "ログインしてください"))(s =>
       skiwi.observe.Telemetry.withUser(s.user.id.toString, s.user.name)(f(s))))
 
   /** 管理者のみ（それ以外は 403）。 */
   protected def admin(req: Request[IO])(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
-    authed(req)(s => if s.isAdmin then f(s) else err(Status.Forbidden, "admin only"))
+    authed(req)(s => if s.isAdmin then f(s) else err(Status.Forbidden, "管理者だけが使えます"))
 
   /** リクエスト本文を読む（読めなければ 400）。 */
   protected def body[A: Decoder](req: Request[IO])(f: A => IO[Response[IO]]): IO[Response[IO]] =
+    decodeBody[A](req).flatMap(_.fold(err(Status.BadRequest, _), f))
+
+  /** リクエスト本文を読む。読めなければ Left(理由)。大きすぎる本文は BodyTooLarge のまま投げる（全体のエラー処理で 413 になる） */
+  protected def decodeBody[A: Decoder](req: Request[IO]): IO[Either[String, A]] =
     req.as[Json].attempt.flatMap {
-      case Left(e: Security.BodyTooLarge) => err(Status.PayloadTooLarge, e.getMessage)
-      case Left(_)  => err(Status.BadRequest, "invalid body")
+      case Left(e: Security.BodyTooLarge) => IO.raiseError(e)
+      case Left(_)  => IO.pure(Left("リクエストの本文が正しくありません"))
       // 深すぎる入れ子は、保存時の書き出し（再帰）でスタックを使い切るので断る
-      case Right(j) if jsonDepthOver(j, MaxJsonDepth) => err(Status.BadRequest, "body is nested too deeply")
-      case Right(j) => j.as[A].fold(_ => err(Status.BadRequest, "invalid body"), f)
+      case Right(j) if jsonDepthOver(j, MaxJsonDepth) => IO.pure(Left("リクエストの本文の入れ子が深すぎます"))
+      case Right(j) => IO.pure(j.as[A].left.map(e => s"リクエストの本文が正しくありません: ${e.getMessage}"))
     }
 
 /** ページ・ワークスペースの権限を確認する補助。 */
@@ -89,10 +105,14 @@ trait PageRouteSupport extends RouteSupport:
   /** 権限のないページは存在を隠すため 404、閲覧可だが need に足りなければ 403。 */
   protected def checkPage(s: AuthSession, id: UUID, need: Role)(f: (Page, Role) => IO[Response[IO]]): IO[Response[IO]] =
     store.pageAccess(id, s).flatMap {
-      case None                    => err(Status.NotFound, "page not found")
-      case Some((_, r)) if r < need => err(Status.Forbidden, "insufficient permission")
+      case None                    => err(Status.NotFound, "ページが見つかりません")
+      case Some((_, r)) if r < need => err(Status.Forbidden, "権限がありません")
       case Some((p, r))            => f(p, r)
     }
+
+  /** ページの編集者だけ（それ以外は 403。見られなければ 404） */
+  protected def withEditor(req: Request[IO], id: UUID)(f: (AuthSession, Page) => IO[Response[IO]]): IO[Response[IO]] =
+    withPage(req, id, Role.Edit)((s, p, _) => f(s, p))
 
   /** ページに対する権限を確認してから処理する。 */
   protected def withPage(req: Request[IO], id: UUID, need: Role)(f: (AuthSession, Page, Role) => IO[Response[IO]]): IO[Response[IO]] =
@@ -101,8 +121,8 @@ trait PageRouteSupport extends RouteSupport:
   /** 権限のないワークスペースは 404、閲覧可だが need に足りなければ 403。 */
   protected def checkWs(s: AuthSession, id: UUID, need: Role)(f: (Workspace, Role) => IO[Response[IO]]): IO[Response[IO]] =
     store.workspaceRole(id, s).flatMap {
-      case None                     => err(Status.NotFound, "workspace not found")
-      case Some((_, r)) if r < need => err(Status.Forbidden, "insufficient permission")
+      case None                     => err(Status.NotFound, "ワークスペースが見つかりません")
+      case Some((_, r)) if r < need => err(Status.Forbidden, "権限がありません")
       case Some((ws, r))            => f(ws, r)
     }
 
@@ -114,14 +134,14 @@ trait PageRouteSupport extends RouteSupport:
   protected def withWsItem[A](req: Request[IO], find: IO[Option[A]], what: String)(wsOf: A => UUID)(f: (AuthSession, Workspace, A) => IO[Response[IO]]): IO[Response[IO]] =
     authed(req) { s =>
       find.flatMap {
-        case None    => err(Status.NotFound, s"$what not found")
+        case None    => err(Status.NotFound, s"${what}が見つかりません")
         case Some(a) => checkWs(s, wsOf(a), Role.Edit)((ws, _) => f(s, ws, a))
       }
     }
 
   /** ワークスペースが見える（ページ単位の共有だけの場合も含む）ときだけ処理する（見えなければ 404）。 */
   protected def withVisibleWs(req: Request[IO], id: UUID)(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
-    authed(req)(s => store.workspaceVisible(id, s).ifM(f(s), err(Status.NotFound, "workspace not found")))
+    authed(req)(s => store.workspaceVisible(id, s).ifM(f(s), err(Status.NotFound, "ワークスペースが見つかりません")))
 
   /** 親ページ（なければワークスペース直下）に対する編集権限を確認する。 */
   protected def canEditUnder(s: AuthSession, wsId: UUID, parent: Option[UUID]): IO[Either[EditUnderError, Unit]] =
@@ -139,7 +159,6 @@ trait PageRouteSupport extends RouteSupport:
           case None                           => Left(EditUnderError.WorkspaceNotFound)
         }
 
-  /** canEditUnder が通れば f、通らなければ 403 / 404。 */
   /** いっしょに消える子孫のうち、この人が編集できない（見られないものを含む）ページの数。
     * 親の編集権限だけで、個別に権限を絞った子や保護中の子まで消させないために使う。 */
   protected def uneditableDescendants(s: AuthSession, id: UUID, inTrash: Boolean): IO[Int] =
@@ -150,10 +169,11 @@ trait PageRouteSupport extends RouteSupport:
     }
   protected def descendantsBlocked(n: Int): String = s"編集できない子ページ（${n}件）があるため削除できません"
 
+  /** canEditUnder が通れば f、通らなければ 403 / 404。 */
   protected def editUnder(s: AuthSession, wsId: UUID, parent: Option[UUID])(f: => IO[Response[IO]]): IO[Response[IO]] =
     canEditUnder(s, wsId, parent).flatMap {
       case Right(_)                               => f
-      case Left(EditUnderError.Forbidden)         => err(Status.Forbidden, "insufficient permission")
-      case Left(EditUnderError.ParentNotFound)    => err(Status.NotFound, "parent page not found")
-      case Left(EditUnderError.WorkspaceNotFound) => err(Status.NotFound, "workspace not found")
+      case Left(EditUnderError.Forbidden)         => err(Status.Forbidden, "権限がありません")
+      case Left(EditUnderError.ParentNotFound)    => err(Status.NotFound, "親ページが見つかりません")
+      case Left(EditUnderError.WorkspaceNotFound) => err(Status.NotFound, "ワークスペースが見つかりません")
     }

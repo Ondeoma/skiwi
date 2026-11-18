@@ -7,7 +7,7 @@ import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.dsl.Http4sDsl
 import org.http4s.headers.{Authorization, `Content-Type`}
-import skiwi.core.uuidOpt
+import skiwi.core.{AgentAccounts, uuidOpt}
 import skiwi.db.{ScimGroup, ScimStore, ScimUser, ScimUserInput}
 
 import java.security.MessageDigest
@@ -95,7 +95,10 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
       .orElse(if c.downField("emails").succeeded then None else base.flatMap(_.email))
     val active = c.downField("active").as[Boolean].toOption.orElse(base.map(_.active)).getOrElse(true)
     val ext = str(c.downField("externalId")).orElse(base.flatMap(_.externalId))
-    userName.toRight("userName is required").map(un => ScimUserInput(un, ext, name.getOrElse(un), email, active))
+    userName.toRight("userName を指定してください")
+      // agent: で始まる名前はエージェント専用アカウント（管理者が作る）の sub なので使わせない（乗っ取り防止）
+      .filterOrElse(un => !AgentAccounts.isAgent(un), "userName は agent: で始められません")
+      .map(un => ScimUserInput(un, ext, name.getOrElse(un), email, active))
 
   private def memberIds(j: Json): List[UUID] =
     j.as[List[Json]].getOrElse(Nil).flatMap(m => str(m.hcursor.downField("value"))).flatMap(uuidOpt)
@@ -106,7 +109,7 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
     req.uri.query.params.get("filter") match
       case None => Right(None)
       case Some(FilterRe(attr, v)) => Right(Some(attr.toLowerCase -> v.replace("\\\"", "\"").replace("\\\\", "\\")))
-      case Some(other) => Left(s"unsupported filter: $other")
+      case Some(other) => Left(s"使えない絞り込みです: $other")
 
   private def paging(req: Request[IO]): (Int, Int) =
     val p = req.uri.query.params
@@ -192,12 +195,12 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
     case GET -> Root / "scim" / "v2" / "Users" / id =>
       uuidOpt(id).flatTraverse(scim.getUser).flatMap {
         case Some(u) => json(Status.Ok, userJson(u))
-        case None    => error(Status.NotFound, "user not found")
+        case None    => error(Status.NotFound, "ユーザーが見つかりません")
       }
 
     case req @ PUT -> Root / "scim" / "v2" / "Users" / id =>
       (uuidOpt(id).flatTraverse(scim.getUser), body(req)).tupled.flatMap {
-        case (None, _)       => error(Status.NotFound, "user not found")
+        case (None, _)       => error(Status.NotFound, "ユーザーが見つかりません")
         case (_, None)       => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
         case (Some(cur), Some(j)) =>
           userInput(j, Some(cur)) match
@@ -207,7 +210,7 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
 
     case req @ PATCH -> Root / "scim" / "v2" / "Users" / id =>
       (uuidOpt(id).flatTraverse(scim.getUser), body(req)).tupled.flatMap {
-        case (None, _)       => error(Status.NotFound, "user not found")
+        case (None, _)       => error(Status.NotFound, "ユーザーが見つかりません")
         case (_, None)       => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
         case (Some(cur), Some(j)) =>
           patchUser(cur, j) match
@@ -217,7 +220,7 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
 
     case DELETE -> Root / "scim" / "v2" / "Users" / id =>
       uuidOpt(id).flatTraverse(scim.getUser).flatMap {
-        case None => error(Status.NotFound, "user not found")
+        case None => error(Status.NotFound, "ユーザーが見つかりません")
         case Some(u) =>
           scim.deleteUser(u.id) *> auditUser("scim.user.delete", u.copy(active = false)) *> accessChanged *> NoContent()
       }
@@ -238,7 +241,7 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
         case None => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
         case Some(j) =>
           str(j.hcursor.downField("displayName")) match
-            case None => error(Status.BadRequest, "displayName is required", Some("invalidValue"))
+            case None => error(Status.BadRequest, "displayName を指定してください", Some("invalidValue"))
             case Some(name) =>
               scim.createGroup(name, str(j.hcursor.downField("externalId")), memberIds(j.hcursor.downField("members").focus.getOrElse(Json.arr()))).flatMap { g =>
                 auditGroup("scim.group.create", g.id, Json.obj("displayName" -> g.displayName.asJson, "members" -> g.members.size.asJson)) *>
@@ -249,19 +252,19 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
     case GET -> Root / "scim" / "v2" / "Groups" / id =>
       uuidOpt(id).flatTraverse(scim.getGroup).flatMap {
         case Some(g) => json(Status.Ok, groupJson(g))
-        case None    => error(Status.NotFound, "group not found")
+        case None    => error(Status.NotFound, "グループが見つかりません")
       }
 
     case req @ PUT -> Root / "scim" / "v2" / "Groups" / id =>
       (uuidOpt(id).flatTraverse(scim.getGroup), body(req)).tupled.flatMap {
-        case (None, _) => error(Status.NotFound, "group not found")
+        case (None, _) => error(Status.NotFound, "グループが見つかりません")
         case (_, None) => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
         case (Some(cur), Some(j)) =>
           val c = j.hcursor
           val name = str(c.downField("displayName")).getOrElse(cur.displayName)
           val members = c.downField("members").focus.map(memberIds)
           scim.replaceGroup(cur.id, name, str(c.downField("externalId")).orElse(cur.externalId), members).flatMap {
-            case None => error(Status.NotFound, "group not found")
+            case None => error(Status.NotFound, "グループが見つかりません")
             case Some(g) =>
               auditGroup("scim.group.replace", g.id, Json.obj("displayName" -> g.displayName.asJson, "members" -> g.members.size.asJson)) *>
                 accessChanged *> json(Status.Ok, groupJson(g))
@@ -270,7 +273,7 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
 
     case req @ PATCH -> Root / "scim" / "v2" / "Groups" / id =>
       (uuidOpt(id).flatTraverse(scim.getGroup), body(req)).tupled.flatMap {
-        case (None, _) => error(Status.NotFound, "group not found")
+        case (None, _) => error(Status.NotFound, "グループが見つかりません")
         case (_, None) => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
         case (Some(cur), Some(j)) =>
           val steps: List[IO[Json]] = ops(j).map {
@@ -296,14 +299,14 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
               accessChanged *>
               scim.getGroup(cur.id).flatMap {
                 case Some(g) => json(Status.Ok, groupJson(g))
-                case None    => error(Status.NotFound, "group not found")
+                case None    => error(Status.NotFound, "グループが見つかりません")
               }
           }
       }
 
     case DELETE -> Root / "scim" / "v2" / "Groups" / id =>
       uuidOpt(id).flatTraverse(scim.getGroup).flatMap {
-        case None => error(Status.NotFound, "group not found")
+        case None => error(Status.NotFound, "グループが見つかりません")
         case Some(g) =>
           scim.deleteGroup(g.id) *> auditGroup("scim.group.delete", g.id, Json.obj("displayName" -> g.displayName.asJson)) *>
             accessChanged *> NoContent()
@@ -313,9 +316,9 @@ final class ScimRoutes(scim: ScimStore, token: String, audit: Audit, accessChang
   private def replaceUser(cur: ScimUser, in: ScimUserInput): IO[Response[IO]] =
     scim.replaceUser(cur.id, in).attempt.flatMap {
       case Left(e) if e.getMessage != null && e.getMessage.contains("duplicate key") =>
-        error(Status.Conflict, "userName already exists", Some("uniqueness"))
+        error(Status.Conflict, "userName はすでに使われています", Some("uniqueness"))
       case Left(e) => IO.raiseError(e)
-      case Right(None) => error(Status.NotFound, "user not found")
+      case Right(None) => error(Status.NotFound, "ユーザーが見つかりません")
       case Right(Some(u)) =>
         val action = if cur.active && !u.active then "scim.user.deactivate" else "scim.user.update"
         auditUser(action, u) *> (if cur.active != u.active then accessChanged else IO.unit) *> json(Status.Ok, userJson(u))

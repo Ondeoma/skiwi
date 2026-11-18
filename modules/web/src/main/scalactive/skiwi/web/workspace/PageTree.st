@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.shared.Titles
 import skiwi.web.parts.PageIcon
 import io.circe.Json
 import io.circe.syntax.*
@@ -68,11 +69,11 @@ def isOpenWithin(id: String): Boolean = WsRoute.currentPid.exists(pid => pid == 
 def del(id: String, title: String, wid: String): Unit = {
   menuFor := None
   // このページへのリンクがあれば知らせる（リンクは「アクセスできないページ」表示になる）
-  WorkspaceApi.backlinks(id).recover { case _ => Nil }.foreach { refs =>
+  skiwi.web.page.PageApi.backlinks(id).recover { case _ => Nil }.foreach { refs =>
     val warn =
       if (refs.isEmpty) ""
       else s"\n\n⚠ このページは他の ${refs.size} ページからリンクされています（${refs.take(3).map(r => s"「${r.displayTitle}」").mkString}${if (refs.size > 3) " など" else ""}）。"
-    Dialog.confirm(s"「${if (title.isEmpty) "無題" else title}」とその子ページをゴミ箱に移しますか？\nゴミ箱から元に戻せます。$warn", okLabel = "ゴミ箱に移す", danger = true)
+    Dialog.confirm(s"「${Titles.display(title)}」とその子ページをゴミ箱に移しますか？\nゴミ箱から元に戻せます。$warn", okLabel = "ゴミ箱に移す", danger = true)
       .foreach { ok =>
         if (ok) guard {
           val wasOpen = isOpenWithin(id)

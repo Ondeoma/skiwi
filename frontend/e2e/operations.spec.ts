@@ -155,8 +155,8 @@ test('受信用の Webhook: URL に POST すると、データベースに項目
 
 test('定期バックアップ: 管理者が今すぐバックアップしてダウンロードできる', async ({ browser }) => {
   const admin = makeUser('管理 者')
-  psql(`insert into app_group (external_id, name) values ('skiwi-admins', 'skiwi-admins') on conflict (external_id) do nothing`)
-  psql(`insert into group_member (group_id, user_id) select id, '${admin.id}' from app_group where external_id = 'skiwi-admins' on conflict do nothing`)
+  psql(`insert into user_group (external_id, name) values ('skiwi-admins', 'skiwi-admins') on conflict (external_id) do nothing`)
+  psql(`insert into group_member (group_id, user_id) select id, '${admin.id}' from user_group where external_id = 'skiwi-admins' on conflict do nothing`)
   const ws = await api(owner, 'POST', '/api/workspaces', { name: 'バックアップの確認' })
   await api(owner, 'POST', `/api/workspaces/${ws.id}/pages`, { title: '手順書' })
   const page = await open(browser, admin, `/w/${ws.id}`)

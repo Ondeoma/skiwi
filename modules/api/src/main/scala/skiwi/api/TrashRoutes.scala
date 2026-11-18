@@ -45,22 +45,22 @@ final class TrashRoutes(
     // ------------------------------------------------------------ ワークスペース
     case req @ PATCH -> Root / "api" / "workspaces" / UUIDVar(id) =>
       withWs(req, id, Role.Edit) { (s, ws, _) =>
-        req.as[RenameWorkspaceReq].attempt.flatMap {
-          case Right(b) if b.name.trim.nonEmpty && b.name.trim.length <= 200 =>
+        decodeBody[RenameWorkspaceReq](req).flatMap {
+          case Right(b) if validName(b.name, MaxWorkspaceName).isDefined =>
             store.renameWorkspace(id, b.name.trim).flatMap {
-              case None => err(Status.NotFound, "workspace not found")
+              case None => err(Status.NotFound, "ワークスペースが見つかりません")
               case Some(w) =>
                 audit.log(s, "workspace.rename", "workspace", id, Json.obj("from" -> ws.name.asJson, "to" -> w.name.asJson)) *>
                   Ok(Json.obj("id" -> w.id.asJson, "name" -> w.name.asJson))
             }
-          case _ => err(Status.BadRequest, "name is required")
+          case _ => err(Status.BadRequest, "名前を入力してください（200文字まで）")
         }
       }
 
     case req @ DELETE -> Root / "api" / "workspaces" / UUIDVar(id) =>
       withWs(req, id, Role.Edit) { (s, ws, _) =>
         store.deleteWorkspace(id, s.user.id).flatMap { ok =>
-          if !ok then err(Status.NotFound, "workspace not found")
+          if !ok then err(Status.NotFound, "ワークスペースが見つかりません")
           else audit.log(s, "workspace.delete", "workspace", id, Json.obj("name" -> ws.name.asJson)) *> accessChanged *> NoContent()
         }
       }
@@ -87,14 +87,14 @@ final class TrashRoutes(
               case Left(_) => err(Status.Forbidden, "元の親ページが削除されているため、ワークスペースの直下に戻す権限が要ります（先に親ページを戻してください）")
               case Right(_) =>
                 store.restorePage(id).flatMap {
-                  case Left(_) => err(Status.NotFound, "trashed page not found")
+                  case Left(_) => err(Status.NotFound, "ゴミ箱にページが見つかりません")
                   case Right(p) =>
                     audit.log(s, "page.restore_from_trash", "page", id, Json.obj("title" -> p.title.asJson)) *> accessChanged *>
                       Ok(Json.obj("id" -> p.id.asJson, "workspaceId" -> p.workspaceId.asJson, "parentId" -> p.parentId.asJson))
                 }
             }
-          case Some(_) => err(Status.Forbidden, "insufficient permission")
-          case None    => err(Status.NotFound, "trashed page not found")
+          case Some(_) => err(Status.Forbidden, "権限がありません")
+          case None    => err(Status.NotFound, "ゴミ箱にページが見つかりません")
         }
       }
 
@@ -107,13 +107,13 @@ final class TrashRoutes(
               case n if n > 0 => err(Status.Forbidden, descendantsBlocked(n))
               case _ =>
                 store.purgePage(id).flatMap {
-                  case None => err(Status.NotFound, "trashed page not found")
+                  case None => err(Status.NotFound, "ゴミ箱にページが見つかりません")
                   case Some(keys) =>
                     dropBlobs(keys) *> audit.log(s, "page.purge", "page", id, Json.obj("title" -> p.title.asJson)) *> NoContent()
                 }
             }
-          case Some(_) => err(Status.Forbidden, "insufficient permission")
-          case None    => err(Status.NotFound, "trashed page not found")
+          case Some(_) => err(Status.Forbidden, "権限がありません")
+          case None    => err(Status.NotFound, "ゴミ箱にページが見つかりません")
         }
       }
 
@@ -127,12 +127,12 @@ final class TrashRoutes(
         store.workspaceRoleAny(id, s).flatMap {
           case Some((_, r)) if r >= Role.Edit =>
             store.restoreWorkspace(id).flatMap {
-              case None => err(Status.NotFound, "trashed workspace not found")
+              case None => err(Status.NotFound, "ゴミ箱にワークスペースが見つかりません")
               case Some(w) =>
                 audit.log(s, "workspace.restore", "workspace", id, Json.obj("name" -> w.name.asJson)) *> accessChanged *>
                   Ok(Json.obj("id" -> w.id.asJson, "name" -> w.name.asJson))
             }
-          case _ => err(Status.NotFound, "trashed workspace not found")
+          case _ => err(Status.NotFound, "ゴミ箱にワークスペースが見つかりません")
         }
       }
 
@@ -141,10 +141,10 @@ final class TrashRoutes(
         store.workspaceRoleAny(id, s).flatMap {
           case Some((w, r)) if r >= Role.Edit =>
             store.purgeWorkspace(id).flatMap {
-              case None => err(Status.NotFound, "trashed workspace not found")
+              case None => err(Status.NotFound, "ゴミ箱にワークスペースが見つかりません")
               case Some(keys) => dropBlobs(keys) *> audit.log(s, "workspace.purge", "workspace", id, Json.obj("name" -> w.name.asJson)) *> NoContent()
             }
-          case _ => err(Status.NotFound, "trashed workspace not found")
+          case _ => err(Status.NotFound, "ゴミ箱にワークスペースが見つかりません")
         }
       }
   }

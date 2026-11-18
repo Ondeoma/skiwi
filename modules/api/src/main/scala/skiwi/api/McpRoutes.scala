@@ -1,5 +1,7 @@
 package skiwi.api
 
+import skiwi.shared.Titles
+
 import cats.effect.*
 import cats.effect.syntax.all.*
 import cats.syntax.all.*
@@ -94,7 +96,7 @@ final class McpRoutes(api: HttpRoutes[IO], sessions: SessionAuth, publicUrl: Str
         val id   = s(p, "id")
         val icon = p.hcursor.get[String]("icon").toOption.filter(_.nonEmpty).fold("")(_ + " ")
         val db   = if p.hcursor.get[Boolean]("database").getOrElse(false) then "（データベース）" else ""
-        (("  " * depth) + s"- $icon${Option(s(p, "title")).filter(_.nonEmpty).getOrElse("無題")} [$id]$db") :: lines(Some(id), depth + 1)
+        (("  " * depth) + s"- $icon${Titles.display(Option(s(p, "title")))} [$id]$db") :: lines(Some(id), depth + 1)
       }
     val ids = pages.map(p => s(p, "id")).toSet
     // 親が見えないページは最上位として並べる
@@ -162,7 +164,7 @@ final class McpRoutes(api: HttpRoutes[IO], sessions: SessionAuth, publicUrl: Str
               Option.when(pc.get[Boolean]("database").getOrElse(false))("データベース: はい（get_database で列と項目を読めます）")
             ).flatten
             val body = c.hcursor.downField("content").focus.filterNot(_.isNull).map(markdown.body).getOrElse("")
-            s"# ${Option(s(p, "title")).filter(_.nonEmpty).getOrElse("無題")}\n\n${meta.mkString("\n")}\n\n---\n\n$body\n"
+            s"# ${Titles.display(Option(s(p, "title")))}\n\n${meta.mkString("\n")}\n\n---\n\n$body\n"
         }
       )
     },

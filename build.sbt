@@ -1,20 +1,26 @@
 ThisBuild / scalaVersion := "3.3.7"
-ThisBuild / organization := "skiwi"
+ThisBuild / organization := "io.github.ondeoma"
 ThisBuild / version      := "0.1.0-SNAPSHOT"
 ThisBuild / licenses     := List("MIT" -> url("https://opensource.org/licenses/MIT"))
+ThisBuild / homepage     := Some(url("https://github.com/Ondeoma/skiwi"))
 ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature", "-Wunused:imports")
 
-val http4sV = "0.23.30"
-val circeV  = "0.14.10"
-val doobieV = "1.0.0-RC8"
-val otel4sV = "1.2.0"
-val otelV   = "1.68.0"
+val http4sV   = "1.0.0-M49"
+val circeV    = "0.14.16"
+val doobieV   = "1.0.0-RC12"
+val ceV       = "3.7.1"
+val fs2V      = "3.14.0"
+val munitV    = "1.3.6"
+val awsV      = "2.30.38"
+val flywayV   = "11.3.0"
+val otel4sV   = "1.2.0"
+val otelV     = "1.68.0"
 val otelInstV = "2.33.1-alpha"
 
 lazy val commonTest = Seq(
   libraryDependencies ++= Seq(
-    "org.scalameta" %% "munit"               % "1.0.4" % Test,
-    "org.typelevel" %% "munit-cats-effect"   % "2.0.0" % Test
+    "org.scalameta" %% "munit"             % munitV  % Test,
+    "org.typelevel" %% "munit-cats-effect" % "2.2.1" % Test
   ),
   Test / fork := true,
   // テストのログの設定（project/test-resources/logback-test.xml. 全モジュールで共通）
@@ -55,10 +61,11 @@ lazy val db = (project in file("modules/db"))
       "org.tpolecat"  %% "doobie-core"     % doobieV,
       "org.tpolecat"  %% "doobie-hikari"   % doobieV,
       "org.tpolecat"  %% "doobie-postgres" % doobieV,
+      "org.typelevel" %% "cats-effect"     % ceV,
       "io.circe"      %% "circe-parser"    % circeV,
-      "org.postgresql" % "postgresql"      % "42.7.5",
-      "org.flywaydb"   % "flyway-core"     % "11.3.0",
-      "org.flywaydb"   % "flyway-database-postgresql" % "11.3.0" % Runtime
+      "org.postgresql" % "postgresql"      % "42.7.14",
+      "org.flywaydb"   % "flyway-core"     % flywayV,
+      "org.flywaydb"   % "flyway-database-postgresql" % flywayV % Runtime
     )
   )
 
@@ -79,10 +86,10 @@ lazy val storage = (project in file("modules/storage"))
   .settings(commonTest)
   .settings(
     libraryDependencies ++= Seq(
-      ("software.amazon.awssdk" % "s3"            % "2.30.38").exclude("software.amazon.awssdk", "netty-nio-client"),
-      "software.amazon.awssdk" % "apache-client" % "2.30.38",
-      "co.fs2"                %% "fs2-io"        % "3.11.0",
-      "org.typelevel"         %% "cats-effect"   % "3.5.7"
+      ("software.amazon.awssdk" % "s3"            % awsV).exclude("software.amazon.awssdk", "netty-nio-client"),
+      "software.amazon.awssdk"  % "apache-client" % awsV,
+      "co.fs2"                 %% "fs2-io"        % fs2V,
+      "org.typelevel"          %% "cats-effect"   % ceV
     )
     // netty-nio-client は依存ごとの exclude で外す（プロジェクト全体の excludeDependencies だと
     // 下流モジュール(app/collab)の解決でAWS SDK自体が落ちる現象があったため）
@@ -91,7 +98,7 @@ lazy val storage = (project in file("modules/storage"))
 lazy val notifier = (project in file("modules/notify"))
   // circe-parser は db から。テストは db の DbSuite を使う
   // observe は db 経由でも入るが、"compile;test->test" の指定では observe のライブラリ（otel4s など）がクラスパスに入らないため直接も指定する
-  .dependsOn(core, observe, db % "compile;test->test")
+  .dependsOn(core, observe, shared.jvm, db % "compile;test->test")
   .settings(commonTest)
   .settings(
     libraryDependencies ++= Seq(
@@ -138,6 +145,7 @@ lazy val api = (project in file("modules/api"))
     libraryDependencies ++= Seq(
       "org.http4s" %% "http4s-dsl"   % http4sV,
       "org.http4s" %% "http4s-circe" % http4sV,
+      "org.http4s" %% "http4s-ember-client" % http4sV, // 外への接続（リンクのカード・Webhook）。接続先のアドレスを確かめる（NetGuard）
       "org.apache.pdfbox" % "pdfbox" % "3.0.4" // 添付の PDF から文字を取り出して検索に使う
     )
   )
@@ -148,7 +156,8 @@ lazy val collab = (project in file("modules/collab"))
   .settings(
     libraryDependencies ++= Seq(
       "org.http4s" %% "http4s-server" % http4sV,
-      "org.http4s" %% "http4s-jdk-http-client" % "0.10.0" // 担当ノードへのWebSocket転送
+      "org.http4s" %% "http4s-client" % http4sV, // 担当ノードへのWebSocket転送（WSClient. 実装は JDK 標準の WebSocket）
+      "org.http4s" %% "http4s-ember-server" % http4sV % Test // JdkWebSocket のテストで相手のサーバーにする
     )
   )
 
@@ -158,7 +167,8 @@ lazy val app = (project in file("modules/app"))
     libraryDependencies ++= Seq(
       "org.http4s"     %% "http4s-ember-server" % http4sV,
       "org.http4s"     %% "http4s-ember-client" % http4sV,
-      "ch.qos.logback"  % "logback-classic"     % "1.5.18"
+      "ch.qos.logback"  % "logback-classic"     % "1.5.18",
+      "org.typelevel"  %% "log4cats-slf4j"      % "2.8.0"
     ),
     Compile / mainClass := Some("skiwi.app.Main"),
     fork := true

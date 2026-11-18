@@ -130,6 +130,19 @@ final class DatabaseStore(xa: Transactor[IO]) extends TxStore(xa):
   def deleteForm(id: UUID): IO[Boolean] = tx(sql"delete from db_form where id = $id".update.run.map(_ > 0))
   def formUsed(id: UUID): IO[Unit] = tx(sql"update db_form set last_at = now(), use_count = use_count + 1 where id = $id".update.run.void)
 
+  /** 複数のデータベースの定義（削除済みは含めない） */
+  def getMany(ids: List[UUID]): IO[Map[UUID, DatabaseDef]] =
+    val arr = ids.toArray
+    if ids.isEmpty then IO.pure(Map.empty)
+    else tx(sql"""select d.page_id, d.props::text, d.views::text, d.updated_at from page_database d join page p on p.id = d.page_id
+                  where d.page_id = any($arr) and p.deleted_at is null""".query[DatabaseDef].to[List].map(_.map(d => d.pageId -> d).toMap))
+
+  /** 複数のページの項目の値 */
+  def valuesMany(ids: List[UUID]): IO[Map[UUID, String]] =
+    val arr = ids.toArray
+    if ids.isEmpty then IO.pure(Map.empty)
+    else tx(sql"select id, props::text from page where id = any($arr) and deleted_at is null".query[(UUID, String)].to[List].map(_.toMap))
+
   def values(pageId: UUID): IO[Option[String]] = tx(sql"select props::text from page where id = $pageId and deleted_at is null".query[String].option)
 
   /** 値を書き換える（patch のキーごと。null の値は消す） */

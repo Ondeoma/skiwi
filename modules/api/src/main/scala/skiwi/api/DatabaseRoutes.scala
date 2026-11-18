@@ -48,36 +48,36 @@ object DatabaseSchema:
 
   /** 列の定義を確かめる。Right: 列の一覧 */
   def props(j: Json): Either[String, List[Prop]] =
-    j.asArray.toRight("props must be an array").flatMap { arr =>
-      if arr.size > 50 then Left("too many props (max 50)")
+    j.asArray.toRight("props は配列にしてください").flatMap { arr =>
+      if arr.size > 50 then Left("列が多すぎます（50列まで）")
       else
         arr.toList.traverse { p =>
-          p.asObject.toRight("invalid prop").flatMap { o =>
+          p.asObject.toRight("列の定義が正しくありません").flatMap { o =>
             (str(o, "id"), str(o, "name"), str(o, "type")) match
               case (Some(id), Some(name), Some(t)) if Id.matches(id) && name.trim.nonEmpty && name.length <= 100 && Types(t) =>
                 val opts = o("options").flatMap(_.asArray).getOrElse(Vector.empty)
-                if opts.size > 100 then Left("too many options (max 100)")
+                if opts.size > 100 then Left("選択肢が多すぎます（100個まで）")
                 else
                   val target = str(o, "target").flatMap(x => Either.catchNonFatal(UUID.fromString(x)).toOption)
-                  if t == "relation" && target.isEmpty then Left(s"$name: relation needs a target database")
-                  else if t == "rollup" && !(str(o, "relation").exists(Id.matches) && str(o, "fn").exists(RollupFns)) then Left(s"$name: invalid rollup")
-                  else if t == "formula" && !str(o, "expr").exists(_.length <= 2000) then Left(s"$name: formula needs an expression")
+                  if t == "relation" && target.isEmpty then Left(s"$name: 関連の相手のデータベースを指定してください")
+                  else if t == "rollup" && !(str(o, "relation").exists(Id.matches) && str(o, "fn").exists(RollupFns)) then Left(s"$name: 集計の指定が正しくありません")
+                  else if t == "formula" && !str(o, "expr").exists(_.length <= 2000) then Left(s"$name: 数式を入力してください")
                   else
                     opts.toList.traverse(x => x.asObject.flatMap(oo => (str(oo, "id"), str(oo, "name")).tupled)
-                      .filter((i, n) => Id.matches(i) && n.trim.nonEmpty && n.length <= 100).map(_._1).toRight("invalid option"))
+                      .filter((i, n) => Id.matches(i) && n.trim.nonEmpty && n.length <= 100).map(_._1).toRight("選択肢が正しくありません"))
                       .map(ids => Prop(id, name, t, ids.toSet, target))
-              case _ => Left("invalid prop")
+              case _ => Left("列の定義が正しくありません")
           }
-        }.flatMap(ps => if ps.map(_.id).distinct.size != ps.size then Left("duplicate prop id") else Right(ps))
+        }.flatMap(ps => if ps.map(_.id).distinct.size != ps.size then Left("列の ID が重複しています") else Right(ps))
     }
 
   def views(j: Json): Either[String, Unit] =
-    j.asArray.toRight("views must be an array").flatMap { arr =>
-      if arr.size > 20 then Left("too many views (max 20)")
-      else if j.noSpaces.length > 100000 then Left("views too large")
+    j.asArray.toRight("views は配列にしてください").flatMap { arr =>
+      if arr.size > 20 then Left("ビューが多すぎます（20個まで）")
+      else if j.noSpaces.length > 100000 then Left("ビューの設定が大きすぎます")
       else arr.toList.traverse_ { v =>
         v.asObject.flatMap(o => (str(o, "id"), str(o, "name"), str(o, "type")).tupled)
-          .filter((id, n, t) => Id.matches(id) && n.length <= 100 && ViewTypes(t)).toRight("invalid view").void
+          .filter((id, n, t) => Id.matches(id) && n.length <= 100 && ViewTypes(t)).toRight("ビューが正しくありません").void
       }
     }
 
@@ -85,26 +85,26 @@ object DatabaseSchema:
   def value(p: Prop, v: Json): Either[String, Json] =
     if v.isNull then Right(Json.Null)
     else p.tpe match
-      case "text"     => v.asString.filter(_.length <= 5000).map(Json.fromString).toRight(s"${p.name}: text expected")
-      case "url"      => v.asString.map(_.trim).filter(s => s.isEmpty || (s.length <= 2000 && s.matches("(?i)^(https?://|mailto:).+"))).map(s => if s.isEmpty then Json.Null else Json.fromString(s)).toRight(s"${p.name}: invalid url")
-      case "number"   => v.asNumber.flatMap(_.toBigDecimal).map(Json.fromBigDecimal).toRight(s"${p.name}: number expected")
-      case "checkbox" => v.asBoolean.map(Json.fromBoolean).toRight(s"${p.name}: boolean expected")
+      case "text"     => v.asString.filter(_.length <= 5000).map(Json.fromString).toRight(s"${p.name}: 文字列を指定してください")
+      case "url"      => v.asString.map(_.trim).filter(s => s.isEmpty || (s.length <= 2000 && s.matches("(?i)^(https?://|mailto:).+"))).map(s => if s.isEmpty then Json.Null else Json.fromString(s)).toRight(s"${p.name}: URL が正しくありません")
+      case "number"   => v.asNumber.flatMap(_.toBigDecimal).map(Json.fromBigDecimal).toRight(s"${p.name}: 数値を指定してください")
+      case "checkbox" => v.asBoolean.map(Json.fromBoolean).toRight(s"${p.name}: true か false を指定してください")
       case "date"     => v.asString.filter(s => Either.catchNonFatal(LocalDate.parse(s)).isRight).map(Json.fromString).toRight(s"${p.name}: date (YYYY-MM-DD) expected")
-      case "select"   => v.asString.filter(p.options).map(Json.fromString).toRight(s"${p.name}: unknown option")
+      case "select"   => v.asString.filter(p.options).map(Json.fromString).toRight(s"${p.name}: 選択肢にない値です")
       case "multi_select" =>
-        v.asArray.map(_.flatMap(_.asString).distinct).filter(xs => xs.forall(p.options) && xs.size <= 100).map(xs => Json.fromValues(xs.map(Json.fromString))).toRight(s"${p.name}: unknown option")
+        v.asArray.map(_.flatMap(_.asString).distinct).filter(xs => xs.forall(p.options) && xs.size <= 100).map(xs => Json.fromValues(xs.map(Json.fromString))).toRight(s"${p.name}: 選択肢にない値です")
       case "relation" =>
         v.asArray.map(_.flatMap(_.asString).distinct).filter(xs => xs.size <= 100 && xs.forall(uuidOpt(_).isDefined))
-          .map(xs => Json.fromValues(xs.map(Json.fromString))).toRight(s"${p.name}: page ids expected")
-      case t if Computed(t) => Left(s"${p.name}: this column is computed")
+          .map(xs => Json.fromValues(xs.map(Json.fromString))).toRight(s"${p.name}: ページの ID の配列を指定してください")
+      case t if Computed(t) => Left(s"${p.name}: 計算で決まる列は変えられません")
       case "person" =>
         v.asArray.map(_.flatMap(_.asString).distinct).filter(xs => xs.size <= 20 && xs.forall(uuidOpt(_).isDefined))
-          .map(xs => Json.fromValues(xs.map(Json.fromString))).toRight(s"${p.name}: user ids expected")
-      case _ => Left("unknown type")
+          .map(xs => Json.fromValues(xs.map(Json.fromString))).toRight(s"${p.name}: ユーザーの ID の配列を指定してください")
+      case _ => Left("不明な種類です")
 
   def patch(ps: List[Prop], values: JsonObject): Either[String, JsonObject] =
     values.toList.traverse { (k, v) =>
-      ps.find(_.id == k).toRight(s"unknown prop: $k").flatMap(p => value(p, v)).map(k -> _)
+      ps.find(_.id == k).toRight(s"不明な列です: $k").flatMap(p => value(p, v)).map(k -> _)
     }.map(JsonObject.fromIterable)
 
 /** データベースのAPI。項目は子ページなので、権限はページの権限による。 */
@@ -159,7 +159,7 @@ final class DatabaseRoutes(protected val store: Store, dbs: DatabaseStore, ops: 
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "database" =>
       withPage(req, id, Role.View) { (s, p, r) =>
         dbs.get(id).flatMap {
-          case None    => err(Status.NotFound, "not a database")
+          case None    => err(Status.NotFound, "データベースではありません")
           case Some(d) => full(s, d, p.workspaceId, r).flatMap(Ok(_))
         }
       }
@@ -193,7 +193,7 @@ final class DatabaseRoutes(protected val store: Store, dbs: DatabaseStore, ops: 
       withPage(req, id, Role.Edit) { (s, p, _) =>
         body[NewRowReq](req) { b =>
           dbs.get(id).flatMap {
-            case None => err(Status.NotFound, "not a database")
+            case None => err(Status.NotFound, "データベースではありません")
             case Some(d) =>
               DatabaseSchema.props(parseOrNull(d.props)).flatMap(ps => DatabaseSchema.patch(ps, b.values.getOrElse(JsonObject.empty))) match
                 case Left(m) => err(Status.BadRequest, m)
@@ -201,7 +201,7 @@ final class DatabaseRoutes(protected val store: Store, dbs: DatabaseStore, ops: 
                   // サブ項目: 親はこのデータベースの項目
                   val parentOk = b.parentId.fold(IO.pure(true))(pid => dbs.isRow(id, pid))
                   parentOk.flatMap {
-                  case false => err(Status.BadRequest, "parent is not an item of this database")
+                  case false => err(Status.BadRequest, "親がこのデータベースの項目ではありません")
                   case true =>
                   store.createPage(p.workspaceId, Some(b.parentId.getOrElse(id)), Placement.Last, b.title.map(_.trim.take(500)).getOrElse(""), None, s.user.id,
                     Json.fromJsonObject(vals).noSpaces).flatMap {
@@ -226,10 +226,10 @@ final class DatabaseRoutes(protected val store: Store, dbs: DatabaseStore, ops: 
     case req @ POST -> Root / "api" / "pages" / UUIDVar(id) / "database" / "rows" / "bulk" =>
       withPage(req, id, Role.Edit) { (s, p, _) =>
         body[BulkRowsReq](req) {
-          case b if b.rows.size > 2000 => err(Status.BadRequest, "too many rows (max 2000)")
+          case b if b.rows.size > 2000 => err(Status.BadRequest, "行が多すぎます（2000行まで）")
           case b =>
             dbs.get(id).flatMap {
-              case None => err(Status.NotFound, "not a database")
+              case None => err(Status.NotFound, "データベースではありません")
               case Some(d) =>
                 val checked = DatabaseSchema.props(parseOrNull(d.props)).flatMap(ps => b.rows.traverse(r => DatabaseSchema.patch(ps, r.values.getOrElse(JsonObject.empty)).map(r -> _)))
                 checked match
@@ -260,13 +260,13 @@ final class DatabaseRoutes(protected val store: Store, dbs: DatabaseStore, ops: 
       withPage(req, id, Role.Edit) { (s, p, _) =>
         body[PatchPropsReq](req) { b =>
           dbs.databaseOf(id).flatMap {
-            case None => err(Status.BadRequest, "parent is not a database")
+            case None => err(Status.BadRequest, "親ページがデータベースではありません")
             case Some(d) =>
               DatabaseSchema.props(parseOrNull(d.props)).flatMap(ps => DatabaseSchema.patch(ps, b.values)) match
                 case Left(m) => err(Status.BadRequest, m)
                 case Right(vals) =>
                   dbs.patchValues(id, Json.fromJsonObject(vals).noSpaces).flatMap {
-                    case None => err(Status.NotFound, "page not found")
+                    case None => err(Status.NotFound, "ページが見つかりません")
                     case Some(v) =>
                       val parsed = parseOrNull(v)
                       automations.traverse_(_.fire(AutoEvent("value_changed", p.workspaceId, id, s.user.name,

@@ -25,7 +25,7 @@ object RumRoutes:
     yield RumConfig(url.stripSuffix("/"), token, env.get("SKORIMAKO_RUM_SAMPLE_RATE").flatMap(_.toDoubleOption).getOrElse(1.0))
 
   /** CSP の script-src・connect-src に足すオリジン. */
-  def origin: Option[String] = fromEnv.flatMap(c => Uri.fromString(c.endpoint).toOption).map(u =>
+  lazy val origin: Option[String] = fromEnv.flatMap(c => Uri.fromString(c.endpoint).toOption).map(u =>
     s"${u.scheme.fold("https")(_.value)}://${u.authority.fold("")(_.renderString)}")
 
   def routes: HttpRoutes[IO] =

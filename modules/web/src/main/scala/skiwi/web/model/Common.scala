@@ -2,7 +2,7 @@ package skiwi.web.model
 
 import io.circe.*
 
-// 複数の画面（ページ・設定ダイアログ・管理）で使う API の型（frontend/src/api.ts と同じ）
+// 複数の画面（ページ・設定ダイアログ・管理）で使う API の型
 
 /** status: none（申請していない）/ pending（承認待ち）/ has_access（すでに見られる）/ approved / denied */
 final case class AccessStatus(status: String, role: Option[String] = None) derives Codec.AsObject

@@ -71,6 +71,7 @@ def onThemeClick(e: org.scalajs.dom.Event): Unit = {
           <a role="menuitem" href="/admin/audit" @click='Nav.link(event, "/admin/audit")'>📋 監査ログ</a>
           <a role="menuitem" href="/admin/shares" @click='Nav.link(event, "/admin/shares")'>🌐 公開中のページ</a>
           <a role="menuitem" href="/admin/integrations" data-testid="admin-integrations" @click='Nav.link(event, "/admin/integrations")'>🔗 外部連携</a>
+          <a role="menuitem" href="/admin/agents" data-testid="admin-agents" @click='Nav.link(event, "/admin/agents")'>🤖 エージェント</a>
         </template>
         <hr>
         <button role="menuitem" data-testid="logout" @click="logout()">ログアウト</button>

@@ -1,5 +1,7 @@
 package skiwi.web.database
 
+import skiwi.shared.Titles
+
 import io.circe.Json
 import io.circe.syntax.*
 import org.scalajs.dom
@@ -201,7 +203,7 @@ object Db {
 
   /** 関連先の項目の名前 */
   private def relatedTitles(p: DbProp, v: Val, ctx: Ctx): List[String] =
-    arr(v).flatMap(id => ctx.targets.get(p.target.getOrElse("")).flatMap(_.rows.find(_.id == id))).map(r => if (r.title.isEmpty) "無題" else r.title)
+    arr(v).flatMap(id => ctx.targets.get(p.target.getOrElse("")).flatMap(_.rows.find(_.id == id))).map(r => Titles.display(r.title))
 
   /** 値の文字表現（検索・並べ替え・CSVなど） */
   def text(p: DbProp, v: Val, users: Map[String, String], ctx: Option[Ctx] = None): String =

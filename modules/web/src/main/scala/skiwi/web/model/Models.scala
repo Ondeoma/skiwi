@@ -1,8 +1,10 @@
 package skiwi.web.model
 
+import skiwi.shared.Titles
+
 import io.circe.*
 
-// 画面全体で使う API の型（frontend/src/api.ts の Me・Workspace・Page と同じ）. 画面ごとの型は、その画面の XxxApi に置く.
+// 画面全体で使う API の型. 画面ごとの型は、その画面の XxxApi に置く.
 
 /** avatarUrl: アイコンを設定していれば、その URL */
 final case class Me(id: String, name: String, email: Option[String] = None, groups: List[String] = Nil, isAdmin: Boolean = false,
@@ -33,7 +35,7 @@ final case class Page(id: String, workspaceId: String, parentId: Option[String],
   def labelList: List[String] = labels.getOrElse(Nil)
 
   /** 表示名（無題なら「無題」） */
-  def displayTitle: String = if (title.isEmpty) "無題" else title
+  def displayTitle: String = Titles.display(title)
 
   def iconOr: String = icon.getOrElse("📄")
 

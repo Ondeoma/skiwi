@@ -31,8 +31,6 @@ final class SecretBox private (key: SecretKeySpec):
   }.toOption
 
 object SecretBox:
-  /** base64 の32バイトの鍵（環境変数 ENCRYPTION_KEY）から作る */
-  def fromBase64(b64: String): Either[String, SecretBox] =
-    Try(Base64.getDecoder.decode(b64.trim)).toOption match
-      case Some(k) if k.length == 32 => Right(new SecretBox(new SecretKeySpec(k, "AES")))
-      case _                         => Left("ENCRYPTION_KEY must be 32 bytes encoded in base64 (e.g. `openssl rand -base64 32`)")
+  /** APP_SECRET（16文字以上の秘密の値）から鍵を作る（兄弟のサービスと同じく SHA-256 で 32 バイトにする） */
+  def fromSecret(secret: String): SecretBox =
+    new SecretBox(new SecretKeySpec(java.security.MessageDigest.getInstance("SHA-256").digest(("skiwi-secret-box:" + secret).getBytes(UTF_8)), "AES"))

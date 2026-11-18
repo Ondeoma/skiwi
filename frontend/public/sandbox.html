@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>sandbox</title></head>
+<body>
+<!--
+  ゲスト向けの HTML（本文の上下）を表示する枠の中身（skiwi.web.parts.SandboxedHtml が iframe で開く）.
+  親の画面の CSP を引き継がないよう、srcdoc ではなくこのページを開き、表示する HTML は親から postMessage で受け取って書き込む.
+  サーバーはこのページに CSP の sandbox を付ける（iframe の sandbox 属性と同じ。別オリジン扱いで、skiwi の Cookie・API には触れられない）.
+-->
+<script>
+window.addEventListener('message', function (e) {
+  if (window.__skiwiWritten || e.source !== window.parent || !e.data || e.data.skiwiSandbox !== 1 || typeof e.data.doc !== 'string') return
+  window.__skiwiWritten = true
+  document.open()
+  document.write(e.data.doc)
+  document.close()
+})
+</script>
+</body>
+</html>

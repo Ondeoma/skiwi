@@ -9,7 +9,7 @@ import skiwi.web.model.*
 import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 
-// ワークスペースの枠（サイドバー・検索・通知・ゴミ箱・一括操作など）で使う API（frontend/src/api.ts から写したもの）
+// ワークスペースの枠（サイドバー・検索・通知・ゴミ箱・一括操作など）で使う API
 
 /** 添付ファイル（PDF・Office など）の中身で見つかったとき、その添付ファイル */
 final case class SearchAttachment(id: String, filename: String, url: String) derives Codec.AsObject
@@ -90,8 +90,6 @@ object WorkspaceApi {
 
   def purgeWorkspace(id: String): Future[Unit] = del(s"/api/trash/workspaces/$id")
 
-  def backlinks(id: String): Future[List[Page]] = get[List[Page]](s"/api/pages/$id/backlinks")
-
   /** kind: visited / edited */
   def recent(kind: String): Future[List[RecentItem]] = get[List[RecentItem]](s"/api/recent?kind=$kind&limit=30")
 
@@ -107,7 +105,7 @@ object WorkspaceApi {
 
   def myTasks(done: Boolean): Future[List[TaskItem]] = get[List[TaskItem]](s"/api/tasks${if (done) "?done=true" else ""}")
 
-  /** 一括操作. action は {"action": "move", ...} などの JSON（api.ts の BulkAction と同じ） */
+  /** 一括操作. action は {"action": "move", ...} などの JSON */
   def bulk(ids: List[String], action: JsonObject): Future[BulkResult] =
     post[BulkResult]("/api/pages/bulk", Json.fromJsonObject(action.add("ids", ids.asJson)))
 

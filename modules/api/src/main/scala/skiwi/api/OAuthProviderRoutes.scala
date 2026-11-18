@@ -20,8 +20,11 @@ final case class OAuthClientDto(clientId: String, clientSecretSet: Boolean, redi
 final case class SaveOAuthClientReq(clientId: String, clientSecret: Option[String], redirectUri: String, name: String) derives Decoder
 final case class PageLookupDto(id: UUID, workspaceId: UUID, title: String, icon: Option[String]) derives Encoder.AsObject
 
-/** 登録済みのクライアント（client_secret は SHA-256 のハッシュだけ持つ） */
-final case class OAuthClient(id: String, secretHash: String, redirectUri: String, name: String):
+/** 登録済みのクライアント（client_secret は SHA-256 のハッシュだけ持つ）.
+  * scopes が空なら、管理画面で登録したクライアント（skea）で、ページの一括参照だけのトークンを発行する.
+  * 環境変数 OAUTH_CLIENTS のクライアント（skakapo など）は、scopes（read・write）の中で求められたスコープの普通のトークンを発行する */
+final case class OAuthClient(id: String, secretHash: String, redirectUri: String, name: String, scopes: List[String] = Nil):
+  def full: Boolean = scopes.nonEmpty
   def secretMatches(secret: String): Boolean =
     Crypto.constantTimeEquals(Base64.getDecoder.decode(secretHash), Crypto.sha256(secret))
 
@@ -61,7 +64,7 @@ object OAuthProviderRoutes:
  * （「<表示名> 連携」。期限なし。API トークンの画面から失効できる）。クライアントは管理者が1つ登録する（integration_setting）。
  */
 final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Store, protected val sessions: SessionAuth, audit: Audit,
-                                cookieSecure: Boolean) extends RouteSupport:
+                                cookieSecure: Boolean, extraClients: List[OAuthClient] = Nil) extends RouteSupport:
   import OAuthProviderRoutes.*
 
   // ---------------------------------------------------------------- クライアントの登録
@@ -70,6 +73,14 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
   def client: IO[Option[OAuthClient]] = st.settings("oauth_client.").map { m =>
     (m.get(Keys.id), m.get(Keys.secret), m.get(Keys.redirect)).mapN((id, sec, uri) => OAuthClient(id, sec, uri, m.getOrElse(Keys.name, id)))
   }
+
+  /** 管理画面のクライアントと、環境変数 OAUTH_CLIENTS のクライアント（同じ ID なら環境変数のものは使わない） */
+  def clients: IO[List[OAuthClient]] = client.map(c => c.toList ++ extraClients.filterNot(x => c.exists(_.id == x.id)))
+
+  /** 求められたスコープ（なければ read）. 一括参照だけのクライアントは read だけ. 許していないものが含まれていれば None */
+  private def scopes(c: OAuthClient, requested: Option[String]): Option[List[String]] =
+    val rs = requested.map(_.split(' ').map(_.trim).filter(_.nonEmpty).toList.distinct).filter(_.nonEmpty).getOrElse(List("read"))
+    Option.when(rs.forall((if c.full then c.scopes else List("read")).contains))(rs)
 
   private def save(v: SaveOAuthClientReq, by: Option[UUID]): IO[Unit] =
     st.setSettings(Map(Keys.id -> Some(v.clientId), Keys.redirect -> Some(v.redirectUri), Keys.name -> Some(v.name))
@@ -80,7 +91,7 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
     client.flatMap {
       case Some(_) => IO.unit
       case None => validate(raw, hasSecret = false) match
-        case Left(msg) => skiwi.observe.Log.println(s"[skiwi] OAUTH_CLIENT_* is invalid and ignored: $msg")
+        case Left(msg) => skiwi.observe.Log.println(s"[skiwi] WARNING: OAUTH_CLIENT_* が正しくないため使いません: $msg")
         case Right(v)  => save(v, None) *> audit.system("system", "integration.oauth_client.seed", "integration", v.clientId) *>
                             skiwi.observe.Log.println(s"[skiwi] registered OAuth client '${v.clientId}' from OAUTH_CLIENT_*")
     }
@@ -122,8 +133,8 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
   /** 認可の要求を確かめる。client_id・redirect_uri が不正ならリダイレクトせずに画面でエラー、それ以外の不正は redirect_uri へエラーを返す。
     * 正しければ (クライアント, state, code_challenge) */
   private def validateAuthorize(p: String => Option[String]): IO[Either[IO[Response[IO]], (OAuthClient, Option[String], String)]] =
-    client.map { reg =>
-      (reg.filter(c => p("client_id").contains(c.id)), p("redirect_uri")) match
+    clients.map { all =>
+      (all.find(c => p("client_id").contains(c.id)), p("redirect_uri")) match
         case (None, _) => Left(errorPage("登録されていないクライアントです（client_id）"))
         case (Some(c), r) if !r.contains(c.redirectUri) => Left(errorPage("戻り先（redirect_uri）が登録されたものと一致しません"))
         case (Some(c), _) =>
@@ -131,7 +142,7 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
           if !p("response_type").contains("code") then Left(back(c.redirectUri, "error" -> Some("unsupported_response_type"), "state" -> state))
           else if !p("code_challenge_method").contains("S256") || !p("code_challenge").exists(_.matches("^[A-Za-z0-9_-]{43}$")) then
             Left(back(c.redirectUri, "error" -> Some("invalid_request"), "error_description" -> Some("PKCE（S256）が必要です"), "state" -> state))
-          else if p("scope").exists(_.split(' ').exists(_ != "read")) then Left(back(c.redirectUri, "error" -> Some("invalid_scope"), "state" -> state))
+          else if scopes(c, p("scope")).isEmpty then Left(back(c.redirectUri, "error" -> Some("invalid_scope"), "state" -> state))
           else Right((c, state, p("code_challenge").get))
     }
 
@@ -149,7 +160,7 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
   private def basicClient(req: Request[IO]): IO[Option[OAuthClient]] =
     req.headers.get[Authorization].collect { case Authorization(BasicCredentials(id, secret)) => (id, secret) } match
       case None => IO.pure(None)
-      case Some((id, secret)) => client.map(_.filter(c => c.id == id && c.secretMatches(secret)))
+      case Some((id, secret)) => clients.map(_.find(c => c.id == id && c.secretMatches(secret)))
 
   private def form(req: Request[IO])(f: Map[String, String] => IO[Response[IO]]): IO[Response[IO]] =
     req.as[UrlForm].attempt.flatMap {
@@ -210,9 +221,12 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
               val hidden = List("client_id", "redirect_uri", "state", "code_challenge", "code_challenge_method", "response_type", "scope")
                 .flatMap(k => queryParam(req, k).map(v => s"""<input type="hidden" name="$k" value="${Html.escape(v)}">""")).mkString
               val name = Html.escape(c.name)
+              val write = c.full && scopes(c, queryParam(req, "scope")).exists(_.contains("write"))
+              val what = if !c.full then "skiwi のページのタイトルを読み取ります" else if write then "skiwi のページを読み書きします" else "skiwi のページを読み取ります"
+              val note = if write then "<li>ページの作成・変更を、あなたの名前で行います</li>" else "<li>読み取り専用です（ページの作成・変更・削除はしません）</li>"
               page(s"${c.name} との連携", s"""<h1>$name との連携</h1>
-                |<p><b>$name</b> が、あなた（${Html.escape(s.user.name)}）の権限で skiwi のページのタイトルを読み取ります。</p>
-                |<ul class="muted"><li>読み取り専用です（ページの作成・変更・削除はしません）</li><li>あなたが見られるページだけが対象です</li>
+                |<p><b>$name</b> が、あなた（${Html.escape(s.user.name)}）の権限で $what。</p>
+                |<ul class="muted">$note<li>あなたが見られるページだけが対象です</li>
                 |<li>「APIトークン」の画面から、いつでも連携を解除できます</li></ul>
                 |<form method="post" action="/oauth/authorize">$hidden<input type="hidden" name="csrf" value="$csrf">
                 |<div class="actions"><button type="submit" name="decision" value="deny">拒否する</button>
@@ -239,7 +253,7 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
                 case Some(s) if s.via != AuthVia.Session => errorPage("ブラウザでログインして許可してください")
                 case Some(s) if p("decision").contains("allow") =>
                   val code = Crypto.randomToken(32)
-                  st.createOAuthCode(Crypto.sha256(code), OAuthCode(c.id, c.redirectUri, s.user.id, challenge), Instant.now().plusSeconds(CodeTtlSeconds)) *>
+                  st.createOAuthCode(Crypto.sha256(code), OAuthCode(c.id, c.redirectUri, s.user.id, challenge, scopes(c, p("scope")).getOrElse(List("read")).mkString(" ")), Instant.now().plusSeconds(CodeTtlSeconds)) *>
                     audit.log(s, "oauth.authorize", "integration", c.id) *>
                     back(c.redirectUri, "code" -> Some(code), "state" -> state)
                 case Some(_) => back(c.redirectUri, "error" -> Some("access_denied"), "state" -> state)
@@ -260,9 +274,11 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
                   case Some(oc) if oc.clientId == c.id && oc.redirectUri == uri && Crypto.constantTimeEquals(oc.codeChallenge, Crypto.pkceChallenge(verifier)) =>
                     val token = "skiwi_" + Crypto.randomToken(32)
                     // 許可し直したら、そのユーザーにこのクライアントが以前に発行したトークンは失効する
-                    ops.replaceOAuthToken(oc.userId, c.id, s"${c.name} 連携", Crypto.sha256(token), "read").flatMap { t =>
-                      audit.system("system", "token.create", "token", t.id, Json.obj("userId" -> oc.userId.asJson, "client" -> c.id.asJson, "scope" -> "read".asJson)) *>
-                        Ok(Json.obj("access_token" -> token.asJson, "token_type" -> "Bearer".asJson, "scope" -> "read".asJson))
+                    // 一括参照だけのクライアントは read. OAUTH_CLIENTS のクライアントは、許可したスコープ（write を含めば読み書き）
+                    val scope = if c.full && oc.scope.split(' ').contains("write") then "write" else "read"
+                    ops.replaceOAuthToken(oc.userId, c.id, s"${c.name} 連携", Crypto.sha256(token), scope, c.full).flatMap { t =>
+                      audit.system("system", "token.create", "token", t.id, Json.obj("userId" -> oc.userId.asJson, "client" -> c.id.asJson, "scope" -> scope.asJson)) *>
+                        Ok(Json.obj("access_token" -> token.asJson, "token_type" -> "Bearer".asJson, "scope" -> (if scope == "write" then "read write" else "read").asJson))
                           .map(_.putHeaders("Cache-Control" -> "no-store", "Pragma" -> "no-cache"))
                     }
                   case _ => oauthError(Status.BadRequest, "invalid_grant", "認可コードが無効です（期限切れ・使用済み・不一致）")

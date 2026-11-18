@@ -2,7 +2,7 @@
 // API（/api など）はキャッシュしない. 画面を更新したら CACHE の版を上げなくてよい（/assets はファイル名に版が入る. index.html は毎回取りに行く）.
 const CACHE = 'skiwi-v1'
 const SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png']
-const SKIP = ['/api/', '/auth/', '/mcp', '/oauth/', '/scim/', '/ws/', '/robots.txt', '/sitemap.xml']
+const SKIP = ['/api/', '/auth/', '/mcp', '/oauth/', '/scim/', '/ws/', '/robots.txt', '/sitemap.xml', '/sandbox.html']   // sandbox.html: ゲスト向けの HTML の枠（iframe で開く。画面として覚えない）
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting()))

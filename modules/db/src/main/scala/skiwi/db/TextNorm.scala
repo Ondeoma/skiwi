@@ -9,6 +9,9 @@ object TextNorm:
 
   /** あいまい一致とみなす、検索語の2文字組のうち対象に含まれる割合の下限。 */
   val FuzzyThreshold: Double = 0.5
+  /** あいまい検索で一致率を計算する候補の数と、本文のうち見る文字数（大きなページで本文全体を送らないため） */
+  val FuzzyCandidates: Int = 200
+  val FuzzyTextChars: Int  = 20000
 
   /** 入力を空白（全角含む）で区切った検索語。最大10語。 */
   def words(input: String): List[String] =

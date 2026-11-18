@@ -44,8 +44,8 @@ val Hint: Map[String, String] = Map(
 
 def message(e: Throwable): String = {
   val m = e.getMessage
-  if (m.startsWith("invalid url")) "URLが正しくありません（https:// で始まるURL）"
-  else if (m == "invalid events") "送る出来事を1つ以上選んでください"
+  if (m.startsWith("URL が正しくありません")) "URLが正しくありません（https:// で始まるURL）"
+  else if (m == "イベントが正しくありません") "送る出来事を1つ以上選んでください"
   else m
 }
 

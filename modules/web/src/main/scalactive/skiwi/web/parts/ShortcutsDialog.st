@@ -1,6 +1,6 @@
 <script lang="scala">
 import org.scalajs.dom
-import skiwi.web.Ui
+import skiwi.web.{Backdrop, Ui}
 import skiwi.web.workspace.Listeners
 
 import scala.scalajs.js
@@ -100,7 +100,7 @@ def unmounted(s: State): Unit = s.ls.clear()
 </script>
 
 <template>
-  <div v-if="s.open.v" class="backdrop" @mousedown.self="s.open := false">
+  <div v-if="s.open.v" class="backdrop" @mousedown="Backdrop.down(event)" @mouseup="Backdrop.up(event)" @click="Backdrop.click(event)(s.open := false)">
     <div class="dialog" role="dialog" aria-label="キーボードショートカット" data-testid="shortcuts">
       <header>
         <h2>⌨️ キーボードショートカット</h2>

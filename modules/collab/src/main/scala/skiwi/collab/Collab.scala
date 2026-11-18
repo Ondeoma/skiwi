@@ -1,6 +1,7 @@
 package skiwi.collab
 
 import cats.effect.*
+import cats.effect.syntax.all.*
 import cats.effect.std.Semaphore
 import cats.syntax.all.*
 import fs2.*
@@ -325,8 +326,26 @@ final class Collab(
   /** 接続中の全クライアントの権限を確認し直す。権限変更・グループ変更・無効化の直後と定期的に呼ぶ。
     * 権限を失ったら通知して切断、編集↔閲覧が変わったら通知して以後の扱いを変える。 */
   lazy val revalidate: IO[Unit] =
-    // 同じ認証情報の接続（同じ人の複数のタブなど）は、セッションの引き直しと権限の確認を1回にまとめる
-    conns.get.flatMap(_.values.toList.groupBy(_.authKey).values.toList.traverse_ { group =>
+    // 実行中に呼ばれたら、終わった後にもう1回だけ行う（権限の変更が続いても、確認を重ねて走らせない）
+    revalidateState.modify {
+      case (true, _)  => ((true, true), IO.unit)
+      case (false, _) => ((true, false), revalidateRounds)
+    }.flatten
+
+  /** (実行中か, 実行中に新しく頼まれたか) */
+  private lazy val revalidateState = Ref.unsafe[IO, (Boolean, Boolean)]((false, false))
+
+  private def revalidateRounds: IO[Unit] =
+    revalidateOnce.handleErrorWith(e => skiwi.observe.Log.println(s"[collab] revalidate failed: $e")) *>
+      revalidateState.modify {
+        case (_, true) => ((true, false), revalidateRounds)
+        case _         => ((false, false), IO.unit)
+      }.flatten.onCancel(revalidateState.set((false, false)))
+
+  private def revalidateOnce: IO[Unit] =
+    // 同じ認証情報の接続（同じ人の複数のタブなど）は、セッションの引き直しと権限の確認を1回にまとめる。
+    // 人ごとの確認は並べて行う（DB の接続を使い切らないよう4つまで）
+    conns.get.flatMap(_.values.toList.groupBy(_.authKey).values.toList.parTraverseN_(4) { group =>
       val check: IO[Map[UUID, Role]] = group.head.reauth.flatMap {
         case None    => IO.pure(Map.empty)
         case Some(s) => store.pagesAccess(group.map(_.pageId), s).map(_.map { case (pid, (_, r)) => pid -> (if s.readOnly then Role.View else r) })
@@ -413,9 +432,12 @@ final class Collab(
                 if canEdit && p.size <= cfg.maxUpdateBytes then Telemetry.withUser(s.user.id.toString, s.user.name)(onUpdate(room, conn, p)) else IO.unit
               case Wire.Inbound.Awareness if data.size > cfg.maxAwarenessBytes => IO.unit
               case Wire.Inbound.Awareness =>
-                aware.update(m => Wire.awarenessClients(data).foldLeft(m) { case (acc, (c, clock, removed)) =>
-                  if removed then acc - c else acc + (c -> clock)
-                }) *> room.topic.publish1(Out(id, None, data)).void
+                Wire.awarenessAsUser(data, s.user.id.toString, s.user.name) match
+                  case None => IO.unit
+                  case Some(own) =>
+                    aware.update(m => Wire.awarenessClients(own).foldLeft(m) { case (acc, (c, clock, removed)) =>
+                      if removed then acc - c else acc + (c -> clock)
+                    }) *> room.topic.publish1(Out(id, None, own)).void
               case Wire.Inbound.CompactResponse(tok, upd, json, text) =>
                 if canEdit then Telemetry.withUser(s.user.id.toString, s.user.name)(onCompactResponse(room, conn, tok, upd, json, text)) else IO.unit
               case Wire.Inbound.Malformed => skiwi.observe.Log.println(s"[collab] malformed frame from client $id on $pageId")
@@ -515,7 +537,7 @@ final class Collab(
 
     case req @ GET -> Root / "ws" / "pages" / UUIDVar(pageId) =>
       if isForwarded(req) then serveLocal(req, pageId, wsb) // 転送元で Origin は確認済み
-      else if !originOk(req) then Forbidden("origin not allowed")
+      else if !originOk(req) then Forbidden("このサイトからは接続できません")
       else
         cluster.flatTraverse(_.ownerOf(pageId)).flatMap {
           case Some(owner) if !cluster.exists(_.self == owner.id) =>

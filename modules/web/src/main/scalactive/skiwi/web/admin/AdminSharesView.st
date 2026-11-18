@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.shared.Titles
 import skiwi.web.Nav
 import skiwi.web.{Dialog, Ui}
 
@@ -18,11 +19,11 @@ def load(s: State): Unit = AdminApi.shares().onComplete {
 
 def mounted(s: State): Unit = load(s)
 
-def title(r: AdminShare): String = if (r.title.isEmpty) "無題" else r.title
+def title(r: AdminShare): String = Titles.display(r.title)
 
 def stop(s: State, r: AdminShare): Unit =
   Dialog.confirm(s"「${title(r)}」の公開を停止しますか？\nこれまでのリンクは使えなくなります。", okLabel = "公開を停止", danger = true).foreach { ok =>
-    if (ok) AdminApi.disableShare(r.pageId).onComplete {
+    if (ok) skiwi.web.dialogs.DialogsApi.disableShare(r.pageId).onComplete {
       case Success(_) => load(s)
       case Failure(e) => Dialog.alertError("停止できませんでした", e)
     }

@@ -1,6 +1,7 @@
 package skiwi.api
 
 import cats.effect.*
+import cats.syntax.all.*
 import munit.CatsEffectSuite
 import org.http4s.*
 import org.http4s.dsl.io.*
@@ -47,6 +48,23 @@ class SecuritySpec extends CatsEffectSuite:
       assertEquals(get.status, Status.Ok)
   }
 
+  test("開発用のログイン（DEV_LOGIN）のときは、画面の開発サーバー（localhost）からの POST も受ける") {
+    def run(dev: Boolean, origin: String) =
+      Security.csrf("http://localhost:8080", "skiwi_session", dev)(echo).orNotFound
+        .run(Request[IO](Method.POST, uri"/api/x").withEntity("{}").addCookie("skiwi_session", "t")
+          .putHeaders(Header.Raw(org.typelevel.ci.CIString("Origin"), origin), Header.Raw(org.typelevel.ci.CIString("Host"), "127.0.0.1:8080")))
+    for
+      dev   <- run(dev = true, "http://localhost:5173")
+      ip    <- run(dev = true, "http://127.0.0.1:5173")
+      other <- run(dev = true, "http://evil.example")
+      prod  <- run(dev = false, "http://localhost:5173")
+    yield
+      assertEquals(dev.status, Status.Ok)
+      assertEquals(ip.status, Status.Ok)
+      assertEquals(other.status, Status.Forbidden)
+      assertEquals(prod.status, Status.Forbidden)
+  }
+
   test("本文の大きさの上限（添付ファイルは各ルートに任せる）") {
     val big = "x" * (17 * 1024 * 1024)
     for
@@ -86,4 +104,15 @@ class SecuritySpec extends CatsEffectSuite:
       "::1", "fd00::1", "fe80::1", "64:ff9b::a00:1", "2002:a00:1::1", "::ffff:10.0.0.1")
     priv.foreach(a => assert(!NetGuard.isPublic(InetAddress.getByName(a)), a))
     List("8.8.8.8", "2606:4700:4700::1111").foreach(a => assert(NetGuard.isPublic(InetAddress.getByName(a)), a))
+  }
+
+  test("外へ接続するクライアントは、名前を引いた先が社内のアドレスなら接続しない（確かめたアドレスにそのまま接続する）") {
+    NetGuard.client(allowPrivate = false).use { c =>
+      List("http://127.0.0.1:9/", "http://localhost:9/", "http://[::1]:9/", "http://169.254.169.254/latest/meta-data/").traverse_ { u =>
+        c.run(Request[IO](Method.GET, Uri.unsafeFromString(u))).use_.attempt.map {
+          case Left(_: NetGuard.Blocked) => ()
+          case other                     => fail(s"$u: $other")
+        }
+      }
+    }
   }

@@ -39,10 +39,6 @@ object Metrics:
       case None    => meterRef.get.flatMap(_.upDownCounter[Long](name).create).flatTap(c => upDowns.update(_.updated(name, c)))
     }.flatMap(_.add(n, attrs(kv)*)).handleError(_ => ())
 
-  /** 処理の間だけ数を1つ増やす（SSE の接続など）. */
-  def tracking[A](name: String, kv: (String, String)*)(fa: IO[A]): IO[A] =
-    IO.uncancelable(poll => upDown(name, 1, kv*) *> poll(fa).guarantee(upDown(name, -1, kv*)))
-
   /**
    * DB などから定期的に読む値（ユーザーの数など）. every ごとに query を実行して覚え、メトリクスを送るときにその値を出す.
    * query が失敗したときは前の値のまま.

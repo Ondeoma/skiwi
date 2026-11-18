@@ -21,7 +21,7 @@ smohua の環境変数 `OAUTH_CLIENTS` に、skiwi をクライアントとし�
 [{"id":"skiwi","secret":"(16文字以上のランダムな値)","redirectUri":"https://skiwi.example.com/api/integrations/smohua/callback","name":"skiwi","scopes":["read"]}]
 ```
 
-開発用の値: `skiwi` / `skiwi-dev-secret-0123456789` / `http://localhost:8080/api/integrations/smohua/callback`（smohua の `scripts/dev-env.sh` に入っている）。
+開発用の値: `skiwi` / `skiwi-dev-secret-0123456789` / `http://localhost:5173/api/integrations/smohua/callback`（smohua の `scripts/dev-env.sh` に入っている）。
 
 ### 2. OAuth のエンドポイント
 
@@ -41,7 +41,7 @@ smohua の環境変数 `OAUTH_CLIENTS` に、skiwi をクライアントとし�
 ## skiwi 側
 
 - **設定（管理者）**: 「外部連携」（`/admin/integrations`）の「skiwi → smohua」に、smohua の URL・client_id・client_secret を入れる。
-  画面に出る redirect_uri（`${PUBLIC_URL}/api/integrations/smohua/callback`）を smohua の `OAUTH_CLIENTS` に登録する。`ENCRYPTION_KEY` が要る。
+  画面に出る redirect_uri（`${PUBLIC_URL}/api/integrations/smohua/callback`）を smohua の `OAUTH_CLIENTS` に登録する。
 - **連携（各ユーザー）**: 自分のアイコンのメニューの「🔗 smohua と連携」、またはブロックの中の「smohua と連携」。
 - **ブロック**: エディタの `/` →「フォームの回答（smohua）」で、smohua のフォームの画面の URL（`…/forms/{ID}`・`…/f/{ID}`）か ID を入れる。
   ノードは `smohuaForm`（属性 `formId`。`frontend/src/editor/SmohuaForm.ts`）、中身は Scalactive の部品

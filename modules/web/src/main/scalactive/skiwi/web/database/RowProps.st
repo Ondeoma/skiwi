@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.shared.Titles
 import io.circe.Json
 import skiwi.web.Dialog
 
@@ -48,7 +49,7 @@ def onUser(s: State, id: String, name: String): Unit = s.data.v.foreach(d => s.d
 
 def dbHref(props: Props, d: PageProps): String = DbDom.pageHref(props.wid, d.database.fold("")(_.pageId))
 
-def dbTitle(d: PageProps): String = d.database.map(_.title).filter(_.nonEmpty).getOrElse("無題")
+def dbTitle(d: PageProps): String = Titles.display(d.database.map(_.title))
 
 def value(d: PageProps, p: DbProp): Val = Db.cellValue(p, RowLike(d.values), ctx(d))
 

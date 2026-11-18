@@ -129,16 +129,16 @@ final class PageExtraRoutes(protected val store: Store, docs: DocStore, ops: Ops
         body[DocStateReq](req) {
           case b if b.content.isObject =>
             decodeYdoc(b.ydoc) match
-              case None => err(Status.BadRequest, "invalid ydoc")
+              case None => err(Status.BadRequest, "ページの中身（Yjs）が正しくありません")
               case Some(y) =>
                 docs.isEmpty(id).flatMap {
-                  case false => err(Status.Conflict, "page already has content")
+                  case false => err(Status.Conflict, "ページにはすでに中身があります")
                   case true =>
                     docs.saveCompaction(id, y, b.content, b.text, Set.empty, Set.empty, s.user.id, Set(s.user.id)) *>
                       ops.enqueuePageEdited(id, Set(s.user.id), 300, 1800) *> skiwi.observe.Metrics.count("skiwi.pages.updated", "via" -> "import") *>
                       audit.log(s, "page.import", "page", id, Json.obj("title" -> p.title.asJson)) *> NoContent()
                 }
-          case _ => err(Status.BadRequest, "invalid body")
+          case _ => err(Status.BadRequest, "リクエストの本文が正しくありません")
         }
       }
 
@@ -159,7 +159,7 @@ final class PageExtraRoutes(protected val store: Store, docs: DocStore, ops: Ops
     case req @ GET -> Root / "api" / "workspaces" / UUIDVar(id) / "broken-links" =>
       authed(req) { s =>
         store.listPages(id, s).flatMap { visible =>
-          if visible.isEmpty then store.workspaceRole(id, s).flatMap(r => if r.isEmpty then err(Status.NotFound, "workspace not found") else Ok(List.empty[BrokenLinkDto]))
+          if visible.isEmpty then store.workspaceRole(id, s).flatMap(r => if r.isEmpty then err(Status.NotFound, "ワークスペースが見つかりません") else Ok(List.empty[BrokenLinkDto]))
           else
             val sources = visible.map(_._1.id).toSet
             store.linkTargets(id).flatMap { rows =>
@@ -181,7 +181,7 @@ final class PageExtraRoutes(protected val store: Store, docs: DocStore, ops: Ops
     case req @ GET -> Root / "api" / "workspaces" / UUIDVar(id) / "health" =>
       authed(req) { s =>
         store.listPages(id, s).flatMap { visible =>
-          if visible.isEmpty then store.workspaceRole(id, s).flatMap(r => if r.isEmpty then err(Status.NotFound, "workspace not found") else Ok(List.empty[PageHealthDto]))
+          if visible.isEmpty then store.workspaceRole(id, s).flatMap(r => if r.isEmpty then err(Status.NotFound, "ワークスペースが見つかりません") else Ok(List.empty[PageHealthDto]))
           else
             (store.pageHealth(id), store.pageMeta(visible.map(_._1.id))).flatMapN { (rows, meta) =>
               val byId = rows.map(r => r.pageId -> r).toMap

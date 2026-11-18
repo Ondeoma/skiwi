@@ -1,5 +1,7 @@
 package skiwi.web.dialogs
 
+import skiwi.shared.Titles
+
 export skiwi.web.model.{AccessStatus, CssLayer, LockEditor, PageLockState, PageStyles, PublicShare}
 export skiwi.web.database.{DbOption, DbProp}
 
@@ -13,7 +15,7 @@ import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
 
-// 設定ダイアログ類（共有・公開・CSS・保護・Webhook・自動化・受信・バックアップ・点検）の API（frontend/src/api.ts と同じ）
+// 設定ダイアログ類（共有・公開・CSS・保護・Webhook・自動化・受信・バックアップ・点検）の API
 
 // ---------------------------------------------------------------- 共有設定（権限）
 
@@ -181,8 +183,6 @@ object DialogsApi {
     s"${dom.window.location.origin}/s/$key${if (page.isEmpty) "" else s"/$page"}"
 
   // ---- カスタムCSS・ゲスト向けの表示
-  def pageStyles(id: String): Future[PageStyles] = get[PageStyles](s"/api/pages/$id/styles")
-
   def setPageCss(id: String, css: Option[String], inherit: Boolean): Future[Unit] =
     put0(s"/api/pages/$id/css", Json.obj("css" -> css.asJson, "inherit" -> inherit.asJson))
 
@@ -199,8 +199,6 @@ object DialogsApi {
     else put0(s"/api/workspaces/$id/guest-html", Json.obj("top" -> top.asJson, "bottom" -> bottom.asJson))
 
   // ---- ページの保護
-  def lock(id: String): Future[PageLockState] = get[PageLockState](s"/api/pages/$id/lock")
-
   def setLock(id: String, reason: Option[String], editors: List[String]): Future[PageLockState] =
     put[PageLockState](s"/api/pages/$id/lock", Json.obj("reason" -> reason.asJson, "editors" -> editors.asJson))
 
@@ -283,7 +281,7 @@ object Dlg {
   /** 入力欄の文字を選ぶ */
   def select(e: dom.Event): Unit = e.target.asInstanceOf[js.Dynamic].select()
 
-  def untitled(t: String): String = if (t.isEmpty) "無題" else t
+  def untitled(t: String): String = Titles.display(t)
 
   def untitled(t: Option[String]): String = untitled(t.getOrElse(""))
 

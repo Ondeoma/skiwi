@@ -63,7 +63,7 @@ class OidcFlowSpec extends DbSuite:
           ops = new OpsStore(xa)
           sess = new SessionAuth(store, ops, apiCfg)
           audit = new Audit(ops)
-          app = (new AuthRoutes(oidc, store, sess, audit, publicUrl = "https://skiwi.test").routes <+> new ApiRoutes(store, new DocStore(xa), ops, sess, audit).routes).orNotFound
+          app = (new AuthRoutes(Some(oidc), store, sess, audit, publicUrl = "https://skiwi.test").routes <+> new ApiRoutes(store, new DocStore(xa), ops, sess, audit).routes).orNotFound
 
           // 1) /auth/login → IdPへのリダイレクト (PKCE S256, state, nonce)
           login <- app.run(Request[IO](Method.GET, uri"/auth/login"))

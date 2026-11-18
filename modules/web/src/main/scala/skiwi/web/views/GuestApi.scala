@@ -1,5 +1,7 @@
 package skiwi.web.views
 
+import skiwi.shared.Titles
+
 import io.circe.*
 import io.circe.syntax.*
 import org.scalajs.dom
@@ -9,14 +11,14 @@ import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
 
-// ゲスト向けの公開ページ・PDF（印刷）の画面が使う API（frontend/src/api.ts の guestApi・api.pageContent と同じ）.
+// ゲスト向けの公開ページ・PDF（印刷）の画面が使う API.
 // ゲスト用はログイン画面に飛ばさない（redirectOn401 = false）.
 
 /** 公開範囲のページ. slug: ページのURL名 */
 final case class GuestPage(id: String, parentId: Option[String] = None, position: String = "", title: String = "",
                            icon: Option[String] = None, updatedAt: String = "", slug: Option[String] = None) derives Codec.AsObject {
 
-  def displayTitle: String = if (title.isEmpty) "無題" else title
+  def displayTitle: String = Titles.display(title)
 
   def iconOr: String = icon.getOrElse("📄")
 

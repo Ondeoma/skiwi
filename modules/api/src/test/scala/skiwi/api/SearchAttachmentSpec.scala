@@ -60,7 +60,7 @@ class SearchAttachmentSpec extends DbSuite:
 
   private def upload(token: String, pageId: UUID, name: String, ctype: String, body: Array[Byte]): IO[Response[IO]] =
     Multiparts.forSync[IO].flatMap { mps =>
-      val part = Part.fileData[IO]("file", name, Stream.emits(body).covary[IO], `Content-Type`(MediaType.unsafeParse(ctype)))
+      val part = Part.fileData[IO]("file", name, Entity.stream(Stream.emits(body).covary[IO]), `Content-Type`(MediaType.unsafeParse(ctype)))
       mps.multipart(Vector(part)).flatMap { mp =>
         val req = Request[IO](Method.POST, Uri.unsafeFromString(s"/api/pages/$pageId/attachments"))
           .withEntity(mp).putHeaders(mp.headers).addCookie("skiwi_session", token)

@@ -10,7 +10,7 @@ object NoticeText:
 
   /** 通知の見出し（ページのアイコンとタイトル、またはワークスペースの名前） */
   def heading(kind: String, hasPage: Boolean, pageIcon: Option[String], pageTitle: Option[String], workspaceName: Option[String]): String =
-    if hasPage then s"${pageIcon.getOrElse("📄")} ${pageTitle.filter(_.nonEmpty).getOrElse("無題")}"
+    if hasPage then s"${pageIcon.getOrElse("📄")} ${Titles.display(pageTitle)}"
     else if kind == "access_denied" then "🔒 権限の申請"
     else s"🗂 ${workspaceName.getOrElse("")}"
 

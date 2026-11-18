@@ -22,7 +22,7 @@ class ShareRoutesSpec extends DbSuite:
 
   private val apiCfg = ApiConfig(adminGroups = Set.empty, cookieSecure = false)
 
-  final case class Env(store: Store, docs: DocStore, app: HttpApp[IO], disabled: HttpApp[IO])
+  final case class Env(store: Store, docs: DocStore, app: HttpApp[IO], disabled: HttpApp[IO], smallUpload: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -41,7 +41,9 @@ class ShareRoutesSpec extends DbSuite:
         val audit  = new Audit(ops)
         def share(on: Boolean) = new ShareRoutes(store, shares, docs, attSt, attach, sess, audit, on)
         val api = new ApiRoutes(store, docs, ops, sess, audit, IO.unit, Some(shares))
-        Env(store, docs, (share(true).routes <+> attach.routes <+> api.routes).orNotFound, share(false).routes.orNotFound)
+        val small = new AttachmentRoutes(store, attSt, Some(new InMemoryBlobStore), sess, maxBytes = 1024)
+        Env(store, docs, (share(true).routes <+> attach.routes <+> api.routes).orNotFound, share(false).routes.orNotFound,
+          (small.routes <+> api.routes).orNotFound)
 
   private val fixture = ResourceSuiteLocalFixture("share", res)
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
@@ -62,7 +64,7 @@ class ShareRoutesSpec extends DbSuite:
 
   private def upload(token: String, pageId: UUID): IO[UUID] =
     Multiparts.forSync[IO].flatMap { mps =>
-      val part = Part.fileData[IO]("file", "a.png", Stream.emits("PNG".getBytes).covary[IO], `Content-Type`(MediaType.image.png))
+      val part = Part.fileData[IO]("file", "a.png", Entity.stream(Stream.emits("PNG".getBytes).covary[IO]), `Content-Type`(MediaType.image.png))
       mps.multipart(Vector(part)).flatMap { mp =>
         val req = Request[IO](Method.POST, Uri.unsafeFromString(s"/api/pages/$pageId/attachments"))
           .withEntity(mp).putHeaders(mp.headers).addCookie("skiwi_session", token)
@@ -159,5 +161,25 @@ class ShareRoutesSpec extends DbSuite:
         (n7, _, _) <- call(None, Method.GET, s"/api/public/$token")
         _ = assertEquals(n7, Status.NotFound)
       yield ()
+    }
+  }
+
+  test("Content-Length のない（chunked の）添付のアップロードも上限で止める") {
+    run {
+      for
+        (owner, ot) <- user("up-owner")
+        ws <- env.store.createWorkspace("上限", owner.user.id)
+        p  <- env.store.createPage(ws.id, None, Placement.Last, "p", None, owner.user.id).map(_.toOption.get)
+        st <- Multiparts.forSync[IO].flatMap { mps =>
+                val big  = Part.fileData[IO]("file", "big.bin", Entity.stream(Stream.emits(Array.fill[Byte](200 * 1024)(1)).covary[IO]),
+                  `Content-Type`(MediaType.application.`octet-stream`))
+                mps.multipart(Vector(big)).flatMap { mp =>
+                  val req = Request[IO](Method.POST, Uri.unsafeFromString(s"/api/pages/${p.id}/attachments"))
+                    .withEntity(mp).putHeaders(mp.headers).addCookie("skiwi_session", ot)
+                  val chunked = req.withBodyStream(req.body).removeHeader[org.http4s.headers.`Content-Length`]
+                  env.smallUpload.run(chunked).map(_.status)
+                }
+              }
+      yield assertEquals(st, Status.PayloadTooLarge)
     }
   }

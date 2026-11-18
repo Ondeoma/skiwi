@@ -22,7 +22,7 @@ case class State(st: RV[Option[PageLockState]] = RV(None),
 def initState() = State()
 
 def mounted(s: State, props: Props): Unit =
-  DialogsApi.lock(props.pageId).onComplete {
+  skiwi.web.page.PageApi.lock(props.pageId).onComplete {
     case Success(x) =>
       s.st := Some(x)
       s.reason := x.reason.getOrElse("")

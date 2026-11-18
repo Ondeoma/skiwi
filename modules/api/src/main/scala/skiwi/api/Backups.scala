@@ -37,10 +37,10 @@ final class BackupService(
   /** 1回分を作って保存する。戻り値: (保存先のキー, 大きさ, ページ数, 添付の数) */
   def build(wsId: UUID, id: UUID): IO[(String, Long, Int, Int)] =
     blobs match
-      case None => IO.raiseError(new IllegalStateException("object storage (S3) is not configured"))
+      case None => IO.raiseError(new IllegalStateException("オブジェクトストレージ（S3）が設定されていません"))
       case Some(bs) =>
         for
-          ws    <- store.workspaceRole(wsId, system).map(_.map(_._1)).flatMap(IO.fromOption(_)(new IllegalStateException("workspace not found")))
+          ws    <- store.workspaceRole(wsId, system).map(_.map(_._1)).flatMap(IO.fromOption(_)(new IllegalStateException("ワークスペースが見つかりません")))
           pages <- store.listPages(wsId, system).map(_.map(_._1))
           labels <- store.labelsIn(wsId)
           dbIds <- dbs.idsIn(wsId)
@@ -59,10 +59,12 @@ final class BackupService(
     val ids = pages.map(_.id).toSet
     val roots = pages.filter(p => p.parentId.forall(pid => !ids(pid)))
     val pathOf = scala.collection.mutable.LinkedHashMap.empty[UUID, String]
+    val usedIn = scala.collection.mutable.HashMap.empty[String, scala.collection.mutable.Set[String]] // フォルダ → 使ったファイル名
     def assign(p: Page, dir: String): Unit =
-      val used = pathOf.values.filter(x => x.split('/').dropRight(1).mkString("/") == dir).map(_.split('/').last).toSet
+      val used = usedIn.getOrElseUpdate(dir, scala.collection.mutable.Set.empty)
       var name = safeName(p.title); var n = 2
       while used(s"$name.md") do { name = s"${safeName(p.title)} ($n)"; n += 1 }
+      used += s"$name.md"
       pathOf(p.id) = if dir.isEmpty then s"$name.md" else s"$dir/$name.md"
       kids.getOrElse(Some(p.id), Nil).sortBy(_.position).foreach(c => assign(c, if dir.isEmpty then name else s"$dir/$name"))
     roots.sortBy(_.position).foreach(assign(_, ""))
@@ -73,15 +75,27 @@ final class BackupService(
       val common = f.zip(t).takeWhile(_ == _).size
       ("../" * (f.size - common)) + t.drop(common).mkString("/")
 
-    Resource.fromAutoCloseable(IO.blocking(new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(tmp.toFile))))).use { zip =>
+    // skiwi-backup.json の pages（全ページの本文を含む）は、メモリに溜めずに一時ファイルへ書いておき、最後に ZIP へ流す
+    val metaFile = Resource.make(IO.blocking(java.nio.file.Files.createTempFile("skiwi-backup-meta-", ".json")))(f => IO.blocking(java.nio.file.Files.deleteIfExists(f)).void)
+    (Resource.fromAutoCloseable(IO.blocking(new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(tmp.toFile))))), metaFile).tupled.use { (zip, metaPath) =>
       def entry(name: String, bytes: Array[Byte]): IO[Unit] = IO.blocking { zip.putNextEntry(new ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
-      val meta = scala.collection.mutable.ListBuffer.empty[Json]
+      /** 中身をストリームのまま書く（添付ファイルをメモリに読み込まない） */
+      def streamEntry(name: String, body: fs2.Stream[IO, Byte]): IO[Unit] =
+        IO.blocking(zip.putNextEntry(new ZipEntry(name))) *> body.chunks.evalMap(c => IO.blocking(zip.write(c.toArray))).compile.drain *> IO.blocking(zip.closeEntry())
+      Resource.fromAutoCloseable(IO.blocking(java.nio.file.Files.newBufferedWriter(metaPath, java.nio.charset.StandardCharsets.UTF_8))).use { meta =>
+      var first = true
+      def addMeta(j: Json): IO[Unit] = IO.blocking { meta.write(if first then "" else ","); first = false; meta.write(j.noSpaces) }
       for
-        _ <- pages.traverse_ { p =>
+        // 本文・データベースの定義・項目の値は 200 ページずつまとめて読む
+        _ <- pages.grouped(200).toList.traverse_ { group =>
+          val gids = group.map(_.id)
+          (docs.currentContents(gids), dbs.getMany(gids.filter(dbIds)), dbs.valuesMany(gids)).flatMapN { (contents, dbDefs, values) =>
+            group.traverse_ { p =>
                val path = pathOf(p.id)
                val up = "../" * (path.count(_ == '/'))
-               (docs.currentContent(p.id), if dbIds(p.id) then dbs.get(p.id) else IO.pure(None), dbs.values(p.id)).flatMapN { (content, db, vals) =>
-                 val doc = content.fold(Json.Null)((j, _, _) => parseOrNull(j))
+               val (db, vals) = (dbDefs.get(p.id), values.get(p.id))
+               locally {
+                 val doc = contents.get(p.id).fold(Json.Null)(parseOrNull)
                  var boards = 0
                  val boardFiles = scala.collection.mutable.ListBuffer.empty[(String, Array[Byte])]
                  val md = new MarkdownExport(
@@ -103,28 +117,34 @@ final class BackupService(
                      boardFiles += name -> file.spaces2.getBytes("UTF-8")
                      s"[🧩 ホワイトボード（Excalidraw で開けます）](${URLEncoder.encode(name.split('/').last, "UTF-8").replace("+", "%20")})"
                  ).page(doc, p.title)
-                 meta += Json.obj(
+                 addMeta(Json.obj(
                    "id" -> p.id.asJson, "parentId" -> p.parentId.asJson, "position" -> p.position.asJson, "title" -> p.title.asJson,
                    "icon" -> p.icon.asJson, "path" -> path.asJson, "updatedAt" -> p.updatedAt.asJson, "labels" -> labels.getOrElse(p.id, Nil).asJson,
                    "content" -> doc, "values" -> vals.flatMap(io.circe.parser.parse(_).toOption).getOrElse(Json.obj()),
                    "database" -> db.fold(Json.Null)(d => Json.obj("props" -> io.circe.parser.parse(d.props).getOrElse(Json.arr()),
-                     "views" -> io.circe.parser.parse(d.views).getOrElse(Json.arr()))))
+                     "views" -> io.circe.parser.parse(d.views).getOrElse(Json.arr()))))) *>
                  entry(path, md.getBytes("UTF-8")) *> boardFiles.toList.traverse_((n, b) => entry(n, b))
                }
-             }
+            }
+          }
+        }
         n <- atts.traverse { a =>
                bs.get(a.s3Key).flatMap {
                  case None => IO.pure(0)
-                 case Some((_, body)) => body.compile.to(Array).flatMap(b => entry(attPath(a.id), b)).as(1)
+                 case Some((_, body)) => streamEntry(attPath(a.id), body).as(1)
                }
              }.map(_.sum)
-        _ <- entry("skiwi-backup.json", Json.obj(
-               "format" -> "skiwi-backup/1".asJson, "workspace" -> Json.obj("id" -> ws.id.asJson, "name" -> ws.name.asJson),
-               "createdAt" -> Instant.now().asJson, "pages" -> meta.toList.asJson,
-               "attachments" -> atts.map(a => Json.obj("id" -> a.id.asJson, "pageId" -> a.pageId.asJson, "filename" -> a.filename.asJson,
-                 "contentType" -> a.contentType.asJson, "size" -> a.size.asJson, "path" -> attPath(a.id).asJson)).asJson
-             ).spaces2.getBytes("UTF-8"))
+        _ <- IO.blocking(meta.flush())
+        // pages の配列だけを一時ファイルから差し込む（ほかの項目は小さいので組み立てる）
+        head = Json.obj("format" -> "skiwi-backup/1".asJson, "workspace" -> Json.obj("id" -> ws.id.asJson, "name" -> ws.name.asJson),
+                 "createdAt" -> Instant.now().asJson,
+                 "attachments" -> atts.map(a => Json.obj("id" -> a.id.asJson, "pageId" -> a.pageId.asJson, "filename" -> a.filename.asJson,
+                   "contentType" -> a.contentType.asJson, "size" -> a.size.asJson, "path" -> attPath(a.id).asJson)).asJson).noSpaces
+        _ <- streamEntry("skiwi-backup.json",
+               fs2.Stream.emits(head.dropRight(1).getBytes("UTF-8")) ++ fs2.Stream.emits(""","pages":[""".getBytes("UTF-8")) ++
+                 fs2.io.file.Files[IO].readAll(fs2.io.file.Path.fromNioPath(metaPath)) ++ fs2.Stream.emits("]}".getBytes("UTF-8")))
       yield n
+      }
     }
 
   /** 実行して記録し、古いものを消す */
@@ -168,21 +188,21 @@ final class BackupRoutes(backups: BackupStore, svc: BackupService, blobs: Option
 
     case req @ PUT -> Root / "api" / "admin" / "workspaces" / UUIDVar(ws) / "backups" / "config" =>
       admin(req) { s =>
-        req.as[BackupConfigDto].attempt.flatMap {
+        decodeBody[BackupConfigDto](req).flatMap {
           case Right(b) if b.hour >= 0 && b.hour <= 23 && b.keep >= 1 && b.keep <= 90 =>
             backups.setConfig(ws, b.enabled, b.hour, b.keep, s.user.id).flatMap { c =>
               audit.log(s, "backup.config", "workspace", ws, Json.obj("enabled" -> c.enabled.asJson, "hour" -> c.hour.asJson, "keep" -> c.keep.asJson)) *> Ok(cfgDto(c))
             }
-          case _ => err(Status.BadRequest, "hour must be 0-23 and keep 1-90")
+          case _ => err(Status.BadRequest, "時刻は0〜23、残す世代は1〜90にしてください")
         }
       }
 
     // 今すぐバックアップする（終わるまで待たない）
     case req @ POST -> Root / "api" / "admin" / "workspaces" / UUIDVar(ws) / "backups" =>
       admin(req) { s =>
-        if blobs.isEmpty then err(Status.Conflict, "object storage (S3) is not configured")
+        if blobs.isEmpty then err(Status.Conflict, "オブジェクトストレージ（S3）が設定されていません")
         else backups.claimManual(ws).flatMap {
-          case None => err(Status.Conflict, "a backup is already running")
+          case None => err(Status.Conflict, "実行中のバックアップがあります")
           case Some(id) =>
             backups.config(ws).flatMap { c =>
               audit.log(s, "backup.run", "workspace", ws) *> svc.run(ws, id, c.map(_.keep)).start *>
@@ -196,7 +216,7 @@ final class BackupRoutes(backups: BackupStore, svc: BackupService, blobs: Option
         backups.get(id).flatMap {
           case Some(b) if b.status == "done" && b.s3Key.isDefined =>
             blobs.flatTraverse(_.get(b.s3Key.get)).flatMap {
-              case None => err(Status.NotFound, "backup file not found")
+              case None => err(Status.NotFound, "バックアップのファイルが見つかりません")
               case Some((meta, body)) =>
                 audit.log(s, "backup.download", "workspace", b.workspaceId, Json.obj("backupId" -> id.asJson)) *>
                   IO.pure(Response[IO](Status.Ok).withBodyStream(body).putHeaders(
@@ -205,16 +225,16 @@ final class BackupRoutes(backups: BackupStore, svc: BackupService, blobs: Option
                     Header.Raw(CIString("Content-Disposition"), s"attachment; filename=\"backup.zip\"; filename*=UTF-8''${URLEncoder.encode(b.s3Key.get.split('/').last, "UTF-8")}"),
                     Header.Raw(CIString("Cache-Control"), "no-store")))
             }
-          case Some(_) => err(Status.Conflict, "backup is not ready")
-          case None    => err(Status.NotFound, "backup not found")
+          case Some(_) => err(Status.Conflict, "バックアップはまだできていません")
+          case None    => err(Status.NotFound, "バックアップが見つかりません")
         }
       }
 
     case req @ DELETE -> Root / "api" / "admin" / "backups" / UUIDVar(id) =>
       admin(req) { s =>
         backups.get(id).flatMap {
-          case None => err(Status.NotFound, "backup not found")
-          case Some(b) if b.status == "running" => err(Status.Conflict, "backup is running")
+          case None => err(Status.NotFound, "バックアップが見つかりません")
+          case Some(b) if b.status == "running" => err(Status.Conflict, "バックアップを実行中です")
           case Some(b) =>
             backups.delete(id).flatMap(key => key.traverse_(k => blobs.traverse_(_.delete(k)))) *>
               audit.log(s, "backup.delete", "workspace", b.workspaceId, Json.obj("backupId" -> id.asJson)) *> NoContent()

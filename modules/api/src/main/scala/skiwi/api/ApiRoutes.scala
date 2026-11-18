@@ -37,7 +37,7 @@ final class ApiRoutes(
       case (Some(id), _)         => Right(Placement.After(id))
       case (None, None | Some("last")) => Right(Placement.Last)
       case (None, Some("first")) => Right(Placement.First)
-      case (None, Some(other))   => Left(s"invalid placement: $other")
+      case (None, Some(other))   => Left(s"置き場所が正しくありません: $other")
 
   private def aclView(entries: List[AclEntry], expires: Map[Principal, java.time.Instant]): IO[List[AclEntryViewDto]] =
     ops.principalNames(entries.map(_.principal.id)).map { names =>
@@ -113,18 +113,18 @@ final class ApiRoutes(
           // 見えるワークスペースだけ登録できる（存在の有無を漏らさないよう、見えなければ404）
           store.workspaceVisible(id, s).ifM(
             ops.setFavorite(id, s.user.id, b.favorite) *> Ok(FavoriteDto(b.favorite)),
-            err(Status.NotFound, "workspace not found"))
+            err(Status.NotFound, "ワークスペースが見つかりません"))
         }
       }
 
     case req @ POST -> Root / "api" / "workspaces" =>
       authed(req) { s =>
-        req.as[CreateWorkspaceReq].attempt.flatMap {
-          case Right(b) if b.name.trim.nonEmpty =>
+        decodeBody[CreateWorkspaceReq](req).flatMap {
+          case Right(b) if validName(b.name, MaxWorkspaceName).isDefined =>
             store.createWorkspace(b.name.trim, s.user.id).flatTap(w =>
               audit.log(s, "workspace.create", "workspace", w.id, Json.obj("name" -> w.name.asJson))
             ).flatMap(w => Created(WorkspaceDto(w.id, w.name, Role.Edit)))
-          case _ => err(Status.BadRequest, "name is required")
+          case _ => err(Status.BadRequest, "名前を入力してください（200文字まで）")
         }
       }
 
@@ -194,13 +194,13 @@ final class ApiRoutes(
     case req @ PATCH -> Root / "api" / "pages" / UUIDVar(id) =>
       withPage(req, id, Role.Edit) { (s, p, r) =>
         body[UpdatePageReq](req) {
-          case b if b.icon.flatten.exists(_.length > 32) => err(Status.BadRequest, "icon too long")
-          case b if b.status.flatten.exists(st => !UpdatePageReq.Statuses(st)) => err(Status.BadRequest, "invalid status")
+          case b if b.icon.flatten.exists(_.length > 32) => err(Status.BadRequest, "アイコンが長すぎます")
+          case b if b.status.flatten.exists(st => !UpdatePageReq.Statuses(st)) => err(Status.BadRequest, "状態が正しくありません")
           case b =>
             store.pageMeta(List(id)).map(_.get(id).flatMap(_.status)).flatMap { oldStatus =>
             b.fullWidth.traverse_(store.setFullWidth(id, _)) *>
             store.setPageMeta(id, b.ownerId, b.status).flatMap {
-              case false => err(Status.BadRequest, "owner not found")
+              case false => err(Status.BadRequest, "所有者が見つかりません")
               case true =>
                 store.updatePage(id, b.title, b.icon).flatMap {
                   case Some(np) =>
@@ -217,7 +217,7 @@ final class ApiRoutes(
                           automations.traverse_(_.fire(AutoEvent("status_changed", p.workspaceId, id, s.user.name, io.circe.JsonObject("status" -> st.asJson))))
                         case _ => IO.unit) *>
                       fullDto(np, r).flatMap(Ok(_))
-                  case None => err(Status.NotFound, "page not found")
+                  case None => err(Status.NotFound, "ページが見つかりません")
                 }
             }
             }
@@ -271,7 +271,7 @@ final class ApiRoutes(
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "acl" =>
       withPage(req, id, Role.Edit) { (_, _, _) =>
         store.getPageAcl(id).flatMap {
-          case None    => err(Status.NotFound, "page not found")
+          case None    => err(Status.NotFound, "ページが見つかりません")
           case Some(a) => aclView(a.entries, a.expires).flatMap(v => Ok(AclViewDto(a.inherit, v)))
         }
       }
@@ -290,7 +290,7 @@ final class ApiRoutes(
             before <- store.getPageAcl(id).map(_.fold(List.empty[AclEntry])(_.entries))
             ok     <- store.setPageAcl(id, PageAcl(b.inherit, safe, expiries(b.entries)))
             resp <-
-              if !ok then err(Status.NotFound, "page not found")
+              if !ok then err(Status.NotFound, "ページが見つかりません")
               else
                 audit.log(s, "page.acl", "page", id, Json.obj("inherit" -> b.inherit.asJson, "entries" -> aclJson(safe))) *>
                   notifyShared(s, Some(id), None, granted(before, safe)) *>
@@ -333,7 +333,7 @@ final class ApiRoutes(
       withPage(req, id, Role.View) { (_, _, _) =>
         docs.getVersion(id, vid).flatMap {
           case Some((m, json, text)) => Ok(VersionContentDto(versionDto(m), parseOrNull(json), text))
-          case None                  => err(Status.NotFound, "version not found")
+          case None                  => err(Status.NotFound, "版が見つかりません")
         }
       }
 
@@ -343,14 +343,14 @@ final class ApiRoutes(
         body[DocStateReq](req) {
           case b if b.content.isObject =>
             decodeYdoc(b.ydoc) match
-              case None => err(Status.BadRequest, "invalid ydoc")
+              case None => err(Status.BadRequest, "ページの中身（Yjs）が正しくありません")
               case Some(y) =>
                 val label = b.label.map(_.trim).filter(_.nonEmpty).map(_.take(200))
                 docs.createVersion(id, y, b.content.noSpaces, b.text, s.user.id, label).flatMap { vid =>
                   audit.log(s, "page.version.create", "page", id, Json.obj("versionId" -> vid.toString.asJson, "label" -> label.asJson)) *>
                     docs.getVersion(id, vid).flatMap(v => Created(versionDto(v.get._1)))
                 }
-          case _ => err(Status.BadRequest, "invalid body")
+          case _ => err(Status.BadRequest, "リクエストの本文が正しくありません")
         }
       }
 
@@ -360,10 +360,10 @@ final class ApiRoutes(
         body[DocStateReq](req) {
           case b if b.content.isObject =>
             decodeYdoc(b.ydoc) match
-              case None => err(Status.BadRequest, "invalid ydoc")
+              case None => err(Status.BadRequest, "ページの中身（Yjs）が正しくありません")
               case Some(y) =>
                 docs.getVersion(id, vid).flatMap {
-                  case None => err(Status.NotFound, "version not found")
+                  case None => err(Status.NotFound, "版が見つかりません")
                   case Some((m, json, text)) =>
                     val when = m.createdAt.toString
                     for
@@ -373,7 +373,7 @@ final class ApiRoutes(
                       resp   <- Ok(VersionContentDto(versionDto(m), parseOrNull(json), text))
                     yield resp
                 }
-          case _ => err(Status.BadRequest, "invalid body")
+          case _ => err(Status.BadRequest, "リクエストの本文が正しくありません")
         }
       }
   }

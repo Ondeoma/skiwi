@@ -19,7 +19,7 @@ enum StoreError:
 
   /** 利用者に返す文言 */
   def message: String = this match
-    case NotFound(w) => s"$w not found"
+    case NotFound(w) => s"${w}が見つかりません"
     case Invalid(m)  => m
 
 /** expires: 期限付きのエントリの期限 */
@@ -55,17 +55,20 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
   // ---------------------------------------------------------------- users / groups
 
   /** ログインのたびに作成・更新する（メール・名前・アイコンの URL は IdP の値に合わせる）. */
-  def upsertUser(sub: String, email: Option[String], name: String, picture: Option[String] = None): IO[User] = tx(
-    sql"""insert into app_user (oidc_sub, email, name, picture_url) values ($sub, $email, $name, $picture)
-          on conflict (oidc_sub) do update set email = excluded.email, name = excluded.name, picture_url = excluded.picture_url
-          returning id, oidc_sub, email, name""".query[User].unique
+  def upsertUser(sub: String, email: Option[String], name: String, picture: Option[String] = None): IO[User] =
+    // エージェント専用アカウント（AgentAccounts）にはログインさせない
+    if AgentAccounts.isAgent(sub) then IO.raiseError(new IllegalArgumentException("agent accounts cannot log in"))
+    else tx(
+    sql"""insert into app_user (sub, email, name, avatar_url) values ($sub, $email, $name, $picture)
+          on conflict (sub) do update set email = excluded.email, name = excluded.name, avatar_url = excluded.avatar_url
+          returning id, sub, email, name""".query[User].unique
   )
 
   /** ログイン時にIdPのgroupsクレームでメンバーシップを置き換える（SCIM導入後はSCIMを正とする）。 */
   def syncGroups(userId: UUID, groupNames: List[String]): IO[Unit] = tx {
     val names = groupNames.distinct.toArray
     for
-      ids <- sql"""insert into app_group (external_id, name) select g, g from unnest($names::text[]) g
+      ids <- sql"""insert into user_group (external_id, name) select g, g from unnest($names::text[]) g
                    on conflict (external_id) do update set name = excluded.name
                    returning id""".query[UUID].to[List]
       _ <- sql"delete from group_member where user_id = $userId".update.run
@@ -77,7 +80,7 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
 
   /** 有効なユーザーとそのグループ（メール送信時の権限確認用）。 */
   def userWithGroups(userId: UUID): IO[Option[(User, List[Group])]] = tx {
-    sql"select id, oidc_sub, email, name from app_user where id = $userId and active".query[User].option.flatMap {
+    sql"select id, sub, email, name from app_user where id = $userId and not disabled".query[User].option.flatMap {
       case None => none[(User, List[Group])].pure[ConnectionIO]
       case Some(u) => groupsOfC(userId).map(gs => Some((u, gs)))
     }
@@ -88,7 +91,7 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
     else tx(sql"select id, name from app_user where id = any(${ids.distinct.toArray})".query[(UUID, String)].to[List].map(_.toMap))
 
   def isActive(userId: UUID): IO[Boolean] = tx(
-    sql"select active from app_user where id = $userId".query[Boolean].option.map(_.getOrElse(false))
+    sql"select not disabled from app_user where id = $userId".query[Boolean].option.map(_.getOrElse(false))
   )
 
   // ---------------------------------------------------------------- sessions / oidc state
@@ -103,9 +106,9 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
   )
 
   def findSession(tokenHash: Array[Byte], now: Instant): IO[Option[(User, List[Group])]] = tx {
-    sql"""select u.id, u.oidc_sub, u.email, u.name
+    sql"""select u.id, u.sub, u.email, u.name
           from session s join app_user u on u.id = s.user_id
-          where s.token_hash = $tokenHash and s.expires_at > $now and u.active"""
+          where s.token_hash = $tokenHash and s.expires_at > $now and not u.disabled"""
       .query[User].option.flatMap {
         case None => none[(User, List[Group])].pure[ConnectionIO]
         case Some(u) => groupsOfC(u.id).map(gs => Some((u, gs)))
@@ -119,15 +122,15 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
   /** returnTo: ログイン後の戻り先（同じサイトの相対パス。確認済みのものだけ渡す） */
   def saveLoginState(state: String, verifier: String, nonce: String, now: Instant, returnTo: Option[String] = None): IO[Unit] = tx {
     val cutoff = now.minusSeconds(600)
-    sql"delete from oidc_login where created_at < $cutoff".update.run *>
-      sql"insert into oidc_login (state, code_verifier, nonce, return_to) values ($state, $verifier, $nonce, $returnTo)".update.run.void
+    sql"delete from login_state where created_at < $cutoff".update.run *>
+      sql"insert into login_state (state, verifier, nonce, return_to) values ($state, $verifier, $nonce, $returnTo)".update.run.void
   }
 
   /** state を1回だけ消費して (verifier, nonce, 戻り先) を返す。 */
   def takeLoginState(state: String, now: Instant): IO[Option[(String, String, Option[String])]] = tx {
     val cutoff = now.minusSeconds(600)
-    sql"""delete from oidc_login where state = $state and created_at >= $cutoff
-          returning code_verifier, nonce, return_to""".query[(String, String, Option[String])].option
+    sql"""delete from login_state where state = $state and created_at >= $cutoff
+          returning verifier, nonce, return_to""".query[(String, String, Option[String])].option
   }
 
   // ---------------------------------------------------------------- workspaces
@@ -170,7 +173,7 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
 
   def setWorkspaceAcl(id: UUID, defaultRole: Option[Role], entries: List[AclEntry], expires: Map[Principal, Instant] = Map.empty): IO[Either[StoreError, Unit]] = tx {
     getWorkspaceC(id).flatMap {
-      case None => Left(StoreError.NotFound("workspace")).pure[ConnectionIO].widen
+      case None => Left(StoreError.NotFound("ワークスペース")).pure[ConnectionIO].widen
       case Some(_) =>
         for
           _ <- sql"update workspace set default_role = $defaultRole where id = $id".update.run
@@ -403,7 +406,7 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
       case Some(pid) =>
         getPageC(pid).map {
           case Some(p) if p.workspaceId == wsId => Right(())
-          case _                                => Left(StoreError.NotFound("parent page"))
+          case _                                => Left(StoreError.NotFound("親ページ"))
         }
     parentOk.flatMap {
       case Left(e) => Left(e).pure[ConnectionIO].widen
@@ -436,7 +439,7 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
                   from unnest($positions::text[], $titles::text[], $props::text[]) with ordinality as m(pos, title, props, ord)"""
               .update.run.map(Right(_))
           }
-        case _ => Left(StoreError.NotFound("parent page")).pure[ConnectionIO].widen
+        case _ => Left(StoreError.NotFound("親ページ")).pure[ConnectionIO].widen
       }
     }
 
@@ -450,7 +453,7 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
   /** 親・位置を変更する。自分自身や子孫の下への移動は拒否。 */
   def movePage(id: UUID, newParent: Option[UUID], placement: Placement): IO[Either[StoreError, Page]] = tx {
     getPageC(id).flatMap {
-      case None => Left(StoreError.NotFound("page")).pure[ConnectionIO].widen
+      case None => Left(StoreError.NotFound("ページ")).pure[ConnectionIO].widen
       case Some(page) =>
         val cycle: ConnectionIO[Boolean] = newParent match
           case None => false.pure[ConnectionIO]
@@ -463,8 +466,8 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
           case None => true.pure[ConnectionIO]
           case Some(np) => getPageC(np).map(_.exists(_.workspaceId == page.workspaceId))
         (parentOk, cycle).tupled.flatMap {
-          case (false, _) => Left(StoreError.NotFound("parent page")).pure[ConnectionIO].widen
-          case (_, true)  => Left(StoreError.Invalid("cannot move a page under itself or its descendant")).pure[ConnectionIO].widen
+          case (false, _) => Left(StoreError.NotFound("親ページ")).pure[ConnectionIO].widen
+          case (_, true)  => Left(StoreError.Invalid("自分自身や子ページの下には移動できません")).pure[ConnectionIO].widen
           case _ =>
             siblingsC(page.workspaceId, newParent, Some(id)).flatMap { sib =>
               FractionalIndex.place(sib, placement) match
@@ -516,15 +519,15 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
                              select id, parent_id, title, 0 as d from page where id = $pageId
                              union all select p.id, p.parent_id, p.title, c.d + 1 from page p join c on p.id = c.parent_id
                            ) select title from c order by d""".query[String].to[List]
-          users  <- sql"""select u.id, u.name, u.email,
+          users  <- sql"""select u.id, u.sub, u.name, u.email,
                                   coalesce(array_agg(g.id) filter (where g.id is not null), '{}'),
                                   coalesce(array_agg(g.external_id) filter (where g.id is not null), '{}')
-                           from app_user u left join group_member m on m.user_id = u.id left join app_group g on g.id = m.group_id
-                           where u.active group by u.id, u.name, u.email order by u.name"""
-                      .query[(UUID, String, Option[String], List[UUID], List[String])].to[List]
+                           from app_user u left join group_member m on m.user_id = u.id left join user_group g on g.id = m.group_id
+                           where not u.disabled group by u.id, u.sub, u.name, u.email order by u.name"""
+                      .query[(UUID, String, String, Option[String], List[UUID], List[String])].to[List]
         yield
-          val entries = users.flatMap { (id, name, email, gids, gext) =>
-            if gext.exists(adminGroups) then Some(AudienceEntry(id, name, email, Role.Edit, None))
+          val entries = users.flatMap { (id, sub, name, email, gids, gext) =>
+            if AgentAccounts.isAdmin(sub, gext, adminGroups) then Some(AudienceEntry(id, name, email, Role.Edit, None))
             else
               val who = gids.map(Principal(PrincipalType.Group, _)).toSet + Principal(PrincipalType.User, id)
               Acl.explain(chain, wsAcl, ws.flatMap(_.defaultRole), who).map((r, src) => AudienceEntry(id, name, email, r, Some(src)))
@@ -546,16 +549,16 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
             ws     <- getWorkspaceC(p.workspaceId)
             wsAcl  <- workspaceAclC(p.workspaceId)
             chain  <- aclChainC(pageId)
-            us     <- sql"""select u.id, coalesce(array_agg(g.id) filter (where g.id is not null), '{}'),
+            us     <- sql"""select u.id, u.sub, coalesce(array_agg(g.id) filter (where g.id is not null), '{}'),
                                    coalesce(array_agg(g.external_id) filter (where g.id is not null), '{}')
-                            from app_user u left join group_member m on m.user_id = u.id left join app_group g on g.id = m.group_id
-                            where u.active and u.id = any($arr) group by u.id"""
-                        .query[(UUID, List[UUID], List[String])].to[List]
+                            from app_user u left join group_member m on m.user_id = u.id left join user_group g on g.id = m.group_id
+                            where not u.disabled and u.id = any($arr) group by u.id, u.sub"""
+                        .query[(UUID, String, List[UUID], List[String])].to[List]
             lockedOut <- (fr"select x from unnest($arr::uuid[]) x join page on page.id = $pageId where" ++ lockedOutForFr(fr"x"))
                            .query[UUID].to[List].map(_.toSet)
-          yield us.flatMap { (id, gids, gext) =>
+          yield us.flatMap { (id, sub, gids, gext) =>
             val role =
-              if gext.exists(adminGroups) then Some(Role.Edit)
+              if AgentAccounts.isAdmin(sub, gext, adminGroups) then Some(Role.Edit)
               else Acl.resolve(chain, wsAcl, ws.flatMap(_.defaultRole), gids.map(Principal(PrincipalType.Group, _)).toSet + Principal(PrincipalType.User, id))
             role.map(r => id -> (if r == Role.Edit && lockedOut(id) then Role.View else r))
           }.toMap
@@ -591,7 +594,7 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
   def restorePage(id: UUID): IO[Either[StoreError, Page]] = tx {
     sql"select deleted_at from page where id = $id and deleted_root = $id and deleted_at is not null"
       .query[Instant].option.flatMap {
-        case None => Left(StoreError.NotFound("trashed page")).pure[ConnectionIO].widen
+        case None => Left(StoreError.NotFound("ゴミ箱のページ")).pure[ConnectionIO].widen
         case Some(at) =>
           for
             page   <- getPageAnyC(id).map(_.get)
@@ -716,7 +719,7 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
 
   /** owner / status: None=変更しない、Some(None)=外す。所有者は存在するユーザーのみ（いなければ false） */
   def setPageMeta(id: UUID, owner: Option[Option[UUID]], status: Option[Option[String]]): IO[Boolean] = tx {
-    val ownerOk = owner.flatten.fold(true.pure[ConnectionIO])(o => sql"select exists(select 1 from app_user where id = $o and active)".query[Boolean].unique)
+    val ownerOk = owner.flatten.fold(true.pure[ConnectionIO])(o => sql"select exists(select 1 from app_user where id = $o and not disabled)".query[Boolean].unique)
     ownerOk.flatMap {
       case false => false.pure[ConnectionIO]
       case true =>
@@ -822,10 +825,10 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
   /** ページを子孫ごと別のワークスペースへ移す（親は移動先のページ、なければ直下）。 */
   def moveToWorkspace(id: UUID, targetWs: UUID, newParent: Option[UUID], placement: Placement): IO[Either[StoreError, Page]] = tx {
     (getPageC(id), getWorkspaceC(targetWs), newParent.flatTraverse(getPageC)).tupled.flatMap {
-      case (None, _, _) => Left(StoreError.NotFound("page")).pure[ConnectionIO].widen
-      case (_, None, _) => Left(StoreError.NotFound("workspace")).pure[ConnectionIO].widen
-      case (_, _, None) if newParent.isDefined => Left(StoreError.NotFound("parent page")).pure[ConnectionIO].widen
-      case (_, _, Some(pp)) if pp.workspaceId != targetWs => Left(StoreError.Invalid("parent page is in another workspace")).pure[ConnectionIO].widen
+      case (None, _, _) => Left(StoreError.NotFound("ページ")).pure[ConnectionIO].widen
+      case (_, None, _) => Left(StoreError.NotFound("ワークスペース")).pure[ConnectionIO].widen
+      case (_, _, None) if newParent.isDefined => Left(StoreError.NotFound("親ページ")).pure[ConnectionIO].widen
+      case (_, _, Some(pp)) if pp.workspaceId != targetWs => Left(StoreError.Invalid("親ページが別のワークスペースにあります")).pure[ConnectionIO].widen
       case (Some(_), Some(_), _) =>
         siblingsC(targetWs, newParent, Some(id)).flatMap { sib =>
           FractionalIndex.place(sib, placement) match
@@ -906,14 +909,14 @@ final class Store(xa: Transactor[IO]) extends TxStore(xa):
       case None      => true.pure[ConnectionIO]
       case Some(pid) => getPageC(pid).map(_.exists(_.workspaceId == targetWs))
     (rowsC, parentOk).tupled.flatMap {
-      case (Nil, _)   => Left(StoreError.NotFound("page")).pure[ConnectionIO].widen
-      case (_, false) => Left(StoreError.NotFound("parent page")).pure[ConnectionIO].widen
+      case (Nil, _)   => Left(StoreError.NotFound("ページ")).pure[ConnectionIO].widen
+      case (_, false) => Left(StoreError.NotFound("親ページ")).pure[ConnectionIO].widen
       case (rows, _) =>
         // 起点は必ず含める。子は、閲覧でき、かつ親が複製されるものだけ（rows は浅い順なので親が先に決まる）
         val kept = rows.tail.foldLeft((Vector(rows.head), Set(rows.head._1))) { case ((acc, seen), r) =>
           if visible(r._1) && r._2.exists(seen) then (acc :+ r, seen + r._1) else (acc, seen)
         }._1.toList
-        if kept.size > maxPages then Left(StoreError.Invalid(s"too many pages (max $maxPages)")).pure[ConnectionIO].widen
+        if kept.size > maxPages then Left(StoreError.Invalid(s"ページが多すぎます（${maxPages}ページまで）")).pure[ConnectionIO].widen
         else
           val ids = kept.map(r => r._1 -> UUID.randomUUID()).toMap
           siblingsC(targetWs, targetParent, None).flatMap { sib =>

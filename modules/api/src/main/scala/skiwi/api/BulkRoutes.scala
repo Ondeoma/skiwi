@@ -28,16 +28,15 @@ final case class BulkReq(
 )
 object BulkReq:
   given Decoder[BulkReq] = Decoder.instance { c =>
-    def tri[A: Decoder](k: String) = c.downField(k).success.fold(Right(None): Decoder.Result[Option[Option[A]]])(f => f.as[Option[A]].map(Some(_)))
     for
       ids    <- c.get[List[UUID]]("ids")
       action <- c.get[String]("action")
-      parent <- tri[UUID]("parentId")
+      parent <- tri[UUID](c, "parentId")
       ws     <- c.get[Option[UUID]]("workspaceId")
       add    <- c.get[Option[List[String]]]("addLabels")
       rm     <- c.get[Option[List[String]]]("removeLabels")
-      owner  <- tri[UUID]("ownerId")
-      status <- tri[String]("status")
+      owner  <- tri[UUID](c, "ownerId")
+      status <- tri[String](c, "status")
     yield BulkReq(ids, action, parent, ws, add.getOrElse(Nil), rm.getOrElse(Nil), owner, status)
   }
 final case class BulkFailDto(id: UUID, title: Option[String], error: String) derives Encoder.AsObject
@@ -53,18 +52,18 @@ final class BulkRoutes(protected val store: Store, protected val sessions: Sessi
   /** 親（なければワークスペース直下）に子を作れるか（作れなければ理由） */
   private def targetError(s: AuthSession, wsId: UUID, parent: Option[UUID]): IO[Option[String]] =
     canEditUnder(s, wsId, parent).map(_.swap.toOption.map {
-      case EditUnderError.Forbidden         => "insufficient permission on target"
-      case EditUnderError.ParentNotFound    => "target page not found"
-      case EditUnderError.WorkspaceNotFound => "workspace not found"
+      case EditUnderError.Forbidden         => "移動先の権限がありません"
+      case EditUnderError.ParentNotFound    => "移動先のページが見つかりません"
+      case EditUnderError.WorkspaceNotFound => "ワークスペースが見つかりません"
     })
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "api" / "pages" / "bulk" =>
       authed(req) { s =>
         body[BulkReq](req) {
-          case b if b.ids.isEmpty || b.ids.size > MaxPages => err(Status.BadRequest, s"select 1-$MaxPages pages")
-          case b if !Set("move", "delete", "labels", "owner", "status").contains(b.action) => err(Status.BadRequest, "invalid action")
-          case b if b.status.flatten.exists(st => !UpdatePageReq.Statuses(st)) => err(Status.BadRequest, "invalid status")
+          case b if b.ids.isEmpty || b.ids.size > MaxPages => err(Status.BadRequest, s"ページを1〜${MaxPages}件選んでください")
+          case b if !Set("move", "delete", "labels", "owner", "status").contains(b.action) => err(Status.BadRequest, "アクションが正しくありません")
+          case b if b.status.flatten.exists(st => !UpdatePageReq.Statuses(st)) => err(Status.BadRequest, "状態が正しくありません")
           case b => run(s, b)
         }
       }
@@ -73,9 +72,9 @@ final class BulkRoutes(protected val store: Store, protected val sessions: Sessi
   private def run(s: AuthSession, b: BulkReq): IO[Response[IO]] =
     val ids = b.ids.distinct
     store.pagesAccess(ids, s).flatMap { found =>
-      val notFound = ids.filterNot(found.contains).map(id => BulkFailDto(id, None, "page not found"))
+      val notFound = ids.filterNot(found.contains).map(id => BulkFailDto(id, None, "ページが見つかりません"))
       val wsIds = found.values.map(_._1.workspaceId).toSet
-      if wsIds.size > 1 then err(Status.BadRequest, "pages must be in the same workspace")
+      if wsIds.size > 1 then err(Status.BadRequest, "同じワークスペースのページを選んでください")
       else if found.isEmpty then Ok(BulkResultDto(Nil, Nil, notFound))
       else
         val wsId = wsIds.head
@@ -86,7 +85,7 @@ final class BulkRoutes(protected val store: Store, protected val sessions: Sessi
             Iterator.iterate(parentOf.get(id).flatten)(_.flatMap(p => parentOf.get(p).flatten)).takeWhile(_.isDefined).flatten.exists(found.contains)
           val treeAction = b.action == "move" || b.action == "delete"
           val (skipped, targets) = ids.filter(found.contains).partition(id => treeAction && underSelected(id))
-          val denied = targets.filter(id => found(id)._2 == Role.View).map(id => BulkFailDto(id, Some(found(id)._1.title), "insufficient permission"))
+          val denied = targets.filter(id => found(id)._2 == Role.View).map(id => BulkFailDto(id, Some(found(id)._1.title), "権限がありません"))
           val todo = targets.filterNot(id => found(id)._2 == Role.View)
           perform(s, b, wsId, todo.map(found(_)._1)).flatMap { (done, failed) =>
             val detail = Json.obj("action" -> b.action.asJson, "count" -> done.size.asJson, "titles" -> todo.filter(done.contains).take(50).map(found(_)._1.title).asJson)
@@ -133,9 +132,9 @@ final class BulkRoutes(protected val store: Store, protected val sessions: Sessi
               (if added.isEmpty then IO.unit else automations.traverse_(_.fire(AutoEvent("label_added", wsId, p.id, s.user.name, io.circe.JsonObject("labels" -> added.asJson))))).as(None)
           }
         }
-      case "owner"  => each(p => store.setPageMeta(p.id, b.ownerId.orElse(Some(None)), None).map(ok => Option.when(!ok)("owner not found")))
+      case "owner"  => each(p => store.setPageMeta(p.id, b.ownerId.orElse(Some(None)), None).map(ok => Option.when(!ok)("所有者が見つかりません")))
       case "status" => each(p => store.setPageMeta(p.id, None, b.status.orElse(Some(None))).flatMap { ok =>
           (if ok then automations.traverse_(_.fire(AutoEvent("status_changed", wsId, p.id, s.user.name, io.circe.JsonObject("status" -> b.status.flatten.asJson)))) else IO.unit)
-            .as(Option.when(!ok)("page not found"))
+            .as(Option.when(!ok)("ページが見つかりません"))
         })
       case _        => IO.pure((Nil, Nil))

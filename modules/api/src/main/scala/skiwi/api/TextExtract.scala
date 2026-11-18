@@ -106,7 +106,7 @@ object TextExtract:
     private def take(n: Int): Int =
       if n > 0 then
         budget.left -= n
-        if budget.left < 0 then throw new IllegalStateException("archive too large when uncompressed")
+        if budget.left < 0 then throw new IllegalStateException("展開すると大きすぎるファイルです")
       n
     override def read(): Int = { val r = super.read(); if r >= 0 then take(1); r }
     override def read(b: Array[Byte], off: Int, len: Int): Int = take(super.read(b, off, len))

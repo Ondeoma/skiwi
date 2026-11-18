@@ -49,8 +49,6 @@ final class CssRoutes(protected val store: Store, protected val sessions: Sessio
     s.fold(IO.pure(Map.empty[UUID, String]))(ss => store.pagesAccess(ids, ss).map(_.view.mapValues(_._1.title).toMap))
 
   val MaxHtml = 50000
-  private def withEditor(req: Request[IO], id: UUID)(f: (AuthSession, Page) => IO[Response[IO]]) =
-    withPage(req, id, Role.Edit)((s, p, _) => f(s, p))
   private def tooLong(b: SetGuestHtmlReq) = b.top.exists(_.length > MaxHtml) || b.bottom.exists(_.length > MaxHtml)
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -70,7 +68,7 @@ final class CssRoutes(protected val store: Store, protected val sessions: Sessio
     case req @ PUT -> Root / "api" / "pages" / UUIDVar(id) / "guest-html" =>
       withEditor(req, id) { (s, p) =>
         body[SetGuestHtmlReq](req) {
-          case b if tooLong(b) => err(Status.BadRequest, s"html must be at most $MaxHtml characters")
+          case b if tooLong(b) => err(Status.BadRequest, s"HTML は${MaxHtml}文字までです")
           case b =>
             store.setPageGuestHtml(id, clean(b.top), clean(b.bottom), b.inherit.getOrElse(true)) *>
               audit.log(s, "page.guest_html", "page", id, Json.obj("title" -> p.title.asJson,
@@ -84,7 +82,7 @@ final class CssRoutes(protected val store: Store, protected val sessions: Sessio
     case req @ PUT -> Root / "api" / "workspaces" / UUIDVar(id) / "guest-html" =>
       withWs(req, id, Role.Edit) { (s, w, _) =>
         body[SetGuestHtmlReq](req) {
-          case b if tooLong(b) => err(Status.BadRequest, s"html must be at most $MaxHtml characters")
+          case b if tooLong(b) => err(Status.BadRequest, s"HTML は${MaxHtml}文字までです")
           case b =>
             store.setWorkspaceGuestHtml(id, clean(b.top), clean(b.bottom)) *>
               audit.log(s, "workspace.guest_html", "workspace", id, Json.obj("name" -> w.name.asJson)) *> NoContent()
@@ -99,7 +97,7 @@ final class CssRoutes(protected val store: Store, protected val sessions: Sessio
     case req @ PUT -> Root / "api" / "pages" / UUIDVar(id) / "css" =>
       withEditor(req, id) { (s, p) =>
         body[SetPageCssReq](req) {
-          case b if b.css.exists(_.length > MaxLength) => err(Status.BadRequest, s"css must be at most $MaxLength characters")
+          case b if b.css.exists(_.length > MaxLength) => err(Status.BadRequest, s"CSS は${MaxLength}文字までです")
           case b =>
             store.setPageCss(id, clean(b.css), b.inherit) *>
               audit.log(s, "page.css", "page", id, Json.obj("title" -> p.title.asJson, "length" -> clean(b.css).fold(0)(_.length).asJson, "inherit" -> b.inherit.asJson)) *>
@@ -113,7 +111,7 @@ final class CssRoutes(protected val store: Store, protected val sessions: Sessio
     case req @ PUT -> Root / "api" / "workspaces" / UUIDVar(id) / "css" =>
       withWs(req, id, Role.Edit) { (s, w, _) =>
         body[WorkspaceCssDto](req) {
-          case b if b.css.exists(_.length > MaxLength) => err(Status.BadRequest, s"css must be at most $MaxLength characters")
+          case b if b.css.exists(_.length > MaxLength) => err(Status.BadRequest, s"CSS は${MaxLength}文字までです")
           case b =>
             store.setWorkspaceCss(id, clean(b.css)) *>
               audit.log(s, "workspace.css", "workspace", id, Json.obj("name" -> w.name.asJson, "length" -> clean(b.css).fold(0)(_.length).asJson)) *>

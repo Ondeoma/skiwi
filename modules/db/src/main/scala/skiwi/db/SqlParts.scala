@@ -23,7 +23,7 @@ private[db] object SqlParts:
 
   /** ユーザーが属するグループ */
   def groupsOfC(userId: UUID): ConnectionIO[List[Group]] =
-    sql"""select g.id, g.external_id, g.name from app_group g
+    sql"""select g.id, g.external_id, g.name from user_group g
           join group_member m on m.group_id = g.id where m.user_id = $userId""".query[Group].to[List]
 
 /** 各メソッドを1トランザクションで実行するストアの共通部分。 */

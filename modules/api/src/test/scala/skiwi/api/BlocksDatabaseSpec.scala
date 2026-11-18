@@ -31,6 +31,8 @@ class BlocksDatabaseSpec extends DbSuite:
         rate  <- Resource.eval(Ref.of[IO, Map[UUID, List[Long]]](Map.empty))
         cache <- Resource.eval(Ref.of[IO, Map[String, (Long, UnfurlDto)]](Map.empty))
         cache2 <- Resource.eval(Ref.of[IO, Map[String, (Long, UnfurlDto)]](Map.empty))
+        guarded <- NetGuard.client(allowPrivate = false)
+        open    <- NetGuard.client(allowPrivate = true)
       yield
         val store = new Store(xa)
         val ops   = new OpsStore(xa)
@@ -42,8 +44,8 @@ class BlocksDatabaseSpec extends DbSuite:
           new DatabaseRoutes(store, dbSt, ops, sess, audit).routes <+>
           new ApiRoutes(store, docs, ops, sess, audit, IO.unit, None, None, Some(dbSt)).routes
         Env(store,
-          (new UnfurlRoutes(sess, allowPrivate = false, cache).routes <+> common).orNotFound,
-          (new UnfurlRoutes(sess, allowPrivate = true, cache2).routes <+> common).orNotFound)
+          (new UnfurlRoutes(sess, guarded, cache).routes <+> common).orNotFound,
+          (new UnfurlRoutes(sess, open, cache2).routes <+> common).orNotFound)
 
   private val fixture = ResourceSuiteLocalFixture("blocksdatabase", res)
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil

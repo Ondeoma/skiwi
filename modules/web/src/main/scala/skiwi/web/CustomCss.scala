@@ -146,6 +146,41 @@ object CustomCss {
       }
     }
 
+  /** 利用者が @font-face・@keyframes で定義した名前に付ける接頭辞.
+    * 名前は文書全体に効くので、そのままだと画面（ツールバーなど）のフォントやアニメーションを置き換えられてしまう */
+  private val NamePrefix = "skiwi-u-"
+  private val NameProps  = List("font-family", "font", "animation", "animation-name")
+
+  private def unquote(s: String): String = jsTrim(s).stripPrefix("\"").stripSuffix("\"").stripPrefix("'").stripSuffix("'")
+
+  /** 定義した名前（フォント・キーフレーム）に接頭辞を付け、それを使う宣言も書き換える */
+  private def renameDefinitions(rules: js.Dynamic): Unit = {
+    def all(rs: js.Dynamic): List[js.Dynamic] = ruleList(rs).flatMap(r => r :: all(r.cssRules))
+    val rs = all(rules)
+    val names = rs.flatMap { r =>
+      if (is(r, "CSSFontFaceRule")) Some(unquote(r.style.getPropertyValue("font-family").asInstanceOf[String]))
+      else if (is(r, "CSSKeyframesRule")) Some(r.name.asInstanceOf[String])
+      else None
+    }.filter(_.nonEmpty).distinct
+    if (names.nonEmpty) {
+      def esc(n: String) = n.asInstanceOf[js.Dynamic].replace(re("""[.*+?^${}()|[\]\\]""", "g"), "\\$&").asInstanceOf[String]
+      // 引用符付き・なしのどちらの書き方でも、区切り（先頭・カンマ・空白）に挟まれた名前だけを置き換える
+      val pattern = re(raw"""(^|[\s,])(["']?)(${names.map(esc).mkString("|")})\2(?=$$|[\s,;!])""", "g")
+      def renameIn(style: js.Dynamic): Unit =
+        if (!js.isUndefined(style) && style != null) NameProps.foreach { prop =>
+          val v = style.getPropertyValue(prop).asInstanceOf[String]
+          if (v.nonEmpty) {
+            val nv = v.asInstanceOf[js.Dynamic].replace(pattern, s"$$1\"$NamePrefix$$3\"").asInstanceOf[String]
+            if (nv != v) style.setProperty(prop, nv, style.getPropertyPriority(prop))
+          }
+        }
+      rs.foreach { r =>
+        if (is(r, "CSSKeyframesRule")) r.name = NamePrefix + r.name.asInstanceOf[String]
+        else renameIn(r.style)
+      }
+    }
+  }
+
   /** CSS を範囲限定・安全化する. 解析できない部分はブラウザの規則どおり読み飛ばされる */
   def scopeCss(raw: String, scope: String = PageScope, mapUrl: MapUrl = None): Scoped = {
     val warnings = mutable.LinkedHashSet.empty[String]
@@ -158,6 +193,7 @@ object CustomCss {
       if (!parsed) Scoped("", List("CSS を解析できませんでした"))
       else {
         val out = mutable.ListBuffer.empty[String]
+        renameDefinitions(sheet.cssRules)
         processRules(sheet.cssRules, scope, out, warn, mapUrl)
         Scoped(out.mkString("\n"), warnings.toList)
       }

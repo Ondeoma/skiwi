@@ -1,5 +1,7 @@
 package skiwi.api
 
+import skiwi.shared.Titles
+
 import cats.effect.*
 import cats.syntax.all.*
 import io.circe.{Decoder, Encoder, Json, JsonObject}
@@ -84,7 +86,7 @@ final class Automations(
             }
           case Some("webhook") =>
             s("webhook").flatMap(uuidOpt) match
-              case None    => IO.raiseError(new IllegalArgumentException("webhook not set"))
+              case None    => IO.raiseError(new IllegalArgumentException("Webhook が設定されていません"))
               case Some(h) => hooks.enqueueTo(h, "automation", ev.pageId, Json.obj("text" -> message.asJson, "rule" -> r.name.asJson, "actor" -> ev.actor.asJson).noSpaces).void
           case Some("set_status") =>
             store.setPageMeta(ev.pageId, None, Some(s("status").filter(UpdatePageReq.Statuses))).void
@@ -95,7 +97,7 @@ final class Automations(
     }
 
   private def titleOf(pageId: UUID): IO[String] =
-    store.pageTitle(pageId).map(_.filter(_.trim.nonEmpty).getOrElse("無題"))
+    store.pageTitle(pageId).map(Titles.display(_))
 
   /** 通知する人 */
   private def recipients(a: io.circe.ACursor, ev: AutoEvent, owner: Option[UUID]): IO[Set[UUID]] =
@@ -163,22 +165,21 @@ final case class SaveAutomationReq(name: Option[String], enabled: Option[Boolean
 
 object AutomationSchema:
   val Triggers = Set("status_changed", "label_added", "page_created", "value_changed", "date_reached")
-  val Actions = Set("notify", "webhook", "set_status", "add_label")
   private def uuid(s: Option[String]) = s.exists(uuidOpt(_).isDefined)
 
   def trigger(j: Json): Either[String, Unit] =
     val c = j.hcursor
     def s(k: String) = c.get[String](k).toOption.filter(_.nonEmpty)
     s("type") match
-      case Some(t) if !Triggers(t) => Left("invalid trigger")
-      case None => Left("invalid trigger")
+      case Some(t) if !Triggers(t) => Left("きっかけが正しくありません")
+      case None => Left("きっかけが正しくありません")
       case Some(t) =>
-        if s("under").exists(u => !uuid(Some(u))) then Left("invalid trigger: under")
+        if s("under").exists(u => !uuid(Some(u))) then Left("きっかけの対象のページが正しくありません")
         else t match
-          case "label_added" if s("label").isEmpty => Left("trigger needs a label")
-          case "value_changed" | "date_reached" if !uuid(s("database")) || s("prop").isEmpty => Left("trigger needs a database and a column")
-          case "status_changed" if s("to").exists(x => !UpdatePageReq.Statuses(x)) => Left("invalid status")
-          case _ if j.noSpaces.length > 4000 => Left("trigger too large")
+          case "label_added" if s("label").isEmpty => Left("きっかけのラベルを指定してください")
+          case "value_changed" | "date_reached" if !uuid(s("database")) || s("prop").isEmpty => Left("きっかけのデータベースと列を指定してください")
+          case "status_changed" if s("to").exists(x => !UpdatePageReq.Statuses(x)) => Left("状態が正しくありません")
+          case _ if j.noSpaces.length > 4000 => Left("きっかけの設定が大きすぎます")
           case _ => Right(())
 
   def action(j: Json): Either[String, Unit] =
@@ -190,12 +191,12 @@ object AutomationSchema:
           case Some("owner" | "watchers") => Right(())
           case Some("users") if c.get[List[UUID]]("users").toOption.exists(us => us.nonEmpty && us.size <= 50) => Right(())
           case Some("prop") if s("prop").isDefined => Right(())
-          case _ => Left("notify needs recipients")
+          case _ => Left("通知先を指定してください")
       case Some("webhook") if uuid(s("webhook")) => Right(())
       case Some("set_status") if s("status").forall(UpdatePageReq.Statuses) => Right(())
       case Some("add_label") if s("label").isDefined => Right(())
-      case _ => Left("invalid action")
-    base.flatMap(_ => if s("message").exists(_.length > 1000) then Left("message too long") else Right(()))
+      case _ => Left("アクションが正しくありません")
+    base.flatMap(_ => if s("message").exists(_.length > 1000) then Left("メッセージが長すぎます（1000文字まで）") else Right(()))
 
 /** ワークスペースの自動化ルールの設定（ワークスペースの編集権限が必要） */
 final class AutomationRoutes(protected val store: Store, rules: AutomationStore, protected val sessions: SessionAuth, audit: Audit) extends PageRouteSupport:
@@ -209,7 +210,7 @@ final class AutomationRoutes(protected val store: Store, rules: AutomationStore,
     }
 
   private def withRule(req: Request[IO], id: UUID)(f: (AuthSession, AutomationRule) => IO[Response[IO]]) =
-    withWsItem(req, rules.get(id), "rule")(_.workspaceId)((s, _, r) => f(s, r))
+    withWsItem(req, rules.get(id), "自動化ルール")(_.workspaceId)((s, _, r) => f(s, r))
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "api" / "workspaces" / UUIDVar(wsId) / "automations" =>
@@ -217,8 +218,8 @@ final class AutomationRoutes(protected val store: Store, rules: AutomationStore,
 
     case req @ POST -> Root / "api" / "workspaces" / UUIDVar(wsId) / "automations" =>
       withWs(req, wsId, Role.Edit) { (s, _, _) =>
-        req.as[SaveAutomationReq].attempt.flatMap {
-          case Right(SaveAutomationReq(Some(name), _, Some(t), Some(a))) if name.trim.nonEmpty && name.length <= 100 =>
+        decodeBody[SaveAutomationReq](req).flatMap {
+          case Right(SaveAutomationReq(Some(name), _, Some(t), Some(a))) if validName(name).isDefined =>
             (AutomationSchema.trigger(t) *> AutomationSchema.action(a)) match
               case Left(m) => err(Status.BadRequest, m)
               case Right(_) =>
@@ -227,21 +228,21 @@ final class AutomationRoutes(protected val store: Store, rules: AutomationStore,
                   audit.log(s, "automation.create", "workspace", wsId, Json.obj("name" -> r.name.asJson, "trigger" -> t, "action" -> a)) *> Created(dto(r))
                 },
                 err(Status.BadRequest, "trigger: このワークスペースの見られるページを指定してください"))
-          case _ => err(Status.BadRequest, "name, trigger and action are required")
+          case _ => err(Status.BadRequest, "名前・きっかけ・アクションを指定してください")
         }
       }
 
     case req @ PATCH -> Root / "api" / "automations" / UUIDVar(id) =>
       withRule(req, id) { (s, r) =>
         body[SaveAutomationReq](req) {
-          case b if b.name.exists(n => n.trim.isEmpty || n.length > 100) => err(Status.BadRequest, "invalid name")
+          case b if b.name.exists(validName(_).isEmpty) => err(Status.BadRequest, "名前が正しくありません")
           case b =>
             (b.trigger.traverse_(AutomationSchema.trigger) *> b.action.traverse_(AutomationSchema.action)) match
               case Left(m) => err(Status.BadRequest, m)
               case Right(_) =>
                 b.trigger.forallM(targetsOk(s, r.workspaceId, _)).ifM(
                 rules.update(id, b.name.map(_.trim), b.enabled, b.trigger.map(_.noSpaces), b.action.map(_.noSpaces)).flatMap {
-                  case None => err(Status.NotFound, "rule not found")
+                  case None => err(Status.NotFound, "自動化ルールが見つかりません")
                   case Some(nr) =>
                     audit.log(s, "automation.update", "workspace", r.workspaceId, Json.obj("name" -> nr.name.asJson, "enabled" -> nr.enabled.asJson)) *> Ok(dto(nr))
                 },

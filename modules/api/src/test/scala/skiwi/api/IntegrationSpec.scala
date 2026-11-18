@@ -13,19 +13,19 @@ import skiwi.core.*
 import skiwi.db.*
 
 import java.time.Instant
-import java.util.{Base64, UUID}
+import java.util.UUID
 
 /** skea・skawau・smohua 連携: 管理者の設定・許可画面へのリダイレクト・コードの交換・タスクの取得・連携の解除。skea・skawau はメモリ内の偽物。TEST_DATABASE_URL が必要。 */
 class IntegrationSpec extends DbSuite:
 
   private val apiCfg = ApiConfig(adminGroups = Set("skea-admins"), cookieSecure = false)
   private val skeaUrl = "https://skea.test"
-  private val box = SecretBox.fromBase64(Base64.getEncoder.encodeToString(Array.fill[Byte](32)(7))).toOption.get
+  private val box = SecretBox.fromSecret("integration-spec-secret-0123456789")
 
   /** 偽の skea が受け取ったもの */
   final case class Seen(token: Option[(Option[Authorization], UrlForm)] = None, revoked: List[(Option[Authorization], UrlForm)] = Nil,
                         lookups: List[(Option[Authorization], List[String])] = Nil)
-  final case class Env(store: Store, app: HttpApp[IO], seen: Ref[IO, Seen], revokedTokens: Ref[IO, Set[String]], noBox: HttpApp[IO], ist: IntegrationStore)
+  final case class Env(store: Store, app: HttpApp[IO], seen: Ref[IO, Seen], revokedTokens: Ref[IO, Set[String]], ist: IntegrationStore)
 
   private def fakeSkea(seen: Ref[IO, Seen], revoked: Ref[IO, Set[String]]): HttpApp[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "oauth" / "token" =>
@@ -87,9 +87,8 @@ class IntegrationSpec extends DbSuite:
         val sess  = new SessionAuth(store, ops, apiCfg)
         val ist   = new IntegrationStore(xa)
         val http  = Client.fromHttpApp(fakeSkea(seen, revoked))
-        val app   = new IntegrationRoutes(LinkedService.all, ist, sess, new Audit(ops), http, "https://skiwi.example.com", Some(box), cache).routes.orNotFound
-        val noBox = new IntegrationRoutes(LinkedService.all, ist, sess, new Audit(ops), http, "https://skiwi.example.com", None, cache).routes.orNotFound
-        Env(store, app, seen, revoked, noBox, ist)
+        val app   = new IntegrationRoutes(LinkedService.all, ist, sess, new Audit(ops), http, "https://skiwi.example.com", box, cache).routes.orNotFound
+        Env(store, app, seen, revoked, ist)
 
   private val fixture = ResourceSuiteLocalFixture("skea", res)
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
@@ -117,7 +116,7 @@ class IntegrationSpec extends DbSuite:
       (cb, _) <- call(token, Method.GET, s"/api/integrations/skea/callback?code=$code&state=${q("state")}")
     yield (q, cb.headers.get[Location].get.uri.renderString)
 
-  test("admin settings: save/read hides the secret, non-admin is forbidden, no ENCRYPTION_KEY is 503") {
+  test("admin settings: save/read hides the secret, non-admin is forbidden") {
     run {
       for
         (_, at) <- user("skea-admin", List("skea-admins"))
@@ -142,11 +141,6 @@ class IntegrationSpec extends DbSuite:
         (_, j3) <- call(at, Method.PUT, "/api/admin/integrations/skea", Some(settings.mapObject(_.remove("clientSecret"))))
         _ = assertEquals(j3.hcursor.get[Boolean]("clientSecretSet"), Right(true))
         (st, _) <- call(ut, Method.GET, "/api/integrations/skea")
-        (r3, j4) <- call(at, Method.GET, "/api/admin/integrations/skea", app = env.noBox)
-        _ = assertEquals(r3.status, Status.ServiceUnavailable)
-        _ = assert(j4.hcursor.get[String]("error").exists(_.contains("ENCRYPTION_KEY")))
-        (_, j5) <- call(ut, Method.GET, "/api/integrations/skea", app = env.noBox)
-        _ = assertEquals(j5.hcursor.get[Boolean]("enabled"), Right(false))
         _ = assertEquals(st.status, Status.Ok)
       yield ()
     }
@@ -349,7 +343,8 @@ class IntegrationSpec extends DbSuite:
     val enc = box.encrypt("skea_token", "skea.token:a")
     assertEquals(box.decrypt(enc, "skea.token:a"), Some("skea_token"))
     assertEquals(box.decrypt(enc, "skea.token:b"), None)
-    assert(SecretBox.fromBase64("short").isLeft)
+    // 別の APP_SECRET の鍵では読めない
+    assertEquals(SecretBox.fromSecret("another-secret-0123456789").decrypt(enc, "skea.token:a"), None)
     assertEquals(safeReturnTo(Some("/\\evil")), None)
     assertEquals(safeReturnTo(None), Some("/"))
   }

@@ -30,7 +30,7 @@ final class AvatarRoutes(ops: OpsStore, protected val sessions: SessionAuth, max
           case None => ops.pictures(List(id)).flatMap(_.get(id) match
               case Some(pic) => Response[IO](Status.Found).putHeaders(Header.Raw(CIString("Location"), pic),
                   Header.Raw(CIString("Cache-Control"), "private, max-age=300")).pure[IO]
-              case None => err(Status.NotFound, "no avatar").map(_.putHeaders(Header.Raw(CIString("Cache-Control"), "private, max-age=300"))))
+              case None => err(Status.NotFound, "画像が登録されていません").map(_.putHeaders(Header.Raw(CIString("Cache-Control"), "private, max-age=300"))))
           case Some((ct, data, _)) =>
             Response[IO](Status.Ok).withBodyStream(fs2.Stream.chunk(fs2.Chunk.array(data))).putHeaders(
               Header.Raw(CIString("Content-Length"), data.length.toString),

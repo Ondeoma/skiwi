@@ -26,6 +26,7 @@ x-app: &app
     PUBLIC_URL: http://localhost:8090
     ADMIN_GROUPS: skiwi-admins
     CLUSTER_SECRET: ha-test-cluster-secret-0123456789
+    APP_SECRET: ha-test-app-secret-0123456789
     S3_ENDPOINT: http://s3:3900
     S3_BUCKET: skiwi
     S3_ACCESS_KEY: skiwi

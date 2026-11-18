@@ -9,7 +9,7 @@ import skiwi.web.model.Page
 import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 
-// データベース・フォームの API の型（frontend/src/api.ts の DbProp・DbView・Database・DbFormDef などと同じ）
+// データベース・フォームの API の型
 
 /** 選択肢 */
 final case class DbOption(id: String, name: String, color: String)
@@ -237,7 +237,7 @@ object PublicForm {
 
 }
 
-/** データベースの API（api.ts の dbApi） */
+/** データベースの API */
 object DbApi {
 
   private def valuesJson(values: Map[String, Json]): Json = Json.fromFields(values)
@@ -247,10 +247,6 @@ object DbApi {
   /** 列・ビューを保存する（null の項目は送らない） */
   def save(id: String, props: List[DbProp], views: List[DbView]): Future[Database] =
     Api.put[Database](s"/api/pages/$id/database", Json.obj("props" -> props.asJson, "views" -> views.asJson).deepDropNullValues)
-
-  /** 列・ビューを JSON のまま保存する（新しいデータベースを作るとき） */
-  def saveJson(id: String, props: Json, views: Json): Future[Database] =
-    Api.put[Database](s"/api/pages/$id/database", Json.obj("props" -> props, "views" -> views))
 
   def remove(id: String): Future[Unit] = Api.del(s"/api/pages/$id/database")
 
@@ -279,7 +275,7 @@ object DbApi {
 
 }
 
-/** フォームの API（api.ts の formApi と FormView の fetch） */
+/** フォームの API */
 object FormApi {
 
   def list(dbId: String): Future[List[DbFormDef]] = Api.get[List[DbFormDef]](s"/api/pages/$dbId/forms")

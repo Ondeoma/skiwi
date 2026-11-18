@@ -4,11 +4,13 @@ export skiwi.web.model.PublicShare
 
 import io.circe.*
 import io.circe.syntax.*
+import skiwi.shared.{AgentDto, CreateAgentReq, CreateTokenReq, CreatedTokenDto, UpdateAgentReq}
 import skiwi.web.Api
 
+import java.util.UUID
 import scala.concurrent.Future
 
-// 管理者の画面（公開中のページ・外部連携）が使う API（frontend/src/api.ts の shareApi.adminList・disable、integrationApi、oauthClientApi と同じ）
+// 管理者の画面（公開中のページ・外部連携）が使う API
 
 
 final case class AdminShare(pageId: String, title: String, icon: Option[String] = None, workspaceId: String, workspaceName: String,
@@ -25,8 +27,6 @@ final case class OAuthClientSettings(clientId: String, clientSecretSet: Boolean,
 object AdminApi {
 
   def shares(): Future[List[AdminShare]] = Api.get[List[AdminShare]]("/api/admin/shares")
-
-  def disableShare(pageId: String): Future[Unit] = Api.del(s"/api/pages/$pageId/share")
 
   /** key: 公開リンクのトークンまたはURL名 */
   def shareUrl(key: String): String = s"${org.scalajs.dom.window.location.origin}/s/$key"
@@ -50,5 +50,20 @@ object AdminApi {
       Api.obj("clientId" -> clientId.asJson, "clientSecret" -> clientSecret.asJson, "redirectUri" -> redirectUri.asJson, "name" -> name.asJson))
 
   def removeOauthClient(): Future[Unit] = Api.del("/api/admin/integrations/skea/client")
+
+  // ---------------------------------------------------------------- エージェント専用アカウント
+
+  def agents(): Future[List[AgentDto]] = Api.get[List[AgentDto]]("/api/admin/agents")
+
+  def createAgent(name: String): Future[AgentDto] = Api.post[AgentDto]("/api/admin/agents", CreateAgentReq(name).asJson)
+
+  def updateAgent(id: UUID, req: UpdateAgentReq): Future[AgentDto] =
+    Api.patch[AgentDto](s"/api/admin/agents/$id", req.asJson.dropNullValues)
+
+  /** 平文のキーはこの応答でのみ返る */
+  def createAgentKey(id: UUID, req: CreateTokenReq): Future[CreatedTokenDto] =
+    Api.post[CreatedTokenDto](s"/api/admin/agents/$id/keys", req.asJson)
+
+  def revokeAgentKey(id: UUID, keyId: UUID): Future[Unit] = Api.del(s"/api/admin/agents/$id/keys/$keyId")
 
 }

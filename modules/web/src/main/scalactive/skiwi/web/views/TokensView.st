@@ -104,5 +104,4 @@ select { font: inherit; background: var(--bg); color: inherit; border: 1px solid
 table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: .9rem; }
 th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); }
 .muted { color: var(--muted); }
-.error { color: #dc2626; }
 </style>

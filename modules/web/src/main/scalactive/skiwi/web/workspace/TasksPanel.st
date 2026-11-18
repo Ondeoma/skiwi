@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.shared.Titles
 import skiwi.web.Nav
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
@@ -66,7 +67,7 @@ def href(t: TaskItem): String = Nav.pageHref(t.workspaceId, t.pageId)
         <div class="t">{{ if (t.checked) "☑" else "☐" }} {{ if (t.text.isEmpty) "（内容なし）" else t.text }}</div>
         <div class="m">
           <span v-if="t.due.isDefined" :class='"due " + g.key'>📅 {{ fmt(t.due.getOrElse("")) }}</span>
-          {{ t.pageIcon.getOrElse("📄") }} {{ if (t.pageTitle.isEmpty) "無題" else t.pageTitle }}<template v-if="t.workspaceId != props.wid"> ・ 🗂 {{ t.workspaceName }}</template>
+          {{ t.pageIcon.getOrElse("📄") }} {{ Titles.display(t.pageTitle) }}<template v-if="t.workspaceId != props.wid"> ・ 🗂 {{ t.workspaceName }}</template>
         </div>
       </a>
     </section>

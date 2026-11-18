@@ -2,26 +2,46 @@
 
 <p align="center"><img src="frontend/public/logo.svg" width="128" height="128" alt="skiwi のロゴ"></p>
 
-skiwi は、チーム向けの Wiki です（ブロックエディタ、同時編集、OIDC認証）。設計は [docs/design.md](docs/design.md)。ライセンス: MIT
+skiwi は、チームのための Wiki です（ブロックエディタ・同時編集・データベース・ゲスト向けの公開）。ライセンス: MIT
+
+- **エディタ**: ブロックエディタ（Tiptap）。見出し・リスト・ToDo・表・コード（シンタックスハイライト）・数式・Mermaid・draw.io・ホワイトボード（Excalidraw）・
+  段組み・開閉ブロック・パネル・画像と添付ファイル、`/` のメニュー、Markdown の貼り付け、ページへのリンクとメンション
+- **同時編集**: Yjs による同時編集（日本語の IME に対応）。開いている人の表示、版の履歴と差分、接続中の権限の変更をすぐに反映
+- **ワークスペース・ページ**: ページの階層・並べ替え・お気に入り・ラベル・所有者と状態・ゴミ箱、複製、保護、閲覧権限の申請、期限付きの権限
+- **データベース**: 表・ボード・リスト・ギャラリー・カレンダー・タイムラインのビュー、数式・関連・集計の列、フォーム（ログインなしで回答できる）
+- **コメント**: ページと本文の位置へのコメント・スレッド・解決、@メンション
+- **公開**: ゲスト向けの公開リンク（子ページを含める・パスワード・期間・公開版・URL 名・検索エンジン向けの指定）、カスタム CSS
+- **検索**: 日本語の全文検索（PGroonga）。表記ゆれ・あいまい検索、添付ファイル（PDF・Office など）の中身も検索する
+- **取り込み・書き出し**: Markdown・HTML・Word・CSV・Notion・Confluence の取り込み、Markdown・ZIP・PDF（印刷）の書き出し、定期バックアップ
+- **自動化・連携**: 自動化ルール、受信用の Webhook、外部への通知（Webhook・Slack・Teams）、skea・skawau・smohua 連携、OAuth の認可サーバー（skea・stui・skakapo などから使う）
+- **通知**: 画面内・メール・プッシュ通知（PWA）、ウォッチ
+- **API・AI**: ユーザーごとの API トークン、REST API（説明書の画面で試せる）、MCP、エージェント専用アカウント
+- **認証・権限**: OIDC、SCIM（ユーザー・グループの同期）、ワークスペース・ページごとの権限（閲覧・編集。ユーザー・IdP のグループ単位）
+- **冗長化**: 3ノードで動く（ページの担当ノードへ WebSocket を転送）。PostgreSQL は Patroni、添付は S3 互換ストレージ
+- レスポンシブ対応、ダークモード対応
+
+設計は [docs/design.md](docs/design.md)、構築・運用は [docs/operations.md](docs/operations.md) を参照してください。
 
 ## 構成
+
 | モジュール | 内容 |
 |---|---|
-| `modules/core` | ドメインモデル、権限解決(`Acl`)、並び順(`FractionalIndex`) — 純粋ロジック |
-| `modules/db` | doobie + Flyway。スキーマ(`V1`〜`V16`)と `Store` / `DocStore` / `OpsStore` / `ScimStore` / `DatabaseStore` |
-| `modules/auth` | OIDC (Authorization Code + PKCE) クライアント |
-| `modules/storage` | 添付ファイルの保存先（S3互換ストレージ。開発は ScalaS3） |
-| `modules/notify` | メール通知（`mail_outbox` を送信するワーカー、SMTP） |
+| `modules/shared` | バックエンドと画面（Scala.js）で共有する API の型（circe）。日時は `Timestamp`（JVM では `Instant`、JS では ISO 文字列） |
+| `modules/core` | ドメインの純粋なロジック（権限の解決 `Acl`・並び順 `FractionalIndex`・エージェント専用アカウント） |
+| `modules/db` | doobie のストア（`Store` / `DocStore` / `OpsStore` / `ScimStore` / `DatabaseStore` など）と Flyway のマイグレーション |
+| `modules/auth` | OIDC（Authorization Code + PKCE）、暗号化（`SecretBox`） |
+| `modules/storage` | S3 互換ストレージ（添付ファイル。開発は ScalaS3） |
+| `modules/notify` | メール（`mail_outbox` を送信するワーカー、SMTP） |
 | `modules/observe` | 観測（OpenTelemetry: otel4s）。HTTP・SQL・外への呼び出しのトレース、業務のメトリクス、ログ（トレースの ID・操作したユーザー付き）を OTLP で skorimako に送る |
 | `modules/push` | プッシュ通知（PWA. Web Push の暗号化と VAPID）。画面内の通知を作ったときに同じ内容を送る |
-| `modules/api` | http4s ルート（`/auth/*`, `/api/*`、検索、添付、版履歴、APIトークン、監査ログ、`/scim/v2`）、Cookieセッション／Bearerトークン |
-| `modules/collab` | 同時編集サーバー: WebSocketリレー、updateログの永続化、ログ圧縮、版の自動作成、接続中の権限再検証、ページの担当ノード決定・転送・ノード間配信 |
-| `modules/app` | 起動・設定（環境変数）、ビルド済みフロントの配信 |
-| `deploy/` | Dockerfile・Patroni/HAProxy設定（試験環境）と、VM構築用の設定ひな形（`deploy/vm/`） |
-| `modules/shared` | バックエンドとフロントエンド(Scala.js)で共有する API の型（circe）。日時は `Timestamp`（JVM では `Instant`、JS では ISO 文字列） |
-| `modules/web` | 画面（Scalactive・Scala.js の `.st`）。ルートは `App.st`（`/w/...` は `WorkspaceView` が描く）、共有の状態は `Store`、API は `Api` と画面ごとの `XxxApi` |
-| `frontend/` | Vite の入口と、JS のまま残す部分（エディタ: Tiptap・ProseMirror・Yjs・Excalidraw・Mermaid を直接使う部分と、JS のライブラリを呼ぶ小さな部分: marked・mammoth・fflate など）、PWA の Service Worker（`public/sw.js`）。Scala.js からは `window.skiwiLoad(名前)`（`src/bridge/`）で読み込む。エディタが使うライブラリに依らない処理（URL の検査・ページのリンク・draw.io・アップロード・絵文字・ブロックの一覧など）は Scala.js の `skiwi.web.editor`（`window.__skiwiLib`、型は `src/lib.ts`） |
-| `proto/` | 同時編集 + 日本語IME 検証用プロトタイプ（検証済み） |
+| `modules/api` | http4s のルート（`/auth/*`・`/api/*`・`/mcp`・`/oauth/*`・`/scim/v2`）、Cookie のセッション・Bearer トークン |
+| `modules/collab` | 同時編集のサーバー: WebSocket の中継、update のログの保存と圧縮、版の自動作成、接続中の権限の再確認、ページの担当ノードの決定・転送・ノード間の配信 |
+| `modules/app` | 起動・設定（環境変数）・画面の配信 |
+| `modules/web` | 画面（[Scalactive](https://github.com/Ondeoma/scalactive) の `.st` 単一ファイルコンポーネント）。ルートは `App.st`（`/w/...` は `WorkspaceView` が描く）、共有の状態は `Store`、API は `Api` と画面ごとの `XxxApi` |
+| `frontend/` | Vite。Scala.js の出力と、JS のまま残す部分（エディタ: Tiptap・ProseMirror・Yjs・Excalidraw・Mermaid を直接使う部分と、marked・mammoth・fflate などを呼ぶ小さな部分）、PWA の Service Worker（`public/sw.js`）をまとめてビルドする。Scala.js からは `window.skiwiLoad(名前)`（`src/bridge/`）で読み込む。エディタが使うライブラリに依らない処理は Scala.js の `skiwi.web.editor`（`window.__skiwiLib`、型は `src/lib.ts`） |
+| `deploy/` | Docker（試験用の3ノード構成。Patroni・HAProxy）と VM 構築用の設定のひな形 |
+
+技術: Scala 3.3 LTS、Cats Effect 3、http4s 1.0（マイルストーン版）、doobie、Flyway、PostgreSQL 17 + PGroonga、Scala.js + Scalactive、Tiptap・Yjs（TypeScript）。
 
 ## 権限モデル
 - ワークスペース権限（ACL / 既定権限）→ ページACLが上書き。ページ単位で `view` / `edit`。
@@ -32,8 +52,25 @@ skiwi は、チーム向けの Wiki です（ブロックエディタ、同時�
   `inherit=false` の子ページ（個別に閲覧制限したページ）とその下は公開に含めない。`PUBLIC_SHARING=false` で機能ごと無効化できる。
 
 ## 開発
+
+必要なもの: JDK 21、sbt、Node.js、Docker。
+
 ```bash
-docker compose -f docker-compose.dev.yml up -d --wait   # PostgreSQL+PGroonga (:54329), ScalaS3 (S3互換 :3900。初回はソースからイメージをビルド), Mailpit (SMTP :1025, 画面 :8025)
+docker compose -f docker-compose.dev.yml up -d --wait   # PostgreSQL+PGroonga (:54329)、ScalaS3 (:3900。初回はソースからイメージをビルド)、Mailpit (SMTP :1025、画面 :8025)
+scripts/dev-restart.sh                                   # バックエンドを :8080 で起動（scripts/dev-env.sh の設定。DEV_LOGIN=true）
+(cd frontend && npm install --force && npm run dev)      # 画面の開発サーバー http://localhost:5173（/api などは :8080 へ中継）
+sbt ~web/fastLinkJS                                      # 画面の変更を再リンクし続ける（ブラウザを再読み込みすると反映）
+```
+
+- 開発用のログイン（`DEV_LOGIN=true`）では、名前を入れるだけでログインできます（`dev:<名前>` のユーザーになる）。
+  「管理者としてログイン」は `ADMIN_GROUPS` のグループ（開発用は `skiwi-admins`）に入れ、外すとそのグループから外します。本番では使わないでください。
+- `PUBLIC_URL` は画面の開発サーバー（http://localhost:5173）です。兄弟のサービスの開発環境（`SKIWI_URL`・連携の戻り先）もこの URL を使います。
+- `scripts/seed-demo.sh` でデモのワークスペース（開発チーム）を作れます。`scripts/smoke.sh` で API を一通り確認できます。
+- 送信されたメールは Mailpit（http://localhost:8025）で見られます。SCIM も試すときは `SCIM_TOKEN=dev-scim-token-0123456789abcdef scripts/dev-restart.sh`。
+
+テスト:
+
+```bash
 TEST_DATABASE_URL=jdbc:postgresql://localhost:54329/skiwi_test TEST_S3_ENDPOINT=http://localhost:3900 sbt test
 ```
 `TEST_DATABASE_URL` を設定しないとDB結合テストはスキップされる。テストは開発用の `skiwi` ではなく `skiwi_test` を使うこと
@@ -42,47 +79,43 @@ TEST_DATABASE_URL=jdbc:postgresql://localhost:54329/skiwi_test TEST_S3_ENDPOINT=
 
 **DBマイグレーション**（`modules/db/src/main/resources/db/migration`、Flyway）: スキーマを変えるときは新しい番号の `V<n>__…sql` を追加し、適用済みのファイルは書き換えないこと（起動時の検証で失敗する）。
 
-## 起動
+## 配布・起動
 ```bash
-export DATABASE_URL=jdbc:postgresql://localhost:54329/skiwi DATABASE_USER=skiwi DATABASE_PASSWORD=skiwi
-export OIDC_ISSUER=https://auth.example.com/application/o/skiwi/   # IdP の Issuer（`/.well-known/openid-configuration` の issuer と末尾スラッシュ込みで一致させる）
-export OIDC_CLIENT_ID=... OIDC_CLIENT_SECRET=...
-export PUBLIC_URL=https://skiwi.example.com                        # https の場合 Cookie に Secure が付く
-export ADMIN_GROUPS=skiwi-admins                                   # 任意（カンマ区切り）
-# export OIDC_GROUPS_CLAIM=groups                                 # 所属グループが入るIDトークンのクレーム名（既定 groups）
-export S3_ENDPOINT=https://s3.example.com S3_BUCKET=skiwi S3_ACCESS_KEY=... S3_SECRET_KEY=...  # 未設定なら添付は無効
-export MAX_UPLOAD_MB=100                                          # 任意
-# メール通知（未設定ならメールは送らない）。SMTP_TLS: starttls(既定,587) | ssl(465) | none(25)
-export SMTP_HOST=mail.example.com SMTP_PORT=587 SMTP_TLS=starttls SMTP_USER=... SMTP_PASSWORD=... MAIL_FROM=skiwi@example.com
-# SCIM（任意）。設定すると /scim/v2 が有効になり、グループ所属はSCIMを正とする（ログイン時のgroupsクレームでは上書きしない）
-export SCIM_TOKEN=$(openssl rand -base64 32)
-# ゲスト向けの公開リンクを使わせない場合
-# export PUBLIC_SHARING=false
-# ゴミ箱の保存日数（既定30日。過ぎたら添付ファイルを含めて完全に削除）
-# export TRASH_RETENTION_DAYS=30
-# Webhook の送り先に http:// を許す（開発用。既定は https のみ）
-# export WEBHOOK_ALLOW_HTTP=true
-# Webhook を社内のアドレス（10.x・192.168.x・127.0.0.1 など）にも送る（既定は送らない。編集者にサーバーから社内へ接続させないため）
-# export WEBHOOK_ALLOW_PRIVATE=true
-# リンクのカード（/api/unfurl）でプライベート・ループバックのアドレス（127.0.0.1・10.x・192.168.x など）も読み込む（既定は読み込まない）
-# export UNFURL_ALLOW_PRIVATE=true
-# draw.io の図のエディタ（既定 https://embed.diagrams.net）。社内に置いた draw.io（jgraph/drawio）を使うときに指定。空にすると図の編集を止める
-# export DRAWIO_URL=https://drawio.example.com
-# 外部サービスのトークンを暗号化する鍵（32バイトを base64。全ノードで同じ値）。未設定なら skea・skawau 連携は使えない
-# export ENCRYPTION_KEY=$(openssl rand -base64 32)
-# skea → skiwi の連携のクライアントの初期登録（任意。管理画面でも登録できる。まだ登録されていないときだけ使う）
-# export OAUTH_CLIENT_ID=skea OAUTH_CLIENT_SECRET=$(openssl rand -base64 24) OAUTH_CLIENT_REDIRECT_URI=https://skea.example.com/api/integrations/skiwi/callback
-sbt app/run
+scripts/dist.sh                   # dist/lib/*.jar と dist/static（画面）を作る
+java -cp 'dist/lib/*' skiwi.app.Main
 ```
 
-観測（skorimako）・プッシュ通知（PWA）の環境変数（どれも任意）:
+主な環境変数（すべては `modules/app/src/main/scala/skiwi/app/Main.scala` の `Config`）:
 
 | 変数 | 内容 |
 |---|---|
+| `DATABASE_URL` / `DATABASE_USER` / `DATABASE_PASSWORD` | PostgreSQL（PGroonga が必要）。冗長構成では3台を並べて `targetServerType=primary`。`DATABASE_POOL_SIZE`（既定 10） |
+| `PUBLIC_URL` | 公開 URL（`https://` なら Cookie に Secure が付く） |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | OIDC。Issuer は `/.well-known/openid-configuration` の issuer と末尾のスラッシュまで一致させる。Redirect URI は `${PUBLIC_URL}/auth/callback`。ログアウトでは IdP からもログアウトし、`${PUBLIC_URL}/` に戻る |
+| `OIDC_GROUPS_CLAIM` | 所属グループのクレーム名（既定 `groups`） |
+| `ADMIN_GROUPS` | システム管理者にするグループ（カンマ区切り）。全ページを編集できる |
+| `APP_SECRET` | 秘密の値の暗号化（外部サービスのトークン・client_secret）に使う16文字以上の値。全ノードで同じ値（`openssl rand -base64 32` など） |
+| `STATIC_DIR` | ビルド済みの画面（`dist/static`） |
+| `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | 添付ファイル（未設定なら添付は使えない）。`S3_REGION`（既定 us-east-1）・`S3_PATH_STYLE`（既定 true） |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_TLS` / `SMTP_USER` / `SMTP_PASSWORD` / `MAIL_FROM` | メール（未設定ならメールは送らない）。`SMTP_TLS` は `starttls`（既定。587）・`ssl`（465）・`none`（25） |
+| `MAX_UPLOAD_MB` | 添付の上限（既定 100） |
+| `TIMEZONE` | ToDo の期限などの「今日」（既定 Asia/Tokyo。前の名前 `TASK_TIMEZONE` も使える） |
+| `SCIM_TOKEN` | SCIM（24文字以上）。設定すると `/scim/v2` が有効になり、グループの所属は SCIM を正とする（ログイン時の groups クレームでは上書きしない） |
+| `PUBLIC_SHARING` | `false` でゲスト向けの公開リンクを使わせない |
+| `TRASH_RETENTION_DAYS` | ゴミ箱の保存日数（既定 30。過ぎたら添付ファイルを含めて完全に削除） |
+| `WEBHOOK_ALLOW_HTTP` | Webhook の送り先に http:// を許す（開発用。既定は https だけ） |
+| `WEBHOOK_ALLOW_PRIVATE` | Webhook を社内のアドレス（10.x・192.168.x・127.0.0.1 など）にも送る（既定は送らない。編集者にサーバーから社内へ接続させないため） |
+| `UNFURL_ALLOW_PRIVATE` | リンクのカード（`/api/unfurl`）でプライベート・ループバックのアドレスも読み込む（既定は読み込まない） |
+| `DRAWIO_URL` | draw.io の図のエディタ（既定 https://embed.diagrams.net）。社内に置いた draw.io を使うときに指定。空にすると図の編集を止める |
+| `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` / `OAUTH_CLIENT_REDIRECT_URI` / `OAUTH_CLIENT_NAME` | skea → skiwi の連携のクライアントの初期登録（管理画面でも登録できる。まだ登録されていないときだけ使う） |
+| `OAUTH_CLIENTS` | 読み書きの API トークンを発行してよい外部のサービス（skakapo など）。`[{"id":"skakapo","secret":"…（16文字以上）","redirectUri":"https://…/api/connections/callback","name":"skakapo","scopes":["read","write"]}]`（scopes は省くと read だけ） |
+| `NODE_ID` / `NODE_URL` / `CLUSTER_SECRET` | 3ノード構成（下の「3ノード構成」） |
+| `HTTP_PORT` / `HTTP_BIND` | 待ち受けるポート（既定 8080）とアドレス（既定 0.0.0.0。`DEV_LOGIN` のときは 127.0.0.1） |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` | ログ・メトリクス・トレースの送り先（skorimako の URL と `Authorization=Bearer sko_…`（ingest のキー））。未設定なら送らない。そのほか OpenTelemetry の標準の `OTEL_*` が使える |
 | `LOG_FORMAT` / `LOG_LEVEL` | 標準出力のログの形（`text`（既定）・`json`）と水準（既定 `INFO`）。ログにはトレースの ID と操作したユーザーが付く |
 | `SKORIMAKO_RUM_TOKEN` / `SKORIMAKO_RUM_URL` / `SKORIMAKO_RUM_SAMPLE_RATE` | 画面のブラウザの観測（skorimako の RUM）。トークンは skorimako の管理の画面で登録したアプリのもの。URL を省略すると `SKORIMAKO_URL` |
 | `VAPID_SUBJECT` | プッシュ通知（PWA）の連絡先（`mailto:…` か `https://…`。省略すると `PUBLIC_URL`）。VAPID の鍵は初回の起動で作って DB に保存する |
+| `DEV_LOGIN` | 開発用のログインを有効にする（OIDC を設定しない場合のみ。OIDC と一緒に設定する・`PUBLIC_URL` が https だと起動しない） |
 
 ### 3ノード構成
 各ノードに `NODE_ID`（一意な名前）、`NODE_URL`（他ノードから届くこのノードのURL）、`CLUSTER_SECRET`（全ノード共通、16文字以上）を設定する。
@@ -105,14 +138,6 @@ OIDC に対応した IdP なら使える（`OIDC_ISSUER` の `/.well-known/openi
 - IdP の SCIM 2.0 プロビジョニング（プッシュ型）に、URL: `${PUBLIC_URL}/scim/v2`、Bearer トークン: `SCIM_TOKEN` と同じ値を設定する。
 - IdPでユーザーを無効化・削除すると、skiwi 側でもログイン不可になり、セッションは即時失効、開いている編集画面も切断される。
 - 対応範囲: Users / Groups の作成・取得・一覧（`eq` フィルタ）・置換(PUT)・PATCH・削除、ServiceProviderConfig。Bulk・ソート・ETagは非対応。
-
-## 手早く試す（開発用）
-```bash
-scripts/dev-up.sh                              # DB・ScalaS3起動、フロントビルド、アプリ起動(:8080)
-scripts/dev-session.sh "山田 太郎" user-1 skiwi-admins yamada@example.com   # Cookie値を出力（グループ・メールは任意）
-```
-送信されたメールは Mailpit（http://localhost:8025）で確認できる。SCIMも試す場合は `SCIM_TOKEN=dev-scim-token-0123456789abcdef scripts/dev-up.sh`。
-ブラウザで `http://localhost:8080/auth/callback` を開き、コンソールで `document.cookie="skiwi_session=<出力値>; path=/"` を実行してから `/` へ。
 
 ## エディタ
 - **画像・ファイルの追加**: 画像の貼り付け（⌘/Ctrl+V。名前のないスクリーンショットには日時の名前を付ける）、ファイルのドラッグ＆ドロップ（落とした位置に、選んだ順で入る。
@@ -141,7 +166,7 @@ Markdown風の入力（`# `、`- `、`1. `、`[] `、`> `、```` ``` ````）に�
 列を減らすと、消える列の中身は残る最後の列の末尾へ移る。スマートフォンの幅では縦に積む。帯の「⠿ 段組み」をドラッグするとブロックごと移動。
 **ToDo の担当者・期限**: ToDo リストの項目に @名前（または「/」→「担当者」）を書くとその人の担当、「/」→「期限」で期限の印（クリックで日付を変更）。
 担当になった人はサイドバーの「✅ ToDo」で、すべてのワークスペースの自分のToDoを「期限切れ／今日・明日／これから／期限なし」に分けて見られる。
-期限が今日・明日・過ぎた未完了のToDoは、担当者に1回だけ通知（画面内・メール）する（1時間ごとに確認。「今日」の基準は `TASK_TIMEZONE`、既定 Asia/Tokyo）。
+期限が今日・明日・過ぎた未完了のToDoは、担当者に1回だけ通知（画面内・メール）する（1時間ごとに確認。「今日」の基準は `TIMEZONE`（前の名前 `TASK_TIMEZONE` も使える）、既定 Asia/Tokyo）。
 **同期ブロック**: 「/」→「同期ブロックを作成」で、ほかのページに埋め込める範囲を作る。枠の「埋め込み用リンクをコピー」で得たリンクを別のページに貼り付けるか、
 「/」→「同期ブロックを埋め込む」でページを選ぶと、読み取り専用で埋め込まれる（ページ全体も埋め込める）。元を直すと埋め込み先にも反映される（保存後、最長30秒ほどで表示が更新）。
 埋め込みの中の埋め込みは1段まで。元のページを閲覧できない人には中身を表示しない。
@@ -326,7 +351,7 @@ skea／skawau との連携・APIトークン・API の説明書・管理者向�
 ## skea・skawau 連携（タスクID・ファイルのリンクの表示）
 本文中の skea のタスクID（`SKEA-123` など）をリンクにしてタイトルと状態を横に出し、skawau のファイル・フォルダのリンク（`…/view/{ID}` など）にファイル名を出す。
 取り決めは [docs/skea-integration.md](docs/skea-integration.md)・[docs/skawau-integration.md](docs/skawau-integration.md)。どちらも同じ仕組み（`IntegrationRoutes`。サービスごとの違いは `LinkedService`）。
-- **設定（管理者）**: 画面右上の自分のアイコンのメニューの「外部連携」（`/admin/integrations`）で、連携先ごとに URL・client_id・client_secret（skea は対象のプロジェクトキーも）を入れる。画面に出る redirect_uri（`${PUBLIC_URL}/api/integrations/{skea|skawau}/callback`）を相手側に登録する。`ENCRYPTION_KEY`（32バイトの base64）が未設定なら機能は使えない（503）。
+- **設定（管理者）**: 画面右上の自分のアイコンのメニューの「外部連携」（`/admin/integrations`）で、連携先ごとに URL・client_id・client_secret（skea は対象のプロジェクトキーも）を入れる。画面に出る redirect_uri（`${PUBLIC_URL}/api/integrations/{skea|skawau}/callback`）を相手側に登録する。トークンと client_secret は `APP_SECRET` から作った鍵で暗号化して保存する。
 - **連携（各ユーザー）**: 画面右上の自分のアイコンのメニューの「🔗 skea と連携」「🔗 skawau と連携」→ 相手の許可画面（OAuth 2.0 認可コード + PKCE S256）→ 戻ると、読み取り専用のトークンを AES-GCM で暗号化して保存する（`integration_connection`）。state と code_verifier は DB に10分保存（複数ノード対応）。解除は相手の `/oauth/revoke` を呼んでから削除。
 - **表示**: ProseMirror の decoration だけで行い、本文は書き換えない（`frontend/src/editor/SkeaTasks.ts`・`SkawauFiles.ts`、共通部分は `linkedDecorations.ts`）。コードブロック・インラインコードの中は対象外。閲覧中はクリックで開き、編集中は Ctrl/⌘+クリックか、横の表示のクリックで新しいタブに開く。skawau は、貼り付けたままの URL を閲覧中は隠して「📄 ファイル名」だけにし、文字を付けたリンクは文字のまま（マウスを乗せると名前）。未連携の人には何も足さない（skea はリンクだけ）。ゲスト向けの公開ページ・版のプレビューでは何もしない。
 - **取得**: `POST /api/integrations/{skea|skawau}/lookup {keys}`（100件まで）で本人のトークンを使い、skea の `/api/tasks/lookup`・skawau の `/api/files/lookup` を呼ぶ。(サービス, ユーザー, キー) ごとに60秒キャッシュ。相手が 401 を返したら連携を消して `connected:false`。
@@ -339,9 +364,22 @@ skea／skawau との連携・APIトークン・API の説明書・管理者向�
 
 ### 逆向き: skea → skiwi（skea にページのタイトルを出す）
 skiwi が OAuth 2.0 の認可サーバーになり、skea のタスクに書いた skiwi のページのリンクにタイトルを出す（取り決めは [docs/skea-integration.md](docs/skea-integration.md) の後半）。
-- **登録（管理者）**: 同じ画面の「skea → skiwi」で client_id・client_secret（ハッシュだけ保存）・redirect_uri（完全一致）・表示名を入れる。環境変数 `OAUTH_CLIENT_ID`・`OAUTH_CLIENT_SECRET`・`OAUTH_CLIENT_REDIRECT_URI`・`OAUTH_CLIENT_NAME` でも登録できる（未登録のときだけ。`scripts/dev-up.sh` は開発用の値を入れる）。
+- **登録（管理者）**: 同じ画面の「skea → skiwi」で client_id・client_secret（ハッシュだけ保存）・redirect_uri（完全一致）・表示名を入れる。環境変数 `OAUTH_CLIENT_ID`・`OAUTH_CLIENT_SECRET`・`OAUTH_CLIENT_REDIRECT_URI`・`OAUTH_CLIENT_NAME` でも登録できる（未登録のときだけ。`scripts/dev-env.sh` は開発用の値を入れる）。
 - **認可**: `GET /oauth/authorize`（許可の画面。未ログインならログイン後に戻る。PKCE S256 のみ）→ `POST /oauth/token`（Basic 認証）。発行するのはそのユーザーの読み取り専用の API トークン「skea 連携」（期限なし。「APIトークン」の画面から解除できる。許可し直すと前のトークンは失効）。`POST /oauth/revoke`（RFC 7009）。
 - **参照**: `POST /api/pages/lookup {ids}`（100件まで）。見られるページの id・workspaceId・title・icon だけを返す。読み取り専用のトークンでも使える。
+
+### 読み書きの連携: skakapo など（OAUTH_CLIENTS）
+AI エージェントの [skakapo](https://github.com/Ondeoma/skakapo) のように、利用者の権限で skiwi を読み書きするサービスは、環境変数 `OAUTH_CLIENTS` に登録する。
+`[{"id":"skakapo","secret":"…（16文字以上）","redirectUri":"https://skakapo.example.com/api/connections/callback","name":"skakapo","scopes":["read","write"]}]`
+- 認可の流れは上と同じ（`/oauth/authorize`・`/oauth/token`・`/oauth/revoke`）。`scope` に `read write` を求められたら、その利用者の読み書きの API トークン（「skakapo 連携」）を、`read` なら読み取りの API トークンを発行する。どちらも REST API と MCP にそのまま使える（ページの一括参照だけに限らない）。
+- `scopes` に入れていないスコープ（`write` を許していないクライアントの `write` など）を求められたら `invalid_scope`。管理画面で登録した skea のクライアントは、これまでどおり `read`（一括参照だけ）。
+
+### エージェント専用アカウント（skakapo などの AI エージェント用）
+利用者本人の権限ではなく、エージェント自身のアカウントで skiwi を使わせるときは、管理者がログインしない専用のアカウントを作り、その API キーをエージェントに渡す。
+- **作る（管理者）**: 画面右上の自分のアイコンのメニューの「エージェント」（`/admin/agents`）で名前（1〜60文字）を入れて作る。アカウントは `app_user` の行で、sub は `agent:<UUID>`・メールなし。OIDC・SCIM からはログイン・作成・変更できない（`agent:` で始まる sub・userName は断る。SCIM の一覧にも出ない）。管理者グループに入れても管理者にはならない。
+- **キー（管理者）**: 同じ画面の「キーを発行」で用途・権限（閲覧のみ `read`／閲覧・編集 `write`。管理者の権限は付けられない）・有効期限を選ぶ。キー（`skiwi_…`）は発行したときに一度だけ表示されるので、skakapo の管理画面の「サービス」→ skiwi →「エージェント専用アカウント」に貼り付ける。不要になったキーは「失効」、アカウントごと止めるときは「無効にする」（キーがすべて使えなくなる。有効に戻すとまた使える）。
+- **権限**: 作っただけでは何も見られない。ふつうのユーザーと同じく、ワークスペース・ページの「共有」でアカウントの名前を検索して閲覧・編集の権限を与える。エージェントの書き込み（ページの作成・編集・コメントなど）はこのアカウントの操作として記録される。
+- 作成・変更・キーの発行・失効は監査ログに残る（`agent.create`・`agent.update`・`agent.key.create`・`agent.key.revoke`）。管理用の API は Cookie のセッションのみ（API キーでは操作できない）。
 
 ## ページの複製
 サイドバーのページの「⋯」（右クリック）→「⧉ 複製…」、またはページ右上の「⤓ 書き出し」→「複製」。
@@ -460,7 +498,7 @@ claude mcp add --transport http skiwi https://skiwi.example.com/mcp --header "Au
 ## フロントエンド
 ```bash
 cd frontend && npm i
-npm run dev        # :5173 （/api /auth /ws を :8080 へプロキシ）
+npm run dev        # :5173 （/api /auth /mcp /oauth /scim /ws を :8080 へ中継。BACKEND で変えられる）
 npm run build      # dist/ を生成。STATIC_DIR=$PWD/frontend/dist を指定するとアプリが配信（SPA対応）
 # 依存の追加は `npm install --force`（katex と数式拡張のバージョン指定の食い違いのため）
 # dev/build の前に Excalidraw のフォントを public/excalidraw/ にコピーする（CDNから読み込ませないため）
@@ -469,7 +507,7 @@ npm run build      # dist/ を生成。STATIC_DIR=$PWD/frontend/dist を指定�
 ```
 
 ## 画面操作の自動テスト（Playwright）
-DB とアプリ（`scripts/dev-up.sh`）を起動した状態で:
+DB・アプリ（`scripts/dev-restart.sh`）・画面の開発サーバー（`npm run dev`）を起動した状態で（`BASE_URL`、既定 http://localhost:5173）:
 ```bash
 cd frontend && npm run test:ui
 ```
@@ -479,7 +517,7 @@ cd frontend && npm run test:ui
 ショートカット一覧・保護・期限付きの権限・関連とCSV・自動化ルール・受信用の Webhook・定期バックアップ・API の説明書・ユーザーマニュアル・画像の貼り付けとドラッグ・APIトークン・監査ログを確認する。
 
 ## 同時編集のE2Eテスト
-DB（`docker compose -f docker-compose.dev.yml up -d`）とアプリ（`sbt app/run`）を起動した状態で:
+DB（`docker compose -f docker-compose.dev.yml up -d`）とアプリ（`scripts/dev-restart.sh`）を起動した状態で:
 ```bash
 cd frontend && npm run test:collab
 ```
@@ -510,6 +548,7 @@ curl -H "Authorization: Bearer $TOKEN" https://skiwi.example.com/api/pages/<id>/
 `GET,PUT,DELETE /api/pages/{id}/share`（ゲスト公開の設定。`expiresAt`・`password` は null で解除）/ `POST /api/public/{token}/unlock`/ `GET /api/public/{token}`・`/api/public/{token}/pages/{id}`・`/api/public/{token}/attachments/{id}`（認証なし）
 `GET,PUT /api/pages/{id}/watch` / `GET,PUT /api/workspaces/{id}/acl` / `GET /api/directory?q=..`
 `GET,POST /api/tokens` / `DELETE /api/tokens/{id}`（Cookieセッションのみ）/ `GET /api/admin/audit?action=..&before=..`（管理者）
+`GET,POST /api/admin/agents` / `PATCH /api/admin/agents/{id}`（`{"name":…, "disabled":true}`）/ `POST /api/admin/agents/{id}/keys`（`{"name":…, "scope":"read|write", "expiresInDays":…}`）/ `DELETE /api/admin/agents/{id}/keys/{keyId}`（管理者・Cookieセッションのみ。エージェント専用アカウント）
 `/scim/v2/Users`, `/scim/v2/Groups`, `/scim/v2/ServiceProviderConfig`（`SCIM_TOKEN` によるBearer認証）
 `GET /healthz`（ロードバランサー用）/ `GET /api/admin/cluster?page=..`（管理者: 生存ノード・担当ノード）
 `WS /ws/pages/{id}`（y-websocket互換 + 圧縮用・権限通知用の独自メッセージ。閲覧権限のみのユーザーの書き込みは破棄）

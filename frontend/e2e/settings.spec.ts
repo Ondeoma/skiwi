@@ -66,6 +66,6 @@ test('監査ログ: 管理者でなければエラーを表示する', async ({ 
   await login(ctx, u)
   const page = await ctx.newPage()
   await page.goto('/admin/audit')
-  await expect(page.locator('.error')).toHaveText('admin only')
+  await expect(page.locator('.error')).toHaveText('管理者だけが使えます')
   await ctx.close()
 })

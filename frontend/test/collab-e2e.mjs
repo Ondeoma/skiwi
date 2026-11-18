@@ -1,5 +1,5 @@
 // 実サーバー(Scala)に対する同時編集のE2Eテスト。
-// 前提: DB(docker compose -f docker-compose.dev.yml up -d) と アプリ(BASE_URL, 既定 http://localhost:8080)が起動済み。
+// 前提: DB(docker compose -f docker-compose.dev.yml up -d) と アプリ(scripts/dev-restart.sh。BASE_URL, 既定 http://localhost:8080)が起動済み。
 import * as Y from 'yjs'
 import * as encoding from 'lib0/encoding'
 import * as decoding from 'lib0/decoding'
@@ -16,7 +16,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) failed+
 // --- テストデータ: ユーザー・セッションをDBに直接作る ------------------------------------
 const extraUsers = []
 function makeUser(name) {
-  const id = psql(`insert into app_user (oidc_sub, name) values ('e2e-${name}-${Date.now()}', '${name}') returning id`).split('\n')[0]
+  const id = psql(`insert into app_user (sub, name) values ('e2e-${name}-${Date.now()}', '${name}') returning id`).split('\n')[0]
   const u = { id, token: createSession(psql, id) }
   extraUsers.push(u)
   return u

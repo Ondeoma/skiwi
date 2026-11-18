@@ -9,3 +9,5 @@ frontend/public/excalidraw/
 frontend/test-results/
 frontend/playwright-report/
 .DS_Store
+.vscode/
+.env

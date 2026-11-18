@@ -39,10 +39,6 @@ final class DocStore(xa: Transactor[IO]) extends TxStore(xa):
     sql"select data from page_updates where page_id = $pageId and seq = $seq".query[Array[Byte]].option
   )
 
-  def countUpdates(pageId: UUID): IO[Long] = tx(
-    sql"select count(*) from page_updates where page_id = $pageId".query[Long].unique
-  )
-
   /** 全ての状態断片とupdateログ（seq昇順）。 */
   def load(pageId: UUID): IO[DocParts] = tx {
     for
@@ -172,6 +168,18 @@ final class DocStore(xa: Transactor[IO]) extends TxStore(xa):
     sql"""select content::text, plain_text, created_at from page_snapshot
           where page_id = $pageId and kind = 'compact'""".query[(String, String, Instant)].option
   )
+
+  /** 複数のページの最新の本文（JSON）。本文のないページは含めない */
+  def currentContents(ids: List[UUID]): IO[Map[UUID, String]] =
+    val arr = ids.toArray
+    if ids.isEmpty then IO.pure(Map.empty)
+    else tx(sql"select page_id, content::text from page_snapshot where page_id = any($arr) and kind = 'compact'".query[(UUID, String)].to[List].map(_.toMap))
+
+  /** 複数のページの最新の本文の平文 */
+  def plainTexts(ids: List[UUID]): IO[Map[UUID, String]] =
+    val arr = ids.toArray
+    if ids.isEmpty then IO.pure(Map.empty)
+    else tx(sql"select page_id, plain_text from page_snapshot where page_id = any($arr) and kind = 'compact'".query[(UUID, String)].to[List].map(_.toMap))
 
   /** 本文がまだ何も保存されていないか（取り込み先の確認用）。 */
   def isEmpty(pageId: UUID): IO[Boolean] = tx(

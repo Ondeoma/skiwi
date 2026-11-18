@@ -27,7 +27,7 @@ def idOf(p: Props): String = if (p.targetId.nonEmpty) p.targetId else p.id
 def mounted(s: State, props: Props): Unit = {
   val id = idOf(props)
   val load =
-    if (props.kind == "page") DialogsApi.pageStyles(id).map { st =>
+    if (props.kind == "page") skiwi.web.page.PageApi.pageStyles(id).map { st =>
       s.css := st.css.getOrElse("")
       s.inherit := st.inherit
       s.inherited := st.layers.filterNot(_.own)

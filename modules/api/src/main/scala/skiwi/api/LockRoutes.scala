@@ -49,7 +49,7 @@ final class LockRoutes(protected val store: Store, protected val sessions: Sessi
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "lock" =>
       authed(req) { s =>
         load(id, s).flatMap {
-          case (_, _, None)     => err(Status.NotFound, "page not found")
+          case (_, _, None)     => err(Status.NotFound, "ページが見つかりません")
           case (lock, raw, eff) => render(s, lock, raw, eff).flatMap(Ok(_))
         }
       }
@@ -58,10 +58,10 @@ final class LockRoutes(protected val store: Store, protected val sessions: Sessi
     case req @ PUT -> Root / "api" / "pages" / UUIDVar(id) / "lock" =>
       authed(req) { s =>
         load(id, s).flatMap {
-          case (_, _, None) => err(Status.NotFound, "page not found")
+          case (_, _, None) => err(Status.NotFound, "ページが見つかりません")
           case (lock, raw, Some((p, r))) =>
             val allowed = r == Role.Edit || (lock.isDefined && s.isAdmin && raw.isDefined)
-            if !allowed then err(Status.Forbidden, "insufficient permission")
+            if !allowed then err(Status.Forbidden, "権限がありません")
             else
               body[SetLockReq](req) { b =>
                 val reason = b.reason.map(_.trim).filter(_.nonEmpty).map(_.take(500))
@@ -77,10 +77,10 @@ final class LockRoutes(protected val store: Store, protected val sessions: Sessi
     case req @ DELETE -> Root / "api" / "pages" / UUIDVar(id) / "lock" =>
       authed(req) { s =>
         (store.pageAccess(id, s), store.pageLock(id)).flatMapN {
-          case (None, _)    => err(Status.NotFound, "page not found")
+          case (None, _)    => err(Status.NotFound, "ページが見つかりません")
           case (_, None)    => NoContent()
           case (Some((p, r)), Some(_)) =>
-            if r != Role.Edit && !s.isAdmin then err(Status.Forbidden, "insufficient permission")
+            if r != Role.Edit && !s.isAdmin then err(Status.Forbidden, "権限がありません")
             else
               store.setPageLock(id, None, None, Nil) *>
                 audit.log(s, "page.unlock", "page", id, Json.obj("title" -> p.title.asJson)) *> accessChanged *> NoContent()

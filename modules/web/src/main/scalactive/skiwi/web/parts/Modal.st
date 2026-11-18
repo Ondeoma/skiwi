@@ -1,8 +1,8 @@
 <script lang="scala">
-import org.scalajs.dom
+import skiwi.web.Backdrop
 
 // 設定画面などのモーダルの枠（背景・見出し・✕）. 中身は既定のスロット、見出しは title（後ろに置く部品は名前付きスロット head）.
-// 背景をクリック（mousedown）するか ✕ で onClose.
+// 背景をクリックするか ✕ で onClose（押し始めと離した所がどちらも背景のときだけ。中で文字を選ぶドラッグが外で終わっても閉じない）.
 // width: 幅の上限（px）/ maxHeight・top: 高さの上限・上の余白（vh）/ dim: 背景の暗さ /
 // smallTitle: 見出しを小さく / side: 右に寄せて、後ろの画面を操作できるままにする（背景を暗くしない）
 case class Props(label: String,
@@ -27,12 +27,11 @@ def boxStyle(p: Props): String = s"width: min(${p.width}px, 100%); max-height: $
 
 def bgClass(p: Props): String = if (p.side) "modal-backdrop docked" else "modal-backdrop"
 
-def onBg(p: Props, e: dom.Event): Unit = if (e.target == e.currentTarget) p.onClose(())
 </script>
 
 <template>
   <Teleport to="body">
-    <div :class="bgClass(props)" :style="bgStyle(props)" @mousedown="onBg(props, event)">
+    <div :class="bgClass(props)" :style="bgStyle(props)" @mousedown="Backdrop.down(event)" @mouseup="Backdrop.up(event)" @click="Backdrop.click(event)(props.onClose(()))">
       <div class="modal-dialog" role="dialog" :aria-label="props.label" :data-testid="props.testid" :style="boxStyle(props)">
         <header>
           <h2 :class='if (props.smallTitle) "compact" else ""'>{{ props.title }} <slot name="head"></slot></h2>

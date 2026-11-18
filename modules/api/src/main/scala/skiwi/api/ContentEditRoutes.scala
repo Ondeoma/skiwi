@@ -62,14 +62,14 @@ final class ContentEditRoutes(
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "api" / "pages" / UUIDVar(id) / "content" =>
       withPage(req, id, Role.Edit) { (s, page, _) =>
-        req.as[ContentEditReq].attempt.flatMap {
-          case Left(e) => err(Status.BadRequest, s"invalid body: ${e.getMessage}")
-          case Right(b) if b.markdown.length > MaxMarkdown => err(Status.PayloadTooLarge, "markdown is too large")
+        decodeBody[ContentEditReq](req).flatMap {
+          case Left(e) => err(Status.BadRequest, e)
+          case Right(b) if b.markdown.length > MaxMarkdown => err(Status.PayloadTooLarge, "Markdown が大きすぎます")
           case Right(b) if b.mode == ContentEditMode.replace_section && b.heading.forall(_.trim.isEmpty) =>
             err(Status.BadRequest, "replace_section には heading（見出しの文字）が要ります")
           case Right(b) =>
             val newBlocks = MarkdownParse.blocks(b.markdown)
-            if newBlocks.size > MaxBlocks then err(Status.PayloadTooLarge, "too many blocks") else edit(s, page, b, newBlocks)
+            if newBlocks.size > MaxBlocks then err(Status.PayloadTooLarge, "ブロックが多すぎます") else edit(s, page, b, newBlocks)
         }
       }
   }

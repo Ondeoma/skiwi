@@ -65,16 +65,16 @@ final class IntegrationStore(xa: Transactor[IO]) extends TxStore(xa):
 
   /** 認可コードを保存する（ハッシュだけ。期限から1時間たったものは消す） */
   def createOAuthCode(hash: Array[Byte], c: OAuthCode, expires: Instant): IO[Unit] = tx(
-    sql"""insert into oauth_code (code_hash, client_id, redirect_uri, user_id, code_challenge, expires_at)
-          values ($hash, ${c.clientId}, ${c.redirectUri}, ${c.userId}, ${c.codeChallenge}, $expires)""".update.run *>
+    sql"""insert into oauth_code (code_hash, client_id, redirect_uri, user_id, code_challenge, scope, expires_at)
+          values ($hash, ${c.clientId}, ${c.redirectUri}, ${c.userId}, ${c.codeChallenge}, ${c.scope}, $expires)""".update.run *>
       sql"delete from oauth_code where expires_at < now() - interval '1 hour'".update.run.void
   )
 
   /** 認可コードを使う（期限内で未使用のものだけ。使ったら使用済みにする） */
   def consumeOAuthCode(hash: Array[Byte]): IO[Option[OAuthCode]] = tx(
     sql"""update oauth_code set used_at = now() where code_hash = $hash and used_at is null and expires_at > now()
-          returning client_id, redirect_uri, user_id, code_challenge""".query[OAuthCode].option
+          returning client_id, redirect_uri, user_id, code_challenge, scope""".query[OAuthCode].option
   )
 
 /** 認可コードに結び付けた内容 */
-final case class OAuthCode(clientId: String, redirectUri: String, userId: UUID, codeChallenge: String)
+final case class OAuthCode(clientId: String, redirectUri: String, userId: UUID, codeChallenge: String, scope: String = "read")

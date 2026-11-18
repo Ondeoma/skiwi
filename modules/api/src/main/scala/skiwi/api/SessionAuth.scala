@@ -22,7 +22,7 @@ final case class ApiConfig(
 )
 
 /** 読み取り専用(read)スコープのAPIトークンで、更新系のリクエストが来た。 */
-case object ReadOnlyTokenError extends Exception("this API token is read-only")
+case object ReadOnlyTokenError extends Exception("この API トークンは閲覧のみです")
 
 /** 認証: Cookieセッション、または `Authorization: Bearer <APIトークン>`。 */
 final class SessionAuth(store: Store, ops: OpsStore, cfg: ApiConfig):
@@ -33,7 +33,7 @@ final class SessionAuth(store: Store, ops: OpsStore, cfg: ApiConfig):
   private def isRead(req: Request[IO]) =
     safeMethods.contains(req.method) || (req.method == Method.POST && readOnlyPosts.contains(req.uri.path.renderString))
 
-  private def isAdmin(gs: List[Group]) = gs.exists(g => cfg.adminGroups.contains(g.externalId))
+  private def isAdmin(u: User, gs: List[Group]) = AgentAccounts.isAdmin(u.sub, gs.map(_.externalId), cfg.adminGroups)
 
   def fromRequest(req: Request[IO]): IO[Option[AuthSession]] =
     bearer(req) match
@@ -46,17 +46,18 @@ final class SessionAuth(store: Store, ops: OpsStore, cfg: ApiConfig):
           case Some((u, gs, tid, scope)) =>
             val ro = scope != "write"
             if ro && !isRead(req) then IO.raiseError(ReadOnlyTokenError)
-            else IO.pure(Some(AuthSession(u, gs, isAdmin(gs), AuthVia.Token(tid, ro))))
+            // API トークンには管理者の権限を付けない（漏れたトークンで管理の操作・全ページの閲覧をさせない）
+            else IO.pure(Some(AuthSession(u, gs, isAdmin = false, AuthVia.Token(tid, ro))))
         }
       case None =>
         req.cookies.find(_.name == cfg.cookieName).map(_.content) match
           case None => IO.pure(None)
           case Some(token) =>
-            store.findSession(Crypto.sha256(token), Instant.now()).map(_.map((u, gs) => AuthSession(u, gs, isAdmin(gs))))
+            store.findSession(Crypto.sha256(token), Instant.now()).map(_.map((u, gs) => AuthSession(u, gs, isAdmin(u, gs))))
 
   /** 別のユーザーとしての権限確認用（メンションの通知先が閲覧できるかなど）。無効なユーザーは None。 */
   def sessionFor(userId: java.util.UUID): IO[Option[AuthSession]] =
-    store.userWithGroups(userId).map(_.map((u, gs) => AuthSession(u, gs, isAdmin(gs))))
+    store.userWithGroups(userId).map(_.map((u, gs) => AuthSession(u, gs, isAdmin(u, gs))))
 
   def adminGroups: Set[String] = cfg.adminGroups
   def cookieSecure: Boolean = cfg.cookieSecure

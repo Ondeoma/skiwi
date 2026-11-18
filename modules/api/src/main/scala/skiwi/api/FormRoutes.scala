@@ -64,22 +64,22 @@ final class FormRoutes(
 
   private def withDb(req: Request[IO], id: UUID)(f: (AuthSession, Page) => IO[Response[IO]]) =
     withPage(req, id, Role.Edit) { (s, p, _) =>
-      dbs.isDatabase(id).flatMap(if _ then f(s, p) else err(Status.BadRequest, "not a database"))
+      dbs.isDatabase(id).flatMap(if _ then f(s, p) else err(Status.BadRequest, "データベースではありません"))
     }
   private def withForm(req: Request[IO], fid: UUID)(f: (AuthSession, DbForm) => IO[Response[IO]]) =
     dbs.form(fid).flatMap {
-      case None     => err(Status.NotFound, "form not found")
+      case None     => err(Status.NotFound, "フォームが見つかりません")
       case Some(fm) => withDb(req, fm.databasePageId)((s, _) => f(s, fm))
     }
 
   /** 設定の確認: 回答できる列だけ、名前は1つまで */
   private def validate(b: SaveFormReq, props: List[DatabaseSchema.Prop]): Option[String] =
-    if b.title.trim.isEmpty || b.title.length > 200 then Some("title must be 1-200 characters")
+    if b.title.trim.isEmpty || b.title.length > 200 then Some("タイトルは1〜200文字にしてください")
     else if b.fields.isEmpty || b.fields.size > 50 then Some("select 1-50 fields")
-    else if b.fields.map(_.prop).distinct.size != b.fields.size then Some("duplicate fields")
-    else if b.fields.exists(f => f.prop != "title" && !props.exists(p => p.id == f.prop && Answerable(p.tpe))) then Some("unsupported field")
-    else if b.respondentProp.exists(r => !props.exists(p => p.id == r && p.tpe == "person")) then Some("respondent column must be a user column")
-    else if b.description.exists(_.length > 4000) || b.fields.exists(f => f.label.exists(_.length > 200) || f.help.exists(_.length > 1000)) then Some("text too long")
+    else if b.fields.map(_.prop).distinct.size != b.fields.size then Some("項目が重複しています")
+    else if b.fields.exists(f => f.prop != "title" && !props.exists(p => p.id == f.prop && Answerable(p.tpe))) then Some("使えない種類の項目があります")
+    else if b.respondentProp.exists(r => !props.exists(p => p.id == r && p.tpe == "person")) then Some("回答者の列はユーザーの列にしてください")
+    else if b.description.exists(_.length > 4000) || b.fields.exists(f => f.label.exists(_.length > 200) || f.help.exists(_.length > 1000)) then Some("説明が長すぎます（1000文字まで）")
     else None
 
   private def allow(id: UUID): IO[Boolean] = perMinute(rate, id, PerMinute)
@@ -91,8 +91,8 @@ final class FormRoutes(
 
     case req @ POST -> Root / "api" / "pages" / UUIDVar(id) / "forms" =>
       withDb(req, id) { (s, p) =>
-        (req.as[SaveFormReq].attempt, dbs.get(id)).flatMapN {
-          case (Left(_), _) | (_, None) => err(Status.BadRequest, "invalid body")
+        (decodeBody[SaveFormReq](req), dbs.get(id)).flatMapN {
+          case (Left(_), _) | (_, None) => err(Status.BadRequest, "リクエストの本文が正しくありません")
           case (Right(b), Some(d)) =>
             val props = DatabaseSchema.props(parseOrNull(d.props)).getOrElse(Nil)
             validate(b, props) match
@@ -107,15 +107,15 @@ final class FormRoutes(
 
     case req @ PUT -> Root / "api" / "forms" / UUIDVar(fid) =>
       withForm(req, fid) { (s, fm) =>
-        (req.as[SaveFormReq].attempt, dbs.get(fm.databasePageId)).flatMapN {
-          case (Left(_), _) | (_, None) => err(Status.BadRequest, "invalid body")
+        (decodeBody[SaveFormReq](req), dbs.get(fm.databasePageId)).flatMapN {
+          case (Left(_), _) | (_, None) => err(Status.BadRequest, "リクエストの本文が正しくありません")
           case (Right(b), Some(d)) =>
             validate(b, DatabaseSchema.props(parseOrNull(d.props)).getOrElse(Nil)) match
               case Some(m) => err(Status.BadRequest, m)
               case None =>
                 dbs.updateForm(fid, b.title.trim, b.description.map(_.trim).filter(_.nonEmpty), b.fields.asJson.noSpaces, b.requireLogin,
                   b.respondentProp, b.enabled.getOrElse(fm.enabled)).flatMap {
-                  case None    => err(Status.NotFound, "form not found")
+                  case None    => err(Status.NotFound, "フォームが見つかりません")
                   case Some(f) => audit.log(s, "form.update", "page", fm.databasePageId, Json.obj("form" -> f.title.asJson, "enabled" -> f.enabled.asJson)) *> Ok(dto(f))
                 }
         }
@@ -129,7 +129,7 @@ final class FormRoutes(
       (dbs.formByToken(token), sessions.fromRequest(req)).flatMapN {
         case (Some(f), s) if f.enabled =>
           dbs.get(f.databasePageId).flatMap {
-            case None => err(Status.NotFound, "not found")
+            case None => err(Status.NotFound, "見つかりません")
             case Some(d) =>
               val props = parseOrNull(d.props).asArray.getOrElse(Vector.empty).flatMap(_.asObject)
               val fields = fieldsOf(f).flatMap { fd =>
@@ -142,17 +142,17 @@ final class FormRoutes(
               }
               Ok(PublicFormDto(f.title, f.description, fields, f.requireLogin, s.isDefined, s.map(_.user.name)))
           }
-        case _ => err(Status.NotFound, "not found")
+        case _ => err(Status.NotFound, "見つかりません")
       }
 
     case req @ POST -> Root / "api" / "forms" / "public" / token =>
       (dbs.formByToken(token), sessions.fromRequest(req)).flatMapN {
-        case (Some(f), _) if !f.enabled => err(Status.NotFound, "not found")
-        case (None, _)                   => err(Status.NotFound, "not found")
-        case (Some(f), None) if f.requireLogin => err(Status.Unauthorized, "login required")
+        case (Some(f), _) if !f.enabled => err(Status.NotFound, "見つかりません")
+        case (None, _)                   => err(Status.NotFound, "見つかりません")
+        case (Some(f), None) if f.requireLogin => err(Status.Unauthorized, "ログインしてください")
         case (Some(f), respondent) =>
           allow(f.id).flatMap {
-            case false => err(Status.TooManyRequests, "too many requests")
+            case false => err(Status.TooManyRequests, "リクエストが多すぎます。しばらくしてからやり直してください")
             case true =>
               body[SubmitFormReq](req) { b =>
                 submit(f, respondent, b.values)
@@ -168,12 +168,12 @@ final class FormRoutes(
     val missing = fields.filter(_.required).filter { fd =>
       in(fd.prop).forall(v => v.isNull || v.asString.exists(_.trim.isEmpty) || v.asArray.exists(_.isEmpty) || v.asBoolean.contains(false))
     }
-    if missing.nonEmpty then err(Status.BadRequest, s"required: ${missing.map(_.prop).mkString(",")}")
+    if missing.nonEmpty then err(Status.BadRequest, s"必須の項目が入力されていません: ${missing.map(_.prop).mkString(",")}")
     else
       // フォームの項目に含まれる列だけを受け付ける
       val values = JsonObject.fromIterable(in.toList.filter((k, _) => k != "title" && fields.exists(_.prop == k)))
       (f.createdById.flatTraverse(sessions.sessionFor), dbs.get(f.databasePageId)).flatMapN {
-        case (None, _) | (_, None) => err(Status.Forbidden, "this form is no longer available")
+        case (None, _) | (_, None) => err(Status.Forbidden, "このフォームは使えなくなりました")
         case (Some(owner), Some(d)) =>
           store.pageAccess(f.databasePageId, owner).flatMap {
             case Some((db, Role.Edit)) =>
@@ -197,6 +197,6 @@ final class FormRoutes(
                         r <- Created(Json.obj("ok" -> true.asJson))
                       yield r
                   }
-            case _ => err(Status.Forbidden, "this form is no longer available")
+            case _ => err(Status.Forbidden, "このフォームは使えなくなりました")
           }
       }

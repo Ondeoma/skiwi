@@ -8,6 +8,8 @@ import scala.scalajs.js
 //  - allow-same-origin を付けないので、中のスクリプトは別オリジン扱いになり、skiwi の Cookie・API・画面には触れられない
 //  - 高さは中身に合わせる（中から postMessage で知らせる）
 //  - リンクはページ全体で開く（<base target="_top">。利用者の操作によるときだけ許可）
+//  - 画面の CSP を引き継がないよう、srcdoc ではなく /sandbox.html を開き、HTML は読み込み後に postMessage で渡す
+//    （HTML が変わったら URL を変えて開き直す）
 case class Props(html: String, label: String = "")
 
 case class State(frame: ElementRef[dom.HTMLIFrameElement] = ElementRef(),
@@ -20,7 +22,7 @@ def initState() = State()
 // スクリプトの閉じタグ（.st の <script> を閉じないよう分けて書く）
 private val closeScript = "<" + "/script>"
 
-def srcdoc(p: Props, s: State): String =
+def doc(p: Props, s: State): String =
   s"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <base target="_top"><meta name="color-scheme" content="${if (Theme.isDark) "dark" else "light"}">
 <style>html,body{margin:0;padding:0;background:transparent;font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;}img,video{max-width:100%;height:auto}</style>
@@ -41,6 +43,12 @@ def mounted(s: State): Unit = {
   dom.window.addEventListener("message", f)
 }
 
+/** 枠が読み込まれたら HTML を渡す（枠は最初の1回だけ書き込む） */
+def loaded(p: Props, s: State): Unit =
+  s.frame.foreach(fr => Option(fr.contentWindow).foreach(_.postMessage(js.Dynamic.literal(skiwiSandbox = 1, doc = doc(p, s)), "*")))
+
+def src(p: Props): String = s"/sandbox.html?v=${Integer.toHexString(p.html.hashCode)}"
+
 def unmounted(s: State): Unit = s.listener.v.foreach(f => dom.window.removeEventListener("message", f))
 
 def title(p: Props): String = if (p.label.isEmpty) "埋め込みHTML" else p.label
@@ -50,7 +58,8 @@ def title(p: Props): String = if (p.label.isEmpty) "埋め込みHTML" else p.lab
   <iframe
     ref="s.frame"
     class="sandboxed-html"
-    :srcdoc="srcdoc(props, s)"
+    :src="src(props)"
+    @load="loaded(props, s)"
     sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation-by-user-activation"
     referrerpolicy="no-referrer"
     :title="title(props)"

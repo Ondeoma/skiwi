@@ -72,6 +72,33 @@ object Protocol:
       out.result()
     }.getOrElse(Nil)
 
+  /** awareness の状態の user（カーソル・在席に出す名前）を、接続を認証したユーザーのものに書き換える.
+    * クライアントが名乗った名前をそのまま中継すると、閲覧だけの人でも他人の名前を名乗れるため. 読めなければ None（中継しない） */
+  def awarenessAsUser(frame: ByteVector, userId: String, name: String): Option[ByteVector] =
+    read(frame) { r =>
+      r.varUint()
+      val update  = YReader(r.varBytes())
+      val n       = update.varUint()
+      require(n <= 1000)
+      val entries = (0L until n).map(_ => (update.varUint(), update.varUint(), strictString(update))).toList
+      val body = write { w =>
+        w.varUint(entries.size.toLong)
+        entries.foreach { (client, clock, state) =>
+          w.varUint(client); w.varUint(clock)
+          w.string(if state == "null" then state else asUser(state, userId, name))
+        }
+      }
+      write { w => w.varUint(MsgAwareness); writeVarBytes(w, body) }
+    }
+
+  private def asUser(state: String, userId: String, name: String): String =
+    io.circe.parser.parse(state).toOption.flatMap(_.asObject) match
+      case None => "null" // JSON のオブジェクトでなければ消えたものとして扱う
+      case Some(o) =>
+        val user = o("user").flatMap(_.asObject).getOrElse(io.circe.JsonObject.empty)
+          .add("id", io.circe.Json.fromString(userId)).add("name", io.circe.Json.fromString(name))
+        io.circe.Json.fromJsonObject(o.add("user", io.circe.Json.fromJsonObject(user))).noSpaces
+
   /** 接続が切れたクライアントの awareness を消すフレーム（clock を1つ進めて状態 null） */
   def awarenessRemoval(clients: Map[Long, Long]): ByteVector =
     val body = write { w =>

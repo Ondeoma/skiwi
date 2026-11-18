@@ -17,7 +17,7 @@ export function createSession(psql, userId, ttl = '1 hour') {
 
 /** グループに入れる（グループがなければ作る） */
 export function addToGroup(psql, userId, group) {
-  const gid = psql(`insert into app_group (external_id, name) values ('${group}', '${group}') on conflict (external_id) do update set name = excluded.name returning id`).split('\n')[0]
+  const gid = psql(`insert into user_group (external_id, name) values ('${group}', '${group}') on conflict (external_id) do update set name = excluded.name returning id`).split('\n')[0]
   psql(`insert into group_member (group_id, user_id) values ('${gid}', '${userId}') on conflict do nothing`)
 }
 

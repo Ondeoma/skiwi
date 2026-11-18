@@ -40,10 +40,10 @@ final class InboundRoutes(
   private val MaxBody = 65536L
   private val PerMinute = 60
 
-  private def withWs(req: Request[IO], wsId: UUID)(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
+  private def withWsMember(req: Request[IO], wsId: UUID)(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
     authed(req) { s =>
       store.workspaceRole(wsId, s).flatMap {
-        case None => store.workspaceVisible(wsId, s).ifM(err(Status.Forbidden, "insufficient permission"), err(Status.NotFound, "workspace not found"))
+        case None => store.workspaceVisible(wsId, s).ifM(err(Status.Forbidden, "権限がありません"), err(Status.NotFound, "ワークスペースが見つかりません"))
         case Some(_) => f(s)
       }
     }
@@ -51,12 +51,12 @@ final class InboundRoutes(
   private def withHook(req: Request[IO], id: UUID)(f: (AuthSession, InboundHook) => IO[Response[IO]]) =
     authed(req) { s =>
       inbound.get(id).flatMap {
-        case None => err(Status.NotFound, "hook not found")
+        case None => err(Status.NotFound, "受信用の Webhook が見つかりません")
         case Some(h) =>
           store.pageAccess(h.targetPageId, s).flatMap {
             case Some((_, Role.Edit)) => f(s, h)
-            case Some(_)              => err(Status.Forbidden, "insufficient permission")
-            case None                 => if s.isAdmin then f(s, h) else err(Status.NotFound, "hook not found")
+            case Some(_)              => err(Status.Forbidden, "権限がありません")
+            case None                 => if s.isAdmin then f(s, h) else err(Status.NotFound, "受信用の Webhook が見つかりません")
           }
       }
     }
@@ -70,7 +70,7 @@ final class InboundRoutes(
     val ps = props.asArray.getOrElse(Vector.empty).flatMap(_.asObject)
     values.toList.traverse { (k, v) =>
       ps.find(p => p("id").flatMap(_.asString).contains(k) || p("name").flatMap(_.asString).contains(k)) match
-        case None => IO.pure(Left(s"unknown column: $k"))
+        case None => IO.pure(Left(s"不明な列です: $k"))
         case Some(p) =>
           val id = p("id").flatMap(_.asString).get
           val opts = p("options").flatMap(_.asArray).getOrElse(Vector.empty).flatMap(_.asObject)
@@ -102,25 +102,25 @@ final class InboundRoutes(
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     // ------------------------------------------------------------ 受信（認証なし。URLのトークンで判断）
     case req @ POST -> Root / "api" / "hooks" / token =>
-      if token.length > 100 then err(Status.NotFound, "not found")
+      if token.length > 100 then err(Status.NotFound, "見つかりません")
       else inbound.byToken(Crypto.sha256(token)).flatMap {
-        case None                 => err(Status.NotFound, "not found")
-        case Some(h) if !h.enabled => err(Status.Gone, "disabled")
+        case None                 => err(Status.NotFound, "見つかりません")
+        case Some(h) if !h.enabled => err(Status.Gone, "この受信用の Webhook は止められています")
         case Some(h) =>
           allow(h.id).flatMap {
-            case false => err(Status.TooManyRequests, "too many requests")
+            case false => err(Status.TooManyRequests, "リクエストが多すぎます。しばらくしてからやり直してください")
             case true =>
               req.body.take(MaxBody + 1).compile.to(Array).flatMap { bytes =>
-                if bytes.length > MaxBody then err(Status.PayloadTooLarge, "body too large (max 64KB)")
+                if bytes.length > MaxBody then err(Status.PayloadTooLarge, "本文が大きすぎます（64KB まで）")
                 else
                   val raw = new String(bytes, "UTF-8")
                   val body = io.circe.parser.parse(raw).toOption.flatMap(_.asObject).getOrElse(JsonObject("text" -> raw.asJson))
                   h.createdById.flatTraverse(sessions.sessionFor).flatMap {
-                    case None => err(Status.Forbidden, "the creator of this hook can no longer use it")
+                    case None => err(Status.Forbidden, "この Webhook を作った人が使えなくなっています")
                     case Some(s) =>
                       store.pageAccess(h.targetPageId, s).flatMap {
                         case Some((p, Role.Edit)) => receive(h, s, p, body)
-                        case _                    => err(Status.Forbidden, "the creator of this hook can no longer edit the target page")
+                        case _                    => err(Status.Forbidden, "この Webhook を作った人が受け取り先のページを編集できなくなっています")
                       }
                   }
               }
@@ -130,26 +130,26 @@ final class InboundRoutes(
     // ------------------------------------------------------------ 設定
     case req @ GET -> Root / "api" / "workspaces" / UUIDVar(wsId) / "inbound-hooks" =>
       // 受け取り先のページを閲覧できるものだけ
-      withWs(req, wsId)(s => inbound.list(wsId).flatMap(hs => store.pagesAccess(hs.map(_.targetPageId), s).flatMap(ok => Ok(hs.filter(h => ok.contains(h.targetPageId)).map(dto(_))))))
+      withWsMember(req, wsId)(s => inbound.list(wsId).flatMap(hs => store.pagesAccess(hs.map(_.targetPageId), s).flatMap(ok => Ok(hs.filter(h => ok.contains(h.targetPageId)).map(dto(_))))))
 
     case req @ POST -> Root / "api" / "workspaces" / UUIDVar(wsId) / "inbound-hooks" =>
-      withWs(req, wsId) { s =>
+      withWsMember(req, wsId) { s =>
         body[CreateInboundReq](req) {
-          case b if !Modes(b.mode) => err(Status.BadRequest, "invalid mode")
-          case b if b.name.trim.isEmpty || b.name.length > 100 => err(Status.BadRequest, "invalid name")
+          case b if !Modes(b.mode) => err(Status.BadRequest, "モードが正しくありません")
+          case b if validName(b.name).isEmpty => err(Status.BadRequest, "名前が正しくありません")
           case b =>
             store.pageAccess(b.targetPageId, s).flatMap {
               case Some((p, Role.Edit)) if p.workspaceId == wsId =>
                 (if b.mode == "row" then dbs.isDatabase(p.id) else IO.pure(true)).flatMap {
-                  case false => err(Status.BadRequest, "target is not a database")
+                  case false => err(Status.BadRequest, "対象がデータベースではありません")
                   case true =>
                     val t = newToken
                     inbound.create(wsId, p.id, b.name.trim, b.mode, Crypto.sha256(t), s.user.id).flatMap { h =>
                       audit.log(s, "inbound_hook.create", "page", p.id, Json.obj("name" -> h.name.asJson, "mode" -> h.mode.asJson)) *> Created(dto(h, Some(t)))
                     }
                 }
-              case Some((p, _)) if p.workspaceId == wsId => err(Status.Forbidden, "insufficient permission")
-              case _ => err(Status.NotFound, "page not found")
+              case Some((p, _)) if p.workspaceId == wsId => err(Status.Forbidden, "権限がありません")
+              case _ => err(Status.NotFound, "ページが見つかりません")
             }
         }
       }
@@ -157,10 +157,10 @@ final class InboundRoutes(
     case req @ PATCH -> Root / "api" / "inbound-hooks" / UUIDVar(id) =>
       withHook(req, id) { (s, h) =>
         body[UpdateInboundReq](req) {
-          case b if b.name.exists(n => n.trim.isEmpty || n.length > 100) => err(Status.BadRequest, "invalid name")
+          case b if b.name.exists(validName(_).isEmpty) => err(Status.BadRequest, "名前が正しくありません")
           case b =>
             inbound.update(id, b.name.map(_.trim), b.enabled).flatMap {
-              case None => err(Status.NotFound, "hook not found")
+              case None => err(Status.NotFound, "受信用の Webhook が見つかりません")
               case Some(nh) => audit.log(s, "inbound_hook.update", "page", h.targetPageId, Json.obj("name" -> nh.name.asJson, "enabled" -> nh.enabled.asJson)) *> Ok(dto(nh))
             }
         }
@@ -187,7 +187,7 @@ final class InboundRoutes(
     h.mode match
       case "comment" =>
         val t = text.trim.take(10000)
-        if t.isEmpty then err(Status.BadRequest, "text is required")
+        if t.isEmpty then err(Status.BadRequest, "本文を入力してください")
         else
           for
             c    <- comments.create(target.id, None, None, None, t, s.user.id)
@@ -200,7 +200,7 @@ final class InboundRoutes(
         val withValues: IO[Either[String, JsonObject]] =
           if mode != "row" then IO.pure(Right(JsonObject.empty))
           else dbs.get(target.id).flatMap {
-            case None => IO.pure(Left("target is not a database"))
+            case None => IO.pure(Left("対象がデータベースではありません"))
             case Some(d) =>
               val props = io.circe.parser.parse(d.props).getOrElse(Json.arr())
               convert(props, values).map(_.flatMap(v => DatabaseSchema.props(props).flatMap(ps => DatabaseSchema.patch(ps, v))))

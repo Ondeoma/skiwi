@@ -12,7 +12,7 @@ import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
 
-// ページの画面（PageView・コメント・版履歴・権限の申請）が使う API（frontend/src/api.ts の api4・api5・commentApi・copyApi・cssApi・lockApi と同じ）
+// ページの画面（PageView・コメント・版履歴・権限の申請）が使う API
 
 /** inherited: 「子ページも含める」でウォッチしている祖先（このページに設定がなければ、その設定で通知が届く） */
 final case class WatchInherited(pageId: String, title: String, edits: Boolean, comments: Boolean) derives Codec.AsObject

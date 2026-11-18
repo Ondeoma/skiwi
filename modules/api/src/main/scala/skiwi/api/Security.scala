@@ -23,23 +23,26 @@ object Security:
     *  - Origin があれば、PUBLIC_URL のオリジンか、Host ヘッダと同じオリジン（開発時のプロキシ）であること
     *  - Origin がなければ Sec-Fetch-Site を見る。どちらもなければブラウザ以外とみなして通す
     * API トークン（Authorization ヘッダ）で認証するリクエストは対象外。
+    * devLogin=true（DEV_LOGIN）のときは、画面の開発サーバー（http://localhost:… ・http://127.0.0.1:…）からも受ける。
     */
-  def csrf(publicUrl: String, cookieName: String)(routes: HttpRoutes[IO]): HttpRoutes[IO] =
+  def csrf(publicUrl: String, cookieName: String, devLogin: Boolean = false)(routes: HttpRoutes[IO]): HttpRoutes[IO] =
     val own = originOf(publicUrl)
+    def devOrigin(o: String) = devLogin && Uri.fromString(o).toOption.exists(u =>
+      u.scheme.exists(_.value.toString == "http") && u.host.exists(h => Set("localhost", "127.0.0.1").contains(h.value)))
     def sameOrigin(req: Request[IO]): Boolean =
       req.headers.get(org.typelevel.ci.CIString("Origin")).map(_.head.value.trim.toLowerCase) match
         case Some(o) =>
-          own.contains(o) || req.headers.get(org.typelevel.ci.CIString("Host")).exists(h => originOf(o).exists(_.endsWith(s"://${h.head.value.trim.toLowerCase}")))
+          own.contains(o) || devOrigin(o) || req.headers.get(org.typelevel.ci.CIString("Host")).exists(h => originOf(o).exists(_.endsWith(s"://${h.head.value.trim.toLowerCase}")))
         case None =>
           req.headers.get(org.typelevel.ci.CIString("Sec-Fetch-Site")).map(_.head.value).forall(v => v == "same-origin" || v == "none")
     Kleisli { (req: Request[IO]) =>
       val cookieAuth = req.cookies.exists(_.name == cookieName) && req.headers.get[Authorization].isEmpty
       if safeMethods.contains(req.method) || !cookieAuth || sameOrigin(req) then routes(req)
-      else OptionT.liftF(IO.pure(Response[IO](Status.Forbidden).withEntity("cross-origin request rejected")))
+      else OptionT.liftF(IO.pure(Response[IO](Status.Forbidden).withEntity("ほかのサイトからのリクエストは受け付けません")))
     }
 
   /** 本文が上限を超えた（ErrorHandling で 413 にする） */
-  final case class BodyTooLarge(limit: Long) extends Exception(s"request body too large (max $limit bytes)")
+  final case class BodyTooLarge(limit: Long) extends Exception(s"リクエストの本文が大きすぎます（$limit バイトまで）")
 
   /** パスごとの本文の上限（None は各ルートに任せる）。サーバー（Ember）の既定には上限がないため、メモリを使い切らせないよう全体にかける。 */
   def bodyLimitFor(path: String): Option[Long] =
@@ -49,7 +52,8 @@ object Security:
     else if path.startsWith("/api/") || path.startsWith("/mcp") then Some(16 * MB)
     else Some(1 * MB) // /auth・/oauth・/scim など
 
-  private def limitStream(limit: Long): Pipe[IO, Byte, Byte] =
+  /** 本文を limit バイトまでに限る（Content-Length のない chunked の本文も数える。超えたら BodyTooLarge） */
+  def limitStream(limit: Long): Pipe[IO, Byte, Byte] =
     def go(s: Stream[IO, Byte], seen: Long): Pull[IO, Byte, Unit] = s.pull.uncons.flatMap {
       case None => Pull.done
       case Some((chunk, rest)) =>

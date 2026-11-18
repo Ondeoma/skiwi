@@ -81,7 +81,7 @@ export const DrawioView = domNodeView<DrawioOptions>((c) => {
   }
 
   function onMessage(e: MessageEvent) {
-    if (!overlay || e.source !== frame?.contentWindow || typeof e.data !== 'string') return
+    if (!overlay || e.source !== frame?.contentWindow || e.origin !== origin || typeof e.data !== 'string') return
     let msg: { event?: string; xml?: string; exit?: boolean; data?: string; modified?: boolean }
     try { msg = JSON.parse(e.data) } catch { return }
     if (msg.event === 'init') void load()

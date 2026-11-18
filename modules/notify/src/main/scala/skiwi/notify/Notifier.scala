@@ -1,5 +1,7 @@
 package skiwi.notify
 
+import skiwi.shared.Titles
+
 import cats.effect.*
 import io.circe.parser.parse
 import skiwi.core.*
@@ -25,17 +27,17 @@ final class Notifier(
   /** 送信時点で閲覧できるページ（権限変更・削除後のメール漏洩を防ぐ）。見られなければ Left(理由) */
   private def visiblePage(userId: UUID, pageId: UUID): IO[Either[String, (User, Page)]] =
     store.userWithGroups(userId).flatMap {
-      case None => IO.pure(Left("inactive user"))
+      case None => IO.pure(Left("無効なユーザーです"))
       case Some((u, gs)) =>
-        val s = AuthSession(u, gs, gs.exists(g => adminGroups.contains(g.externalId)))
-        store.pageAccess(pageId, s).map(_.map((p, _) => (u, p)).toRight("no access"))
+        val s = AuthSession(u, gs, AgentAccounts.isAdmin(u.sub, gs.map(_.externalId), adminGroups))
+        store.pageAccess(pageId, s).map(_.map((p, _) => (u, p)).toRight("閲覧の権限がありません"))
     }
 
   /** 1件分のメールを組み立てる。送らない場合は Left(理由)。 */
   def render(it: OutboxItem): IO[Either[String, Mail]] =
     it.email.filter(_.contains("@")) match
-      case _ if !it.active => IO.pure(Left("inactive user"))
-      case None            => IO.pure(Left("no email address"))
+      case _ if !it.active => IO.pure(Left("無効なユーザーです"))
+      case None            => IO.pure(Left("メールアドレスがありません"))
       case Some(to) =>
         val detail = parse(it.detail).toOption.map(_.hcursor)
         def field(k: String) = detail.flatMap(_.downField(k).as[String].toOption)
@@ -50,7 +52,7 @@ final class Notifier(
         def quote(t: Option[String]) = t.fold("")(e => s"\n> $e\n")
 
         def pageMail(kind: String, u: User, p: Page): IO[Either[String, Mail]] =
-          val title = if p.title.isBlank then "無題" else p.title
+          val title = Titles.display(p.title)
           val link  = s"$base/w/${p.workspaceId}/p/${p.id}"
           kind match
             case "shared" =>
@@ -112,7 +114,7 @@ final class Notifier(
         case Left(reason) => IO.pure(OutboxResult.Skip(reason))
         case Right(mail) =>
           mailer match
-            case None    => IO.pure(OutboxResult.Skip("mail is not configured"))
+            case None    => IO.pure(OutboxResult.Skip("メールの送信が設定されていません"))
             case Some(m) =>
               skiwi.observe.Telemetry.span("mail.send", "kind" -> it.kind)(m.send(mail)).as(OutboxResult.Sent)
                 .flatTap(_ => skiwi.observe.Metrics.count("skiwi.mails.sent", "kind" -> it.kind))

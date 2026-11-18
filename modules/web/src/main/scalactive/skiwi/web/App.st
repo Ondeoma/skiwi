@@ -16,6 +16,8 @@ def opt(r: io.github.ondeoma.scalactive.facades.URLPatternResult, key: String): 
 
 val routes: PathPatternRoutes = List(
   ("/", _ => HomeView()),
+  // 開発用のログイン（DEV_LOGIN=true のとき）
+  ("/login", _ => LoginView()),
   ("/settings/tokens", _ => TokensView()),
   ("/settings/api", _ => ApiDocsView()),
   // データベースのフォーム（ログイン不要）
@@ -26,6 +28,7 @@ val routes: PathPatternRoutes = List(
   ("/admin/audit", _ => AuditView()),
   ("/admin/shares", _ => AdminSharesView()),
   ("/admin/integrations", _ => AdminIntegrationsView()),
+  ("/admin/agents", _ => AdminAgentsView()),
   // PDF（印刷）用: ページと子ページを目次付きでまとめる
   ("/print/w/:wid/p/:pid", r => PrintView(wid = opt(r, "wid"), pid = opt(r, "pid"), token = None)),
   ("/print/s/:token", r => PrintView(wid = None, pid = None, token = opt(r, "token"))),

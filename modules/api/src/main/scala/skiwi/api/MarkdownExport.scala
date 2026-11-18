@@ -1,9 +1,11 @@
 package skiwi.api
 
+import skiwi.shared.Titles
+
 import io.circe.{Json, JsonObject}
 
 /** ページ本文（Tiptap の JSON）を Markdown にする（バックアップ・MCP 用）。
-  * フロントエンドの editor/markdown.ts と同じ規則にしている。片方を変えたらもう片方も直すこと。
+  * 画面の skiwi.web.content.Markdown（modules/web）と同じ規則にしている。片方を変えたらもう片方も直すこと。
   * url: 画像・添付・ページへのリンクのURLを書き換える。whiteboard: ホワイトボードの書き方。 */
 final class MarkdownExport(url: String => String, whiteboard: JsonObject => String):
 
@@ -33,7 +35,7 @@ final class MarkdownExport(url: String => String, whiteboard: JsonObject => Stri
       case "hardBreak"  => "  \n"
       case "pageLink"   =>
         val a = attrs(n)
-        s"[${escape(Option(str(a, "title")).filter(_.nonEmpty).getOrElse("無題"))}](${url(s"/w/${str(a, "workspaceId")}/p/${str(a, "pageId")}")})"
+        s"[${escape(Titles.display(Option(str(a, "title"))))}](${url(s"/w/${str(a, "workspaceId")}/p/${str(a, "pageId")}")})"
       case "inlineMath" => "$" + str(attrs(n), "latex") + "$"
       case "image"      => s"![${str(attrs(n), "alt")}](${url(str(attrs(n), "src"))})"
       case _            => inl(kids(n))
@@ -96,4 +98,4 @@ final class MarkdownExport(url: String => String, whiteboard: JsonObject => Stri
   /** 本文だけ（タイトルなし）。 */
   def body(doc: Json): String = doc.asObject.fold("")(block).replaceAll("\n{3,}", "\n\n").trim
 
-  def page(doc: Json, title: String): String = s"# ${if title.isEmpty then "無題" else title}\n\n${body(doc)}\n"
+  def page(doc: Json, title: String): String = s"# ${Titles.display(title)}\n\n${body(doc)}\n"

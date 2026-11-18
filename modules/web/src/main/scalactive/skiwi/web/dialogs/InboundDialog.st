@@ -44,8 +44,8 @@ def pickTarget(s: State, p: Props): Unit = Host.pickPage().foreach(_.foreach { p
 })
 
 def message(e: Throwable): String = e.getMessage match {
-  case "target is not a database" => "「データベースに項目を追加」には、データベースのページを選んでください"
-  case "insufficient permission" => "受け取り先のページの編集権限がありません"
+  case "対象がデータベースではありません" => "「データベースに項目を追加」には、データベースのページを選んでください"
+  case "権限がありません" => "受け取り先のページの編集権限がありません"
   case m => m
 }
 

@@ -51,10 +51,7 @@ def mounted(s: State, props: Props): Unit = {
 }
 
 val Errors: Map[String, String] = Map(
-  "slug_taken" -> "このURL名はほかで使われています",
-  "invalid slug" -> "URL名は半角の英小文字・数字・ハイフン（-）で入力してください（公開リンクは3〜64文字）",
-  "startsAt must be before expiresAt" -> "公開の開始日時は、終了日時より前にしてください",
-  "description is too long" -> "説明文は300文字までです")
+  "slug_taken" -> "このURL名はほかで使われています")
 
 def message(e: Throwable): String = Errors.getOrElse(e.getMessage, e.getMessage)
 

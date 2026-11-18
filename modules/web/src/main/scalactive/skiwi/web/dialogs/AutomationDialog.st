@@ -192,10 +192,10 @@ def save(s: State, p: Props): Unit = {
 
 def message(e: Throwable): String = {
   val m = e.getMessage
-  if (m == "notify needs recipients") "通知する相手を選んでください"
+  if (m == "通知先を指定してください") "通知する相手を選んでください"
   else if (m.startsWith("trigger needs a database")) "データベースと列を選んでください"
-  else if (m == "trigger needs a label") "ラベルを入力してください"
-  else if (m == "invalid action") "動作の設定が足りません"
+  else if (m == "きっかけのラベルを指定してください") "ラベルを入力してください"
+  else if (m == "アクションが正しくありません") "動作の設定が足りません"
   else m
 }
 

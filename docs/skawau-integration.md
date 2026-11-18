@@ -24,7 +24,7 @@ skawau の管理者が、skiwi をクライアントとして登録する（環�
 | `redirect_uri` | `https://skiwi.example.com/api/integrations/skawau/callback`（完全一致で照合する） |
 | 表示名 | `skiwi`（許可画面に出す） |
 
-開発用の値: `skiwi` / `skiwi-dev-secret-0123456789` / `http://localhost:8080/api/integrations/skawau/callback`。
+開発用の値: `skiwi` / `skiwi-dev-secret-0123456789` / `http://localhost:5173/api/integrations/skawau/callback`。
 
 ### 2. `GET /oauth/authorize`（許可画面）
 

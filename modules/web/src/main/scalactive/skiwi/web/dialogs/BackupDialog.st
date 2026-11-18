@@ -59,7 +59,7 @@ def runNow(s: State, p: Props): Unit = {
   s.error := ""
   DialogsApi.runBackup(p.wid).onComplete {
     case Success(_) => load(s, p)
-    case Failure(e) => s.error := (if (e.getMessage == "a backup is already running") "実行中のバックアップがあります" else e.getMessage)
+    case Failure(e) => s.error := e.getMessage
   }
 }
 

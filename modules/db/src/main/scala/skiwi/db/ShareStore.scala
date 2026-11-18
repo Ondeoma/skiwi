@@ -51,9 +51,6 @@ final case class ShareListItem(share: PageShare, title: String, icon: Option[Str
 /** 公開範囲に含まれるページ（ゲストに見せる最小限の項目）。 */
 final case class SharedPage(id: UUID, parentId: Option[UUID], position: String, title: String, icon: Option[String], updatedAt: Instant, slug: Option[String] = None)
 
-/** 公開版のページ（固定した時点の内容）。 */
-final case class PubPage(page: SharedPage, content: Option[String], plainText: String)
-
 /** 公開の履歴の1件 */
 final case class ShareRelease(id: UUID, publishedAt: Instant, publishedBy: Option[String], note: Option[String], pageCount: Int)
 final case class ReleasePage(pageId: UUID, parentId: Option[UUID], position: String, title: String, icon: Option[String], content: Option[String], plainText: String)
@@ -226,15 +223,29 @@ final class ShareStore(xa: Transactor[IO]) extends TxStore(xa):
   )
 
   /** 公開版のページ（現在の公開範囲にあるものだけ。並びは現在の公開範囲の順）。ページのURL名は現在のもの。 */
-  def pubPages(s: PageShare, live: List[SharedPage]): IO[List[PubPage]] = tx {
-    sql"""select page_id, parent_id, position, title, icon, updated_at, content::text, plain_text
+  /** 公開版のページの一覧（固定した時点のタイトルなど。本文は guestContents で必要な分だけ読む）。いまの公開範囲 live にあるものだけ */
+  def pubPages(s: PageShare, live: List[SharedPage]): IO[List[SharedPage]] = tx {
+    sql"""select page_id, parent_id, position, title, icon, updated_at
           from page_share_pub where share_page_id = ${s.pageId}"""
-      .query[(UUID, Option[UUID], String, String, Option[String], Instant, Option[String], String)].to[List]
+      .query[(UUID, Option[UUID], String, String, Option[String], Instant)].to[List]
       .map { rows =>
         val byId = rows.map(r => r._1 -> r).toMap
-        live.flatMap(l => byId.get(l.id).map(r => PubPage(SharedPage(r._1, r._2, r._3, r._4, r._5, r._6, l.slug), r._7, r._8)))
+        live.flatMap(l => byId.get(l.id).map(r => SharedPage(r._1, r._2, r._3, r._4, r._5, r._6, l.slug)))
       }
   }
+
+  /** 公開版の本文（JSON）。本文のないページは含めない */
+  def pubContents(s: PageShare, ids: List[UUID]): IO[Map[UUID, String]] =
+    val arr = ids.toArray
+    if ids.isEmpty then IO.pure(Map.empty)
+    else tx(sql"""select page_id, content::text from page_share_pub
+                  where share_page_id = ${s.pageId} and page_id = any($arr) and content is not null""".query[(UUID, String)].to[List].map(_.toMap))
+
+  /** 公開版の本文の平文 */
+  def pubPlainTexts(s: PageShare, ids: List[UUID]): IO[Map[UUID, String]] =
+    val arr = ids.toArray
+    if ids.isEmpty then IO.pure(Map.empty)
+    else tx(sql"select page_id, plain_text from page_share_pub where share_page_id = ${s.pageId} and page_id = any($arr)".query[(UUID, String)].to[List].map(_.toMap))
 
   /** 公開版に未反映の変更があるか（ページの追加・削除、タイトル・アイコン・本文の変更）。 */
   def hasUnpublished(s: PageShare): IO[Boolean] =
@@ -246,11 +257,6 @@ final class ShareStore(xa: Transactor[IO]) extends TxStore(xa):
             live.map(_.id).toSet != pub.toSet || live.exists(_.updatedAt.isAfter(at))
           }
         }
-
-  /** 公開範囲のページの、現在の平文（ゲスト向けの検索用）。 */
-  def plainTexts(ids: List[UUID]): IO[Map[UUID, String]] =
-    val arr = ids.toArray
-    tx(sql"select page_id, plain_text from page_snapshot where page_id = any($arr) and kind = 'compact'".query[(UUID, String)].to[List].map(_.toMap))
 
   /** 検索エンジンに載せる公開リンク（期限内・公開開始済み・パスワードなし）。 */
   def indexable: IO[List[PageShare]] = tx(

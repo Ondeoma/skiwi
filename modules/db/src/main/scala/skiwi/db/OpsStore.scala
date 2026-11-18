@@ -12,6 +12,11 @@ import java.util.UUID
 
 final case class ApiToken(id: UUID, name: String, scope: String, createdAt: Instant, expiresAt: Option[Instant], lastUsedAt: Option[Instant])
 
+/** エージェント専用アカウント（AgentAccounts）. active=false なら無効（キーも使えない） */
+final case class AgentAccount(id: UUID, name: String, active: Boolean, createdAt: Instant)
+/** エージェント専用アカウントの API キー（ハッシュは持たない） */
+final case class AgentKey(id: UUID, name: String, scope: String, createdAt: Instant, expiresAt: Option[Instant], lastUsedAt: Option[Instant], revoked: Boolean)
+
 final case class AuditEntry(
     id: Long,
     at: Instant,
@@ -86,11 +91,7 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
   def avatar(userId: UUID): IO[Option[(String, Array[Byte], Instant)]] =
     tx(sql"select content_type, data, updated_at from user_avatar where user_id = $userId".query[(String, Array[Byte], Instant)].option)
 
-  /** アイコンの更新日時（キャッシュを切り替える版として URL に付ける） */
-  def avatarVersion(userId: UUID): IO[Option[Instant]] =
-    tx(sql"select updated_at from user_avatar where user_id = $userId".query[Instant].option)
-
-  /** 複数のユーザーのアイコンの更新日時（アイコンのない人は含まない） */
+  /** 複数のユーザーのアイコンの更新日時（キャッシュを切り替える版として URL に付ける。アイコンのない人は含まない） */
   def avatarVersions(userIds: List[UUID]): IO[Map[UUID, Instant]] =
     if userIds.isEmpty then IO.pure(Map.empty)
     else tx(sql"select user_id, updated_at from user_avatar where user_id = any(${userIds.toArray})".query[(UUID, Instant)].to[List]).map(_.toMap)
@@ -98,7 +99,7 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
   /** IdP のアイコンの URL（OIDC の picture） */
   def pictures(userIds: List[UUID]): IO[Map[UUID, String]] =
     if userIds.isEmpty then IO.pure(Map.empty)
-    else tx(sql"select id, picture_url from app_user where id = any(${userIds.toArray}) and picture_url is not null".query[(UUID, String)].to[List]).map(_.toMap)
+    else tx(sql"select id, avatar_url from app_user where id = any(${userIds.toArray}) and avatar_url is not null".query[(UUID, String)].to[List]).map(_.toMap)
 
   def saveAvatar(userId: UUID, contentType: String, data: Array[Byte]): IO[Instant] = tx(
     sql"""insert into user_avatar (user_id, content_type, data) values ($userId, $contentType, $data)
@@ -109,62 +110,99 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
   def deleteAvatar(userId: UUID): IO[Boolean] = tx(sql"delete from user_avatar where user_id = $userId".update.run.map(_ > 0))
 
 
-  private val tokenCols = fr"id, name, scope, created_at, expires_at, last_used_at"
+  /** api_key.scopes（配列）を画面・API の scope（read・write）にする */
+  private val scopeCol = fr"case when 'write' = any(scopes) then 'write' else 'read' end"
+  private def scopesOf(scope: String): Array[String] = if scope == "write" then Array("read", "write") else Array("read")
+  private val tokenCols = fr"id, name," ++ scopeCol ++ fr", created_at, expires_at, last_used_at"
 
   // ---------------------------------------------------------------- API tokens
 
   def createToken(userId: UUID, name: String, hash: Array[Byte], scope: String, expiresAt: Option[Instant]): IO[ApiToken] = tx(
-    (fr"""insert into api_token (user_id, name, token_hash, scope, expires_at)
-          values ($userId, $name, $hash, $scope, $expiresAt) returning""" ++ tokenCols).query[ApiToken].unique
+    (fr"""insert into api_key (user_id, name, key_hash, scopes, expires_at)
+          values ($userId, $name, $hash, ${scopesOf(scope)}, $expiresAt) returning""" ++ tokenCols).query[ApiToken].unique
   )
 
   def listTokens(userId: UUID): IO[List[ApiToken]] = tx(
-    (fr"select" ++ tokenCols ++ fr"from api_token where user_id = $userId and revoked_at is null order by created_at desc").query[ApiToken].to[List]
+    (fr"select" ++ tokenCols ++ fr"from api_key where user_id = $userId and revoked_at is null order by created_at desc").query[ApiToken].to[List]
   )
 
   def revokeToken(userId: UUID, id: UUID): IO[Option[ApiToken]] = tx(
-    (fr"update api_token set revoked_at = now() where id = $id and user_id = $userId and revoked_at is null returning" ++ tokenCols)
+    (fr"update api_key set revoked_at = now() where id = $id and user_id = $userId and revoked_at is null returning" ++ tokenCols)
       .query[ApiToken].option
+  )
+
+  // ---------------------------------------------------------------- エージェント専用アカウント（管理者が作る. AgentAccounts）
+
+  private val agentCols = fr"id, name, not disabled, created_at"
+  private val isAgentRow = fr"sub like ${AgentAccounts.LikePattern}"
+
+  /** エージェント専用アカウントと、そのキー（失効したものも含む. 新しい順） */
+  def listAgents(): IO[List[(AgentAccount, List[AgentKey])]] = tx {
+    for
+      as <- (fr"select" ++ agentCols ++ fr"from app_user where" ++ isAgentRow ++ fr"order by created_at").query[AgentAccount].to[List]
+      ids = as.map(_.id).toArray
+      ks <- if ids.isEmpty then List.empty[(UUID, AgentKey)].pure[ConnectionIO]
+            else (fr"select user_id, id, name," ++ scopeCol ++ fr""", created_at, expires_at, last_used_at, revoked_at is not null
+                       from api_key where user_id = any($ids) order by created_at desc""").query[(UUID, AgentKey)].to[List]
+      byUser = ks.groupMap(_._1)(_._2)
+    yield as.map(a => a -> byUser.getOrElse(a.id, Nil))
+  }
+
+  def getAgent(id: UUID): IO[Option[AgentAccount]] = tx(
+    (fr"select" ++ agentCols ++ fr"from app_user where id = $id and" ++ isAgentRow).query[AgentAccount].option
+  )
+
+  /** 作る（メールなし. OIDC・SCIM の sub とは重ならない） */
+  def createAgent(name: String): IO[AgentAccount] = tx(
+    (fr"insert into app_user (sub, name) values (${AgentAccounts.newSub()}, $name) returning" ++ agentCols).query[AgentAccount].unique
+  )
+
+  /** 名前の変更・無効化・再有効化（エージェント専用アカウントだけ） */
+  def updateAgent(id: UUID, name: Option[String], active: Option[Boolean]): IO[Option[AgentAccount]] = tx(
+    (fr"update app_user set name = coalesce($name, name), disabled = coalesce(not $active, disabled), updated_at = now() where id = $id and" ++
+      isAgentRow ++ fr"returning" ++ agentCols).query[AgentAccount].option
   )
 
   // ---------------------------------------------------------------- OAuth で発行した API トークン（skea 連携）
 
-  /** そのユーザーにそのクライアントが以前に発行したトークンを失効させ、新しいトークン（期限なし）を登録する */
-  def replaceOAuthToken(userId: UUID, clientId: String, name: String, hash: Array[Byte], scope: String): IO[ApiToken] = tx(
-    sql"update api_token set revoked_at = now() where user_id = $userId and oauth_client = $clientId and revoked_at is null".update.run *>
-      (fr"""insert into api_token (user_id, name, token_hash, scope, oauth_client)
-            values ($userId, $name, $hash, $scope, $clientId) returning""" ++ tokenCols).query[ApiToken].unique
+  /** そのユーザーにそのクライアントが以前に発行したトークンを失効させ、新しいトークン（期限なし）を登録する.
+    * full なら scope のとおりの普通のトークン、そうでなければページの一括参照だけ（skea 連携） */
+  def replaceOAuthToken(userId: UUID, clientId: String, name: String, hash: Array[Byte], scope: String, full: Boolean = false): IO[ApiToken] = tx(
+    sql"update api_key set revoked_at = now() where user_id = $userId and oauth_client = $clientId and revoked_at is null".update.run *>
+      (fr"""insert into api_key (user_id, name, key_hash, scopes, oauth_client, oauth_full)
+            values ($userId, $name, $hash, ${scopesOf(scope)}, $clientId, $full) returning""" ++ tokenCols).query[ApiToken].unique
   )
 
   /** そのクライアントが発行したトークンなら失効させる（なければ何もしない）。失効させたトークン */
   def revokeOAuthToken(hash: Array[Byte], clientId: String): IO[Option[(UUID, ApiToken)]] = tx(
-    (fr"update api_token set revoked_at = now() where token_hash = $hash and oauth_client = $clientId and revoked_at is null returning user_id," ++ tokenCols)
+    (fr"update api_key set revoked_at = now() where key_hash = $hash and oauth_client = $clientId and revoked_at is null returning user_id," ++ tokenCols)
       .query[(UUID, ApiToken)].option
   )
 
   /** そのクライアントが発行したトークンをすべて失効させる（クライアントの登録を変えた・消したとき） */
   def revokeAllOAuthTokens(clientId: String): IO[Int] = tx(
-    sql"update api_token set revoked_at = now() where oauth_client = $clientId and revoked_at is null".update.run
+    sql"update api_key set revoked_at = now() where oauth_client = $clientId and revoked_at is null".update.run
   )
 
   /** そのクライアントが発行した有効なトークンの数（連携しているユーザーの数） */
   def countOAuthTokens(clientId: String): IO[Int] = tx(
-    sql"select count(*)::int from api_token where oauth_client = $clientId and revoked_at is null".query[Int].unique
+    sql"select count(*)::int from api_key where oauth_client = $clientId and revoked_at is null".query[Int].unique
   )
 
   /** トークンから (ユーザー, グループ, トークンID, スコープ)。無効・期限切れ・失効・無効ユーザーは None。
-    * OAuth で発行したトークン（外部サービス連携）のスコープは "lookup"（ページの一括参照だけ）。 */
+    * OAuth で発行したトークン（skea 連携）のスコープは "lookup"（ページの一括参照だけ）。OAUTH_CLIENTS のクライアントのもの（oauth_full）は scope のとおり。 */
   def findToken(hash: Array[Byte], now: Instant): IO[Option[(User, List[Group], UUID, String)]] = tx {
-    sql"""select t.id, case when t.oauth_client is not null then 'lookup' else t.scope end, u.id, u.oidc_sub, u.email, u.name
-          from api_token t join app_user u on u.id = t.user_id
-          where t.token_hash = $hash and t.revoked_at is null and u.active
+    sql"""select t.id, case when t.oauth_client is not null and not t.oauth_full then 'lookup' when 'write' = any(t.scopes) then 'write' else 'read' end,
+            u.id, u.sub, u.email, u.name
+          from api_key t join app_user u on u.id = t.user_id
+          where t.key_hash = $hash and t.revoked_at is null and not u.disabled
             and (t.expires_at is null or t.expires_at > $now)"""
       .query[(UUID, String, User)].option.flatMap {
         case None => none[(User, List[Group], UUID, String)].pure[ConnectionIO]
         case Some((tid, scope, u)) =>
           for
             // 最終使用日時は1分に1回だけ更新する（書き込みを抑える）
-            _  <- sql"""update api_token set last_used_at = $now
+            _  <- sql"""update api_key set last_used_at = $now
                         where id = $tid and (last_used_at is null or last_used_at < $now - interval '1 minute')""".update.run
             gs <- SqlParts.groupsOfC(u.id)
           yield Some((u, gs, tid, scope))
@@ -201,10 +239,6 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
     else
       sql"""insert into page_watch (page_id, user_id, edits, comments, subtree) values ($pageId, $userId, ${o.edits}, ${o.comments}, ${o.subtree})
             on conflict (page_id, user_id) do update set edits = excluded.edits, comments = excluded.comments, subtree = excluded.subtree""".update.run.void
-  )
-
-  def isWatching(pageId: UUID, userId: UUID): IO[Boolean] = tx(
-    sql"select exists(select 1 from page_watch where page_id = $pageId and user_id = $userId)".query[Boolean].unique
   )
 
   /** このページの直接のウォッチ設定と、「子ページも含める」でウォッチしている一番近い祖先（あれば）。 */
@@ -335,6 +369,13 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
           order by n.created_at desc limit $limit""").query[NotificationRow].to[List]
   )
 
+  /** 古い通知を消す（既読は readDays 日、未読でも unreadDays 日を過ぎたもの）。消した数 */
+  def purgeNotifications(readDays: Int = 90, unreadDays: Int = 365): IO[Int] = tx(
+    sql"""delete from notification
+          where created_at < now() - make_interval(days => $readDays) and (read_at is not null or created_at < now() - make_interval(days => $unreadDays))"""
+      .update.run
+  )
+
   def unreadNotifications(userId: UUID): IO[Int] = tx(
     sql"""select count(*) from notification n left join page p on p.id = n.page_id
           where n.user_id = $userId and n.read_at is null and (n.page_id is null or p.deleted_at is null)""".query[Int].unique
@@ -448,7 +489,7 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
     * f の結果に応じて送信済み/スキップ/再試行を記録する。 */
   def processDue(limit: Int)(f: OutboxItem => IO[OutboxResult]): IO[Int] =
     val claim =
-      sql"""select o.id, o.user_id, u.email, u.name, u.active, o.kind, o.page_id, o.detail::text, o.attempts
+      sql"""select o.id, o.user_id, u.email, u.name, not u.disabled, o.kind, o.page_id, o.detail::text, o.attempts
             from mail_outbox o join app_user u on u.id = o.user_id
             where o.sent_at is null and not o.skipped and o.not_before <= now()
             order by o.not_before limit $limit
@@ -457,15 +498,14 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
 
   // ---------------------------------------------------------------- directory
 
-  /** 共有ダイアログ用のユーザー・グループ検索（有効なユーザーのみ）。 */
-  /** ユーザー・グループの検索（共有設定用）。ひらがな/カタカナ・全角/半角などの違いは無視して部分一致。 */
+  /** ユーザー・グループの検索（共有設定用。有効なユーザーのみ）。ひらがな/カタカナ・全角/半角などの違いは無視して部分一致。 */
   def searchDirectory(q: String, limit: Int = 20): IO[List[DirectoryEntry]] = tx {
     val n = TextNorm.Normalizer
     def has(col: Fragment) = fr"strpos(pgroonga_normalize(coalesce(" ++ col ++ fr", ''), $n), pgroonga_normalize($q, $n)) > 0"
     for
-      us <- (fr"select id, name, email from app_user where active and (" ++ has(fr"name") ++ fr"or" ++ has(fr"email") ++ fr"or" ++
+      us <- (fr"select id, name, email from app_user where not disabled and (" ++ has(fr"name") ++ fr"or" ++ has(fr"email") ++ fr"or" ++
               has(fr"username") ++ fr") order by name limit $limit").query[(UUID, String, Option[String])].to[List]
-      gs <- (fr"select id, name from app_group where" ++ has(fr"name") ++ fr"order by name limit $limit")
+      gs <- (fr"select id, name from user_group where" ++ has(fr"name") ++ fr"order by name limit $limit")
         .query[(UUID, String)].to[List]
     yield gs.map((id, n) => DirectoryEntry(PrincipalType.Group, id, n, None)) ++
       us.map((id, n, e) => DirectoryEntry(PrincipalType.User, id, n, e))
@@ -478,7 +518,7 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
       val arr = ids.distinct.toArray
       for
         us <- sql"select id, name, email from app_user where id = any($arr)".query[(UUID, String, Option[String])].to[List]
-        gs <- sql"select id, name from app_group where id = any($arr)".query[(UUID, String)].to[List]
+        gs <- sql"select id, name from user_group where id = any($arr)".query[(UUID, String)].to[List]
       yield (us.map((i, n, e) => i -> DirectoryEntry(PrincipalType.User, i, n, e)) ++
         gs.map((i, n) => i -> DirectoryEntry(PrincipalType.Group, i, n, None))).toMap
     }
@@ -489,7 +529,7 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
     else tx {
       val users  = ps.collect { case Principal(PrincipalType.User, id) => id }.toArray
       val groups = ps.collect { case Principal(PrincipalType.Group, id) => id }.toArray
-      sql"""select id from app_user where active and (id = any($users)
+      sql"""select id from app_user where not disabled and (id = any($users)
               or id in (select user_id from group_member where group_id = any($groups)))""".query[UUID].to[List].map(_.toSet)
     }
 

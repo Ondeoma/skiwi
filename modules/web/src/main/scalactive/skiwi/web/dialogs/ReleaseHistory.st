@@ -5,7 +5,6 @@ import skiwi.web.parts.*
 
 import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
-import scala.scalajs.js
 import scala.util.{Failure, Success}
 
 // 公開の履歴（共有画面の中）. メモの編集と、ひとつ前の公開との比較.

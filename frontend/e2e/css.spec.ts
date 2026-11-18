@@ -94,3 +94,22 @@ test('ゲスト向けの公開ページにもCSSが効く', async ({ browser }) 
   await expect.poll(() => paraStyle(page)).toBe('italic')
   await ctx.close()
 })
+
+test('ページのCSS: @font-face・@keyframes の名前は自動で区別され、画面のほかの部分のフォントやアニメーションを置き換えない', async ({ browser }) => {
+  const page = await open(browser, `/w/${ws.id}/p/${grandchild.id}`)
+  await page.getByTestId('page-css').click()
+  await page.getByTestId('css-input').fill([
+    '@font-face { font-family: "Hiragino Sans"; src: url(/api/attachments/00000000-0000-0000-0000-000000000000); }',
+    '@keyframes spin { from { opacity: 0; } to { opacity: 1; } }',
+    'p { font-family: "Hiragino Sans", sans-serif; animation: spin 1s; }',
+  ].join('\n'))
+  // 入力中にその場で反映される（<style data-custom-css>）
+  await expect.poll(() => page.evaluate(() => document.querySelector('style[data-custom-css]')?.textContent ?? '')).toContain('skiwi-u-Hiragino Sans')
+  const css = await page.evaluate(() => document.querySelector('style[data-custom-css]')?.textContent ?? '')
+  expect(css).toMatch(/@keyframes\s+"?skiwi-u-spin/)
+  expect(css).toMatch(/animation:[^;]*skiwi-u-spin/)
+  // 元の名前の定義は残らない
+  expect(css).not.toMatch(/font-family:\s*"Hiragino Sans"/)
+  expect(css).not.toMatch(/@keyframes\s+spin\b/)
+  await page.context().close()
+})

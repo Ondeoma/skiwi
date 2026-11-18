@@ -1,5 +1,7 @@
 package skiwi.web.content
 
+import skiwi.shared.Titles
+
 import io.circe.{Json, JsonObject}
 import org.scalajs.dom
 import skiwi.web.Nav
@@ -205,7 +207,7 @@ object Markdown {
     }
     val w = new Writer(abs, whiteboard.getOrElse(noBoard))
     val body = nodeOf(doc).filterNot(_ => doc.isNull).fold("")(n => trim(w.block(n).replaceAll("\n{3,}", "\n\n")))
-    s"# ${if (title.isEmpty) "無題" else title}\n\n$body\n"
+    s"# ${Titles.display(title)}\n\n$body\n"
   }
 
 }

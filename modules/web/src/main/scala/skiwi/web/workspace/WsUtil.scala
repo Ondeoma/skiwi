@@ -27,7 +27,6 @@ object WsRoute {
   /** 今開いているページ（リアクティブに読む） */
   def currentPid: Option[String] = pid(Router.href.v)
 
-  def currentWid: Option[String] = wid(Router.href.v)
 
   /** 今の URL のパスが path か（RouterLink の router-link-active と同じ判定. "/" は完全一致だけ） */
   def isActive(p: String): Boolean = {

@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.shared.Titles
 import io.circe.*
 import io.circe.syntax.*
 import skiwi.web.{Choice, Dialog, Host, Nav, Store}
@@ -29,12 +30,10 @@ def openAffected(ids: List[String]): Boolean =
   WsRoute.currentPid.exists(pid => Store.ancestors(pid, includeSelf = true).exists(p => ids.contains(p.id)))
 
 def reason(e: String): String =
-  if (e == "insufficient permission") "編集権限がありません"
-  else if (e.contains("under itself")) "自分自身や子ページの下には移動できません"
-  else if (e == "page not found") "ページが見つかりません"
+  if (e == "権限がありません") "編集権限がありません"
   else e
 
-/** action: 一括操作（api.ts の BulkAction）. moveTo: 移動先のワークスペース（別のワークスペースへ移すとき） */
+/** action: 一括操作. moveTo: 移動先のワークスペース（別のワークスペースへ移すとき） */
 def run(s: State, p: Props, action: String, fields: JsonObject, label: String, moveTo: Option[String] = None): Future[Unit] = {
   s.busy := true
   val ids = Store.selected.v
@@ -44,7 +43,7 @@ def run(s: State, p: Props, action: String, fields: JsonObject, label: String, m
     Store.reloadPages().flatMap { _ =>
       val after =
         if (r.failed.nonEmpty) {
-          val lines = r.failed.take(10).map(f => s"・${f.title.fold("（見つからないページ）")(t => s"「${if (t.isEmpty) "無題" else t}」")}: ${reason(f.error)}").mkString("\n")
+          val lines = r.failed.take(10).map(f => s"・${f.title.fold("（見つからないページ）")(t => s"「${Titles.display(t)}」")}: ${reason(f.error)}").mkString("\n")
           Dialog.alert(s"$label: ${r.done.size + r.skipped.size} 件を処理しました。次の ${r.failed.size} 件はできませんでした。\n\n$lines")
             .map(_ => Store.selected := r.failed.map(_.id).filter(id => Store.byId(id).isDefined))
         } else {

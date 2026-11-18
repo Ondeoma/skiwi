@@ -32,7 +32,7 @@ final class AttachmentRoutes(
     indexer: Option[AttachmentIndexer] = None
 ) extends PageRouteSupport:
 
-  private case object TooLarge extends Exception("file too large")
+  private case object TooLarge extends Exception("ファイルが大きすぎます")
 
   /** ブラウザでインライン表示してよい種類。それ以外（HTML、SVGなど）はXSS対策で必ずダウンロードさせる。 */
   private val inlineTypes = Set(
@@ -57,13 +57,10 @@ final class AttachmentRoutes(
     val utf8  = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20")
     s"""$kind; filename="$ascii"; filename*=UTF-8''$utf8"""
 
-  private def withRole(req: Request[IO], pageId: UUID, need: Role)(f: (AuthSession, Page) => IO[Response[IO]]) =
-    authed(req)(s => checkPage(s, pageId, need)((p, _) => f(s, p)))
-
   /** 添付ファイルの中身を返す（権限の確認は呼び出し側で行う）。公開リンク経由の配信でも使う。 */
   def serve(a: Attachment, cacheControl: String = "private, max-age=3600"): IO[Response[IO]] =
     blobs.flatTraverse(_.get(a.s3Key)).flatMap {
-      case None => err(Status.NotFound, "attachment content not found")
+      case None => err(Status.NotFound, "添付ファイルの中身が見つかりません")
       case Some((meta, body)) =>
         val inline = inlineTypes.contains(a.contentType)
         val ct     = if inline then a.contentType else "application/octet-stream"
@@ -86,16 +83,18 @@ final class AttachmentRoutes(
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     case req @ POST -> Root / "api" / "pages" / UUIDVar(pageId) / "attachments" =>
-      withRole(req, pageId, Role.Edit) { (s, _) =>
+      withPage(req, pageId, Role.Edit) { (s, _, _) =>
         blobs match
-          case None => err(Status.ServiceUnavailable, "attachment storage is not configured")
+          case None => err(Status.ServiceUnavailable, "添付ファイルの保存先（S3）が設定されていません")
           case Some(blobStore) =>
-            if req.contentLength.exists(_ > maxBytes + 64 * 1024) then err(Status.PayloadTooLarge, "file too large")
+            if req.contentLength.exists(_ > maxBytes + 64 * 1024) then err(Status.PayloadTooLarge, "ファイルが大きすぎます")
             else
+              // multipart の解析は全パートを一時ファイルに書き切ってから返すので、Content-Length がなくても受け取る量をここで限る
+              val limited = req.withBodyStream(req.body.through(Security.limitStream(maxBytes + 64 * 1024)))
               EntityDecoder.mixedMultipartResource[IO](maxSizeBeforeWrite = 1024 * 1024, maxParts = 5, failOnLimit = true).use { dec =>
-                req.decodeWith(dec, strict = true) { (mp: Multipart[IO]) =>
+                limited.decodeWith(dec, strict = true) { (mp: Multipart[IO]) =>
                   mp.parts.find(_.name.contains("file")) match
-                    case None => err(Status.BadRequest, "multipart field 'file' is required")
+                    case None => err(Status.BadRequest, "multipart の file を指定してください")
                     case Some(part) =>
                       val filename = sanitizeName(extendedFilename(part).orElse(part.filename))
                       val ctype = part.headers.get[`Content-Type`]
@@ -115,7 +114,7 @@ final class AttachmentRoutes(
                               .drain *> total.get
                           }
                         write.attempt.flatMap {
-                          case Left(TooLarge) => err(Status.PayloadTooLarge, "file too large")
+                          case Left(TooLarge) => err(Status.PayloadTooLarge, "ファイルが大きすぎます")
                           case Left(e)        => IO.raiseError(e)
                           case Right(size) =>
                             val id  = UUID.randomUUID()
@@ -134,13 +133,17 @@ final class AttachmentRoutes(
                         }
                       }
                 }
+              }.handleErrorWith {
+                // 上限を超えた（解析の途中で limitStream が止めた）
+                case e if Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(10).exists(_.isInstanceOf[Security.BodyTooLarge]) =>
+                  err(Status.PayloadTooLarge, "ファイルが大きすぎます")
               }
       }
 
     case req @ GET -> Root / "api" / "attachments" / UUIDVar(id) =>
       attachments.get(id).flatMap {
-        case None => err(Status.NotFound, "attachment not found")
+        case None => err(Status.NotFound, "添付ファイルが見つかりません")
         case Some(a) =>
-          withRole(req, a.pageId, Role.View)((_, _) => serve(a))
+          withPage(req, a.pageId, Role.View)((_, _, _) => serve(a))
       }
   }

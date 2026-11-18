@@ -1,5 +1,7 @@
 package skiwi.api
 
+import skiwi.shared.Titles
+
 import cats.effect.*
 import cats.syntax.all.*
 import io.circe.{Decoder, Encoder, Json}
@@ -35,7 +37,7 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
   /** コメントとそのページへの権限を確認する */
   private def withComment(req: Request[IO], id: UUID)(f: (AuthSession, Comment, Page, Role) => IO[Response[IO]]) =
     comments.get(id).flatMap {
-      case None    => err(Status.NotFound, "comment not found")
+      case None    => err(Status.NotFound, "コメントが見つかりません")
       case Some(c) => withPage(req, c.pageId, Role.View)((s, p, r) => f(s, c, p, r))
     }
 
@@ -61,12 +63,12 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
     case req @ POST -> Root / "api" / "pages" / UUIDVar(id) / "comments" =>
       withPage(req, id, Role.View) { (s, _, r) =>
         body[NewCommentReq](req) {
-          case b if b.body.trim.isEmpty || b.body.length > 10000 => err(Status.BadRequest, "body must be 1-10000 characters")
-          case b if b.anchor.exists(a => validAnchor.findFirstIn(a).isEmpty) => err(Status.BadRequest, "invalid anchor")
+          case b if b.body.trim.isEmpty || b.body.length > 10000 => err(Status.BadRequest, "本文は1〜10000文字にしてください")
+          case b if b.anchor.exists(a => validAnchor.findFirstIn(a).isEmpty) => err(Status.BadRequest, "コメントの位置が正しくありません")
           case b =>
             // 返信先は同じページのスレッドの先頭に限る
             b.threadId.flatTraverse(comments.get).flatMap { parent =>
-              if b.threadId.isDefined && !parent.exists(c => c.pageId == id && c.isRoot) then err(Status.BadRequest, "invalid thread")
+              if b.threadId.isDefined && !parent.exists(c => c.pageId == id && c.isRoot) then err(Status.BadRequest, "スレッドが正しくありません")
               else
                 val root = parent.map(_.id)
                 for
@@ -88,8 +90,8 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
     case req @ PATCH -> Root / "api" / "comments" / UUIDVar(id) =>
       withComment(req, id) { (s, c, _, r) =>
         body[EditCommentReq](req) {
-          case _ if !c.authorId.contains(s.user.id) || c.deletedAt.isDefined => err(Status.Forbidden, "only the author can edit")
-          case b if b.body.trim.isEmpty || b.body.length > 10000 => err(Status.BadRequest, "body must be 1-10000 characters")
+          case _ if !c.authorId.contains(s.user.id) || c.deletedAt.isDefined => err(Status.Forbidden, "書いた人だけが編集できます")
+          case b if b.body.trim.isEmpty || b.body.length > 10000 => err(Status.BadRequest, "本文は1〜10000文字にしてください")
           case b =>
             // 編集で新しく加わったメンションだけ通知する
             val added = LinkExtract.commentMentions(b.body) -- LinkExtract.commentMentions(c.body) - s.user.id
@@ -100,7 +102,7 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
 
     case req @ DELETE -> Root / "api" / "comments" / UUIDVar(id) =>
       withComment(req, id) { (s, c, _, r) =>
-        if !(c.authorId.contains(s.user.id) || r == Role.Edit) then err(Status.Forbidden, "insufficient permission")
+        if !(c.authorId.contains(s.user.id) || r == Role.Edit) then err(Status.Forbidden, "権限がありません")
         else comments.delete(id) *>
           audit.log(s, "comment.delete", "page", c.pageId, Json.obj("commentId" -> id.asJson, "author" -> c.authorName.asJson)) *> NoContent()
       }
@@ -108,8 +110,8 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
     case req @ POST -> Root / "api" / "comments" / UUIDVar(id) / "resolve" =>
       withComment(req, id) { (s, c, _, r) =>
         body[ResolveReq](req) {
-          case _ if !c.isRoot => err(Status.BadRequest, "only a thread can be resolved")
-          case _ if !(c.authorId.contains(s.user.id) || r == Role.Edit) => err(Status.Forbidden, "insufficient permission")
+          case _ if !c.isRoot => err(Status.BadRequest, "解決にできるのはスレッドの先頭だけです")
+          case _ if !(c.authorId.contains(s.user.id) || r == Role.Edit) => err(Status.Forbidden, "権限がありません")
           case b => comments.resolve(id, Option.when(b.resolved)(s.user.id)) *> comments.get(id).flatMap(n => dto1(s, r)(n.get)).flatMap(Ok(_))
         }
       }
@@ -118,7 +120,7 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "audience" =>
       withPage(req, id, Role.Edit) { (_, _, _) =>
         store.audience(id, sessions.adminGroups).flatMap {
-          case None => err(Status.NotFound, "page not found")
+          case None => err(Status.NotFound, "ページが見つかりません")
           case Some(a) =>
             val principalIds = a.entries.flatMap(_.source).collect {
               case Acl.Source.PageEntry(_, pr)    => pr.id
@@ -128,7 +130,7 @@ final class CommentRoutes(protected val store: Store, comments: CommentStore, op
               def who(pr: Principal) = pr.tpe match
                 case PrincipalType.Group => s"グループ「${names.get(pr.id).fold("(不明)")(_.name)}」"
                 case PrincipalType.User  => "個別の共有"
-              def title(d: Int) = a.chainTitles.lift(d).filter(_.nonEmpty).getOrElse("無題")
+              def title(d: Int) = Titles.display(a.chainTitles.lift(d))
               val dtos = a.entries.map { e =>
                 val reason = e.source match
                   case None                                => "管理者"

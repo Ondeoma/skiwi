@@ -23,6 +23,9 @@ class OAuthProviderSpec extends DbSuite:
   private val clientId = "skea-test"
   private val secret   = "skea-test-secret-0123456789"
   private val redirect = "https://skea.test/api/integrations/skiwi/callback"
+  private val rwId       = "skakapo-test"
+  private val rwSecret   = "skakapo-test-secret-0123456789"
+  private val rwRedirect = "https://skakapo.test/api/connections/callback"
 
   final case class Env(store: Store, ops: OpsStore, ist: IntegrationStore, app: HttpApp[IO])
 
@@ -37,7 +40,9 @@ class OAuthProviderSpec extends DbSuite:
         val ops   = new OpsStore(xa)
         val sess  = new SessionAuth(store, ops, apiCfg)
         val ist   = new IntegrationStore(xa)
-        val oauth = new OAuthProviderRoutes(ist, ops, store, sess, new Audit(ops), cookieSecure = false)
+        // OAUTH_CLIENTS のクライアント（読み書きを許す）も1つ足す
+        val oauth = new OAuthProviderRoutes(ist, ops, store, sess, new Audit(ops), cookieSecure = false,
+          List(OAuthClient(rwId, OAuthProviderRoutes.hashSecret(rwSecret), rwRedirect, "skakapo", List("read", "write"))))
         // 読み取り専用のトークンでの書き込みの確認のため、ページの作成（ApiRoutes）もつなぐ
         val api   = new ApiRoutes(store, new DocStore(xa), ops, sess, new Audit(ops))
         val app   = (oauth.routes <+> api.routes).orNotFound
@@ -331,6 +336,52 @@ class OAuthProviderSpec extends DbSuite:
         // 無効なトークンは 401
         (r5, _)  <- call(None, Method.POST, "/api/pages/lookup", Some(ids), bearer = Some("skiwi_bogus"))
         _         = assertEquals(r5.status, Status.Unauthorized)
+      yield ()
+    }
+  }
+
+  /** OAUTH_CLIENTS のクライアントで許可してトークンを受け取る（scope を指定）. 許可の画面を出せなければ Left（リダイレクト先） */
+  private def rwToken(session: String, scope: String): IO[Either[String, (String, String)]] =
+    val ps = Map("response_type" -> "code", "client_id" -> rwId, "redirect_uri" -> rwRedirect, "scope" -> scope, "state" -> "s",
+                 "code_challenge" -> challenge, "code_challenge_method" -> "S256")
+    for
+      page <- env.app.run(Request[IO](Method.GET, Uri.unsafeFromString("/oauth/authorize").withQueryParams(ps)).addCookie("skiwi_session", session))
+      html <- page.bodyText.compile.string
+      res  <- if page.status != Status.Ok then IO.pure(Left(page.headers.get[Location].map(_.uri.renderString).getOrElse(page.status.toString)))
+              else
+                val csrf = page.cookies.find(_.name == OAuthProviderRoutes.CsrfCookie).get.content
+                env.app.run(Request[IO](Method.POST, uri"/oauth/authorize").withEntity(UrlForm((ps ++ Map("csrf" -> csrf, "decision" -> "allow")).toSeq*))
+                  .addCookie("skiwi_session", session).addCookie(OAuthProviderRoutes.CsrfCookie, csrf)).flatMap { r =>
+                  val code = location(r).query.params("code")
+                  exchange(code, auth = Some(Authorization(BasicCredentials(rwId, rwSecret))), uri = rwRedirect).map { (tr, j) =>
+                    assertEquals(tr.status, Status.Ok, j.noSpaces)
+                    Right((j.hcursor.get[String]("access_token").toOption.get, html))
+                  }
+                }
+    yield res
+
+  test("OAUTH_CLIENTS のクライアント: write を許可すると読み書きのトークン（ページを作れる）. read なら読み取りだけ. skea のクライアントは write を求められない") {
+    run {
+      for
+        _        <- register
+        (a, at)  <- user("oauth-rw")
+        ws       <- env.store.createWorkspace("rw", a.id)
+        rw       <- rwToken(at, "read write").map(_.toOption.get)
+        (t, html) = rw
+        _         = assert(html.contains("読み書き"), html)
+        (w1, j1) <- call(None, Method.POST, s"/api/workspaces/${ws.id}/pages", Some(Json.obj("title" -> "skakapo のメモ".asJson)), bearer = Some(t))
+        _         = assert(w1.status.isSuccess, s"${w1.status} ${j1.noSpaces}")
+        (g1, _)  <- call(None, Method.GET, "/api/workspaces", None, bearer = Some(t))
+        _         = assertEquals(g1.status, Status.Ok)
+        // read だけなら、読めるが書けない
+        ro       <- rwToken(at, "read").map(_.toOption.get._1)
+        (g2, _)  <- call(None, Method.GET, "/api/workspaces", None, bearer = Some(ro))
+        _         = assertEquals(g2.status, Status.Ok)
+        (w2, _)  <- call(None, Method.POST, s"/api/workspaces/${ws.id}/pages", Some(Json.obj("title" -> "x".asJson)), bearer = Some(ro))
+        _         = assertEquals(w2.status, Status.Forbidden)
+        // 管理画面で登録したクライアント（skea）は write を求められない
+        bad      <- env.app.run(Request[IO](Method.GET, Uri.unsafeFromString(authorizeQuery("scope" -> "read write"))).addCookie("skiwi_session", at))
+        _         = assert(location(bad).query.params.get("error").contains("invalid_scope"))
       yield ()
     }
   }

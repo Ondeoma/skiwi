@@ -93,5 +93,4 @@ th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(-
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
 .detail { max-width: 420px; word-break: break-all; color: var(--muted); }
 .more { margin: 1rem 0; }
-.error { color: #dc2626; }
 </style>

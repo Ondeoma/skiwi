@@ -1,5 +1,7 @@
 package skiwi.api
 
+import skiwi.shared.Titles
+
 import cats.effect.*
 import cats.effect.syntax.all.*
 import cats.syntax.all.*
@@ -72,7 +74,7 @@ final class PageCopyRoutes(
           val sameWs = ws == p.workspaceId
           val parent = b.parentId.getOrElse(if sameWs then p.parentId else None)
           val placement = if sameWs && parent == p.parentId then Placement.After(p.id) else Placement.Last
-          val title = b.title.map(_.trim).filter(_.nonEmpty).getOrElse(s"${if p.title.isBlank then "無題" else p.title} のコピー").take(500)
+          val title = b.title.map(_.trim).filter(_.nonEmpty).getOrElse(s"${Titles.display(p.title)} のコピー").take(500)
           editUnder(s, ws, parent) {
             store.listPages(p.workspaceId, s).flatMap { visible =>
               store.duplicatePages(id, b.includeChildren.getOrElse(true), visible.map(_._1.id).toSet, ws, parent, placement, title, s.user.id)
@@ -153,14 +155,14 @@ final class PageCopyRoutes(
     case req @ POST -> Root / "api" / "access-requests" / UUIDVar(rid) / action if action == "approve" || action == "deny" =>
       authed(req) { s =>
         requests.get(rid).flatMap {
-          case None => err(Status.NotFound, "request not found")
+          case None => err(Status.NotFound, "申請が見つかりません")
           case Some(r) =>
             store.pageAccess(r.pageId, s).flatMap {
-              case None                          => err(Status.NotFound, "request not found")
-              case Some((_, Role.View))          => err(Status.Forbidden, "insufficient permission")
+              case None                          => err(Status.NotFound, "申請が見つかりません")
+              case Some((_, Role.View))          => err(Status.Forbidden, "権限がありません")
               case Some(_) if r.status != "pending" => Ok(AccessStatusDto(r.status))
               case Some((p, _)) =>
-                req.as[DecideReq].attempt.map(_.toOption).flatMap { body =>
+                decodeBody[DecideReq](req).map(_.toOption).flatMap { body =>
                   val role = body.flatMap(_.role).filter(Set("view", "edit")).getOrElse(r.role)
                   val until = body.flatMap(_.expiresAt).filter(_.isAfter(Instant.now()))
                   if action == "deny" then
@@ -173,7 +175,7 @@ final class PageCopyRoutes(
                     yield resp
                   else
                     store.getPageAcl(r.pageId).flatMap {
-                      case None => err(Status.NotFound, "page not found")
+                      case None => err(Status.NotFound, "ページが見つかりません")
                       case Some(acl) =>
                         val me = Principal(PrincipalType.User, r.userId)
                         val target = requested(role)

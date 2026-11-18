@@ -7,7 +7,7 @@ import java.time.Instant
 import java.util.UUID
 
 // フロントエンド(Scala.js)と共有する DTO（modules/shared）
-export skiwi.shared.{AuditDto, CreateTokenReq, CreatedTokenDto, ErrorDto, TokenDto}
+export skiwi.shared.{AgentDto, AgentKeyDto, AuditDto, CreateAgentReq, CreateTokenReq, CreatedTokenDto, ErrorDto, TokenDto, UpdateAgentReq}
 
 given Encoder[Role]          = Encoder.encodeString.contramap(_.asString)
 given Decoder[Role]          = Decoder.decodeString.emap(s => Role.parse(s).toRight(s"invalid role: $s"))
@@ -15,6 +15,13 @@ given Encoder[PrincipalType] = Encoder.encodeString.contramap(_.asString)
 given Decoder[PrincipalType] = Decoder.decodeString.emap(s => PrincipalType.parse(s).toRight(s"invalid principal type: $s"))
 
 /** avatarUrl: アイコンがあれば、その URL（更新日時の版付き） */
+/** 「項目なし（変えない）・null（消す）・値」の3通りを読む。項目がなければ None、null なら Some(None) */
+def tri[A: Decoder](c: io.circe.HCursor, k: String): Decoder.Result[Option[Option[A]]] =
+  c.downField(k).success.fold(Right(None): Decoder.Result[Option[Option[A]]])(f => f.as[Option[A]].map(Some(_)))
+
+/** tri の文字列版（前後の空白を除き、空なら null と同じ） */
+def triText(c: io.circe.HCursor, k: String): Decoder.Result[Option[Option[String]]] = tri[String](c, k).map(_.map(_.map(_.trim).filter(_.nonEmpty)))
+
 final case class MeDto(id: UUID, name: String, email: Option[String], groups: List[String], isAdmin: Boolean, avatarUrl: Option[String]) derives Encoder.AsObject
 
 final case class WorkspaceDto(id: UUID, name: String, role: Role, favorite: Boolean = false) derives Encoder.AsObject
@@ -61,12 +68,11 @@ final case class UpdatePageReq(title: Option[String], icon: Option[Option[String
 object UpdatePageReq:
   val Statuses = Set("draft", "review", "published", "deprecated")
   given Decoder[UpdatePageReq] = Decoder.instance { c =>
-    def tri[A: Decoder](k: String) = c.downField(k).success.fold(Right(None): Decoder.Result[Option[Option[A]]])(f => f.as[Option[A]].map(Some(_)))
     for
       title  <- c.get[Option[String]]("title")
-      icon   <- tri[String]("icon").map(_.map(_.map(_.trim).filter(_.nonEmpty)))
-      owner  <- tri[UUID]("ownerId")
-      status <- tri[String]("status")
+      icon   <- triText(c, "icon")
+      owner  <- tri[UUID](c, "ownerId")
+      status <- tri[String](c, "status")
       fw     <- c.get[Option[Boolean]]("fullWidth")
     yield UpdatePageReq(title, icon, owner, status, fw)
   }

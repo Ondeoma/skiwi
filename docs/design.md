@@ -110,8 +110,8 @@
 - `page_updates(page_id, seq, update bytea)`
 - `page_snapshot(page_id, version, ydoc bytea, content jsonb, plain_text, created_by, created_at)`
   - 版履歴は、一定間隔と明示操作でスナップショットを残します。
-- `user`, `group`, `group_member`：IdPから同期します。
-- `api_token(id, user_id, name, token_hash, scope, expires_at, last_used_at, revoked_at)`：ハッシュのみ保存します。
+- `app_user`（`sub`・`disabled` など）, `user_group`, `group_member`：IdPから同期します。
+- `api_key(id, user_id, name, key_hash, scopes, expires_at, last_used_at, revoked_at)`：ハッシュのみ保存します（`scopes` は `{read}` か `{read,write}`）。
 - `attachment(id, page_id, s3_key, size, content_type, sha256)`
 - `audit_log(id, at, actor, action, target, detail jsonb)`：追記専用です。
 - `page_watch(page_id, user_id)`：更新通知の購読。

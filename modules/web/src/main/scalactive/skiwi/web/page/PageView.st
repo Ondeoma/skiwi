@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.shared.Titles
 import io.circe.*
 import io.circe.syntax.*
 import org.scalajs.dom
@@ -138,11 +139,11 @@ def checked(e: dom.Event): Boolean = e.target.asInstanceOf[dom.HTMLInputElement]
 
 def watchInheritedNote(w: WatchState): String = w.inherited.fold("") { i =>
   val what = if (i.edits && i.comments) "更新とコメント" else if (i.edits) "更新" else "コメント"
-  s"「${if (i.title.isEmpty) "無題" else i.title}」のウォッチ（子ページも含む）で、${what}の通知が届きます。ここで選ぶと、このページはその設定が優先されます。"
+  s"「${Titles.display(i.title)}」のウォッチ（子ページも含む）で、${what}の通知が届きます。ここで選ぶと、このページはその設定が優先されます。"
 }
 
 def watchOverrideNote(w: WatchState): String =
-  w.inherited.fold("")(i => s"親の「${if (i.title.isEmpty) "無題" else i.title}」のウォッチより、このページの設定が優先されます。")
+  w.inherited.fold("")(i => s"親の「${Titles.display(i.title)}」のウォッチより、このページの設定が優先されます。")
 
 // ---------------------------------------------------------------- 共有・カスタムCSS
 

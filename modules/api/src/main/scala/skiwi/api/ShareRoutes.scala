@@ -1,5 +1,7 @@
 package skiwi.api
 
+import skiwi.shared.Titles
+
 import cats.effect.*
 import cats.syntax.all.*
 import io.circe.{Decoder, Encoder, Json}
@@ -10,7 +12,7 @@ import org.http4s.headers.`Content-Type`
 import org.typelevel.ci.CIString
 import skiwi.auth.Crypto
 import skiwi.core.*
-import skiwi.db.{AttachmentStore, DocStore, PageShare, PubPage, ShareStore, ShareUpdate, SharedPage, Store}
+import skiwi.db.{AttachmentStore, DocStore, PageShare, ShareStore, ShareUpdate, SharedPage, Store}
 
 import java.time.Instant
 import java.util.UUID
@@ -35,9 +37,6 @@ final case class SetShareReq(
     indexable: Option[Boolean] = None, description: Option[Option[String]] = None, showReleases: Option[Boolean] = None
 )
 object SetShareReq:
-  private def tri[A: Decoder](c: io.circe.HCursor, k: String): Decoder.Result[Option[Option[A]]] =
-    c.downField(k).success.fold(Right(None))(f => f.as[Option[A]].map(Some(_)))
-  private def triText(c: io.circe.HCursor, k: String) = tri[String](c, k).map(_.map(_.map(_.trim).filter(_.nonEmpty)))
   given Decoder[SetShareReq] = Decoder.instance { c =>
     for
       inc <- c.get[Option[Boolean]]("includeChildren")
@@ -99,9 +98,6 @@ final class ShareRoutes(
 
   private val base = publicUrl.stripSuffix("/")
 
-  private def withEditor(req: Request[IO], id: UUID)(f: (AuthSession, Page) => IO[Response[IO]]): IO[Response[IO]] =
-    withPage(req, id, Role.Edit)((s, p, _) => f(s, p))
-
   private def dto(s: PageShare, now: Instant, pending: Option[Boolean] = None) =
     PublicShareDto(s.token, s.includeChildren, s.createdAt, s.createdBy, s.expiresAt, s.passwordHash.isDefined, s.expired(now),
       s.hideHeader, s.sidebar, s.mode, s.publishedAt, s.publishedBy, pending, s.startsAt, s.notStarted(now), s.slug, s.indexable, s.description, s.showReleases)
@@ -136,12 +132,17 @@ final class ShareRoutes(
       case Array(e, _) => e.toLongOption.exists(exp => exp > Instant.now().getEpochSecond && Crypto.constantTimeEquals(c.content, unlockValue(s.token, h, exp)))
       case _           => false)))
 
-  /** 総当たり対策: リンクごとに10分間で10回まで。 */
+  /** 総当たり対策: 10分間に、リンク×接続元ごとに10回、リンクごとに合わせて100回まで.
+    * 接続元ごとに数えるので、第三者が間違ったパスワードを送り続けても、ほかの人は解錠できる */
   private val attempts = Ref.unsafe[IO, Map[String, (Int, Instant)]](Map.empty)
-  private def allowAttempt(token: String): IO[Boolean] = IO.realTimeInstant.flatMap { now =>
-    attempts.modify { m =>
-      val (n, since) = m.get(token).filter(_._2.isAfter(now.minusSeconds(600))).getOrElse((0, now))
-      (m.filter(_._2._2.isAfter(now.minusSeconds(600))) + (token -> (n + 1, since)), n < 10)
+  private def allowAttempt(token: String, client: String): IO[Boolean] = IO.realTimeInstant.flatMap { now =>
+    attempts.modify { m0 =>
+      val m = m0.filter(_._2._2.isAfter(now.minusSeconds(600)))
+      def count(k: String) = m.get(k).fold(0)(_._1)
+      def bump(mm: Map[String, (Int, Instant)], k: String) = mm + (k -> (count(k) + 1, m.get(k).fold(now)(_._2)))
+      val (perClient, perLink) = (s"$token|$client", token)
+      if count(perClient) >= 10 || count(perLink) >= 100 then (m, false)
+      else (bump(bump(m, perClient), perLink), true)
     }
   }
   private def emitPublished(s: AuthSession, id: UUID, sh: PageShare, note: Option[String]): IO[Unit] =
@@ -154,32 +155,31 @@ final class ShareRoutes(
   private def guestHeaders(r: Response[IO]): Response[IO] =
     r.putHeaders(Header.Raw(CIString("X-Robots-Tag"), "noindex, nofollow"), Header.Raw(CIString("Cache-Control"), "no-store"))
 
-  private val notFound = err(Status.NotFound, "not found").map(guestHeaders)
+  private val notFound = err(Status.NotFound, "見つかりません").map(guestHeaders)
 
   /** ゲストに見せる版: 公開版を固定しているならその内容（現在の公開範囲にあるページだけ）、なければ現在の内容。 */
-  private final case class GuestView(share: PageShare, pages: List[SharedPage], pub: Option[Map[UUID, PubPage]]):
+  /** pages: ゲストに見せるページ（固定（pinned）なら公開版のタイトルなど） */
+  private final case class GuestView(share: PageShare, pages: List[SharedPage]):
     def find(key: String): Option[SharedPage] =
       uuidOpt(key).flatMap(id => pages.find(_.id == id))
         .orElse(pages.find(_.slug.contains(key.toLowerCase)))
-    def content(id: UUID): IO[Json] = pub match
-      case Some(m) => IO.pure(m.get(id).flatMap(_.content).fold(Json.Null)(parseOrNull))
-      case None    => docs.currentContent(id).map(_.fold(Json.Null)((json, _, _) => parseOrNull(json)))
-    private def savedTexts: IO[Map[UUID, String]] = pub match
-      case Some(m) => IO.pure(m.view.mapValues(_.plainText).toMap)
-      case None    => shares.plainTexts(pages.map(_.id))
+    /** ゲストに見せる本文（JSON）。固定（pinned）なら公開版、そうでなければ最新の本文 */
+    private def contents(ids: List[UUID]): IO[Map[UUID, String]] = if share.pinned then shares.pubContents(share, ids) else docs.currentContents(ids)
+    def content(id: UUID): IO[Json] = contents(List(id)).map(_.get(id).fold(Json.Null)(parseOrNull))
+    private def savedTexts: IO[Map[UUID, String]] =
+      val ids = pages.map(_.id)
+      if share.pinned then shares.pubPlainTexts(share, ids) else docs.plainTexts(ids)
     /** ゲストに見せる平文（検索用）。保存済みの平文はエディタが作るので、ページへのリンクのタイトル（公開範囲外のページのものを含む）が入る。
       * そこで本文の JSON から作り直す（ページへのリンク・メンションは含めない）。重いので、保存済みの平文が変わらない間は覚えておく */
     def texts: IO[Map[UUID, String]] = savedTexts.flatMap { saved =>
       guestTextCache.get.flatMap { cache =>
-        pages.traverse { p =>
-          val k = (p.id, saved.getOrElse(p.id, "").hashCode)
-          cache.get(k) match
-            case Some(t) => IO.pure((k, t, false))
-            case None    => content(p.id).map(c => (k, guestText(c), true))
-        }.flatMap { rs =>
-          val fresh = rs.collect { case (k, t, true) => k -> t }
+        val keys    = pages.map(p => p.id -> (p.id, saved.getOrElse(p.id, "").hashCode))
+        val missing = keys.filterNot((_, k) => cache.contains(k))
+        // 覚えていないページの本文は1回の問い合わせでまとめて読む
+        contents(missing.map(_._1)).flatMap { cs =>
+          val fresh = missing.map((id, k) => k -> guestText(cs.get(id).fold(Json.Null)(parseOrNull)))
           IO.whenA(fresh.nonEmpty)(guestTextCache.update(m => (if m.size > 20000 then Map.empty else m) ++ fresh))
-            .as(rs.map((k, t, _) => k._1 -> t).toMap)
+            .as { val all = cache ++ fresh; keys.map((id, k) => id -> all(k)).toMap }
         }
       }
     }
@@ -189,8 +189,8 @@ final class ShareRoutes(
   private def guestText(content: Json): String = if content.isNull then "" else MarkdownParse.plainText(Vector(content))
 
   private def view(s: PageShare, live: List[SharedPage]): IO[GuestView] =
-    if s.pinned then shares.pubPages(s, live).map(pp => GuestView(s, pp.map(_.page), Some(pp.map(p => p.page.id -> p).toMap)))
-    else IO.pure(GuestView(s, live, None))
+    if s.pinned then shares.pubPages(s, live).map(GuestView(s, _))
+    else IO.pure(GuestView(s, live))
 
   /** 公開リンクを確認する。期限切れは 410、公開前は 403、パスワード未入力は 401（ゲスト画面が案内を出す）。 */
   private def withShare(req: Request[IO], key: String, checkPassword: Boolean = true)(f: GuestView => IO[Response[IO]]): IO[Response[IO]] =
@@ -245,12 +245,12 @@ final class ShareRoutes(
   private def validate(b: SetShareReq, before: Option[PageShare]): Option[String] =
     val starts = b.startsAt.getOrElse(before.flatMap(_.startsAt))
     val expires = b.expiresAt.getOrElse(before.flatMap(_.expiresAt))
-    if b.password.flatten.exists(pw => pw.length < 4 || pw.length > 200) then Some("password must be 4-200 characters")
-    else if b.sidebar.exists(v => !Set("auto", "show", "hide")(v)) then Some("sidebar must be auto, show or hide")
-    else if b.mode.exists(v => !Set("live", "pinned")(v)) then Some("mode must be live or pinned")
-    else if b.slug.flatten.exists(s => !validSlug(ShareSlug, s)) then Some("invalid slug")
-    else if b.description.flatten.exists(_.length > 300) then Some("description is too long")
-    else if (starts, expires).tupled.exists((a, e) => !a.isBefore(e)) then Some("startsAt must be before expiresAt")
+    if b.password.flatten.exists(pw => pw.length < 4 || pw.length > 200) then Some("パスワードは4〜200文字にしてください")
+    else if b.sidebar.exists(v => !Set("auto", "show", "hide")(v)) then Some("sidebar は auto・show・hide のどれかにしてください")
+    else if b.mode.exists(v => !Set("live", "pinned")(v)) then Some("mode は live か pinned にしてください")
+    else if b.slug.flatten.exists(s => !validSlug(ShareSlug, s)) then Some("URL名は半角の英小文字・数字・ハイフン（-）で入力してください（公開リンクは3〜64文字）")
+    else if b.description.flatten.exists(_.length > 300) then Some("説明文は300文字までです")
+    else if (starts, expires).tupled.exists((a, e) => !a.isBefore(e)) then Some("公開の開始日時は、終了日時より前にしてください")
     else None
 
   // --- 公開ページのHTML（OGP・検索エンジン） ------------------------------------------------
@@ -280,7 +280,7 @@ final class ShareRoutes(
                 val desc = (if isRoot then s.description else None).orElse(summary(guestText(content)))
                 val img = firstImage(forGuest(v.key, Set.empty)(content)).filter(_.startsWith("/api/public/")).map(base + _)
                 val url = s"$base/s/${v.key}" + (if isRoot then "" else s"/${p.slug.getOrElse(p.id.toString)}")
-                Some(GuestHead(if p.title.isBlank then "無題" else p.title, desc, img, url, s.indexable))
+                Some(GuestHead(Titles.display(p.title), desc, img, url, s.indexable))
               }
         }
       case _ => IO.pure(None)
@@ -309,7 +309,7 @@ final class ShareRoutes(
     withTitle.replaceFirst("</head>", java.util.regex.Matcher.quoteReplacement(s"    $tags\n  </head>"))
 
   private def text(body: String, mt: MediaType): IO[Response[IO]] =
-    IO.pure(Response[IO](Status.Ok).withEntity(body)(using EntityEncoder.stringEncoder[IO]).withContentType(`Content-Type`(mt, Charset.`UTF-8`)))
+    IO.pure(Response[IO](Status.Ok).withEntity(body)(using EntityEncoder.stringEncoder).withContentType(`Content-Type`(mt, Charset.`UTF-8`)))
 
   private def xml(s: String) = Html.escape(s)
 
@@ -331,7 +331,7 @@ final class ShareRoutes(
 
     case req @ PUT -> Root / "api" / "pages" / UUIDVar(id) / "share" =>
       withEditor(req, id) { (s, p) =>
-        if !enabled then err(Status.Forbidden, "public sharing is disabled")
+        if !enabled then err(Status.Forbidden, "ゲスト向けの公開は無効にされています")
         else
           body[SetShareReq](req) { b =>
             shares.get(id).flatMap { before =>
@@ -365,9 +365,9 @@ final class ShareRoutes(
     // 本文 {note}（変更点のメモ。任意）
     case req @ POST -> Root / "api" / "pages" / UUIDVar(id) / "share" / "publish" =>
       withEditor(req, id) { (s, p) =>
-        req.as[Json].attempt.map(_.toOption.flatMap(_.hcursor.get[String]("note").toOption).map(_.trim).filter(_.nonEmpty).map(_.take(2000))).flatMap { note =>
+        decodeBody[Json](req).map(_.toOption.flatMap(_.hcursor.get[String]("note").toOption).map(_.trim).filter(_.nonEmpty).map(_.take(2000))).flatMap { note =>
           shares.publish(id, s.user.id, note).flatMap {
-            case None => err(Status.NotFound, "not shared")
+            case None => err(Status.NotFound, "公開されていません")
             case Some(sh) =>
               audit.log(s, "page.public.publish", "page", id, Json.obj("title" -> p.title.asJson, "note" -> note.asJson)) *>
                 emitPublished(s, id, sh, note) *> fullDto(sh).flatMap(Ok(_))
@@ -382,7 +382,7 @@ final class ShareRoutes(
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "share" / "releases" / UUIDVar(rid) =>
       withEditor(req, id) { (_, _) =>
         shares.releasePages(id, rid).flatMap {
-          case None => err(Status.NotFound, "release not found")
+          case None => err(Status.NotFound, "公開版が見つかりません")
           case Some((r, ps)) =>
             Ok(ReleaseContentDto(releaseDto(r), ps.map(x => ReleasePageDto(x.pageId, x.parentId, x.title, x.icon,
               x.content.fold(Json.Null)(parseOrNull), x.plainText))))
@@ -394,7 +394,7 @@ final class ShareRoutes(
         body[ReleaseNoteReq](req) { b =>
           val note = b.note.map(_.trim).filter(_.nonEmpty).map(_.take(2000))
           shares.setReleaseNote(id, rid, note).flatMap {
-            case false => err(Status.NotFound, "release not found")
+            case false => err(Status.NotFound, "公開版が見つかりません")
             case true  => audit.log(s, "page.public.release_note", "page", id, Json.obj("releaseId" -> rid.asJson, "note" -> note.asJson)) *> NoContent()
           }
         }
@@ -412,7 +412,7 @@ final class ShareRoutes(
       withEditor(req, id) { (s, p) =>
         body[PageSlugDto](req) { b =>
           val slug = b.slug.map(_.trim.toLowerCase).filter(_.nonEmpty)
-          if slug.exists(x => !validSlug(PageSlug, x)) then err(Status.BadRequest, "invalid slug")
+          if slug.exists(x => !validSlug(PageSlug, x)) then err(Status.BadRequest, "URL名は半角の英小文字・数字・ハイフン（-）で入力してください（公開リンクは3〜64文字）")
           else
             shares.setPageSlug(id, slug).flatMap {
               case Left(_) => err(Status.Conflict, "slug_taken")
@@ -438,11 +438,11 @@ final class ShareRoutes(
           s.passwordHash match
             case None => NoContent()
             case Some(h) =>
-              allowAttempt(s.token).flatMap {
-                case false => err(Status.TooManyRequests, "too many attempts")
+              allowAttempt(s.token, clientAddress(req)).flatMap {
+                case false => err(Status.TooManyRequests, "試行の回数が多すぎます。しばらくしてからやり直してください")
                 case true =>
                   verifyPassword(b.password, h).flatMap {
-                    case false => err(Status.Forbidden, "wrong password")
+                    case false => err(Status.Forbidden, "パスワードが違います")
                     case true =>
                       NoContent().map(_.addCookie(ResponseCookie(
                         cookieName(s.token), unlockValue(s.token, h, Instant.now().getEpochSecond + UnlockSeconds), maxAge = Some(UnlockSeconds),
@@ -458,14 +458,14 @@ final class ShareRoutes(
     // 更新履歴（公開版を固定し、表示する設定のときだけ。メモのあるものだけ）
     case req @ GET -> Root / "api" / "public" / key / "releases" =>
       withShare(req, key) { v =>
-        if !(v.share.pinned && v.share.showReleases) then err(Status.NotFound, "not found")
+        if !(v.share.pinned && v.share.showReleases) then err(Status.NotFound, "見つかりません")
         else shares.releases(v.share.pageId).flatMap(rs => Ok(rs.flatMap(r => r.note.map(n => GuestReleaseDto(r.publishedAt, n)))))
       }
 
     case req @ GET -> Root / "api" / "public" / key / "pages" / pageKey =>
       withShare(req, key) { v =>
         v.find(pageKey) match
-          case None => err(Status.NotFound, "not found")
+          case None => err(Status.NotFound, "見つかりません")
           case Some(p) =>
             skiwi.observe.Metrics.count("skiwi.public.views") *>
             (v.content(p.id), store.cssLayers(p.id), store.guestHtmlLayers(p.id), store.isFullWidth(p.id)).flatMapN { (content, css, html, wide) =>
@@ -489,7 +489,7 @@ final class ShareRoutes(
       withShare(req, key) { v =>
         attachments.get(aid).flatMap {
           case Some(a) if v.pages.exists(_.id == a.pageId) => files.serve(a, "private, no-store")
-          case _                                           => err(Status.NotFound, "not found")
+          case _                                           => err(Status.NotFound, "見つかりません")
         }
       }
 
@@ -501,7 +501,21 @@ final class ShareRoutes(
       text(body, MediaType.text.plain)
 
     case GET -> Root / "sitemap.xml" =>
-      (if enabled then shares.indexable else IO.pure(Nil)).flatMap { xs =>
+      (IO.realTime.map(_.toMillis), if enabled then shares.indexable else IO.pure(Nil)).flatMapN { (now, xs) =>
+        val key = xs.hashCode
+        sitemapCache.get.flatMap {
+          case Some((at, k, body)) if k == key && now - at < 600000 => text(body, MediaType.application.xml)
+          case _ => buildSitemap(xs).flatTap(b => sitemapCache.set(Some((now, key, b)))).flatMap(text(_, MediaType.application.xml))
+        }
+      }
+  }
+
+  /** sitemap.xml は公開リンクごとに公開範囲をたどるので、10分覚えておく（ログインなしで呼べるため）。
+    * 載せる公開リンク（設定を含む）が変わったら作り直す。(作った時刻, 公開リンクの一覧のハッシュ, 中身) */
+  private val sitemapCache = Ref.unsafe[IO, Option[(Long, Int, String)]](None)
+
+  private def buildSitemap(xs: List[PageShare]): IO[String] =
+      IO.pure(xs).flatMap { xs =>
         xs.flatTraverse { s =>
           shares.resolve(s.token).flatMap {
             case None => IO.pure(Nil)
@@ -514,12 +528,10 @@ final class ShareRoutes(
               }
           }
         }
-      }.flatMap { urls =>
-        val body = s"""<?xml version="1.0" encoding="UTF-8"?>
-                      |<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-                      |${urls.mkString("\n")}
-                      |</urlset>
-                      |""".stripMargin
-        text(body, MediaType.application.xml)
+      }.map { urls =>
+        s"""<?xml version="1.0" encoding="UTF-8"?>
+           |<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+           |${urls.mkString("\n")}
+           |</urlset>
+           |""".stripMargin
       }
-  }

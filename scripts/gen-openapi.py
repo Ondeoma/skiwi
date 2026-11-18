@@ -117,7 +117,7 @@ SKAWAU_FILE = S(key={**UUID, "description": "ファイルの ID（小文字）"}
 SMOHUA_FORM = S(key={**UUID, "description": "フォームの ID（小文字）"}, title=STR, status={**STR, "description": "draft・open・closed"}, responses={"type": "integer"}, lastResponseAt={**STR, "nullable": True}, url=STR)
 SVC = P("service", "連携先（skea・skawau・smohua）", {"type": "string", "enum": ["skea", "skawau", "smohua"]})
 op("get", "/api/integrations/{service}", "連携", "外部サービス（skea・skawau・smohua）との連携の状態", [SVC], resp=S(enabled=BOOL, url={**STR, "nullable": True}, projectKeys=arr(STR), connected=BOOL),
-   desc="enabled: 管理者が設定済み（サーバーに ENCRYPTION_KEY があるときだけ）。connected: 自分が連携済み。projectKeys は skea だけ。連携（許可）はブラウザで GET /api/integrations/{service}/connect から行う。")
+   desc="enabled: 管理者が設定済み。connected: 自分が連携済み。projectKeys は skea だけ。連携（許可）はブラウザで GET /api/integrations/{service}/connect から行う。")
 op("post", "/api/integrations/{service}/lookup", "連携", "skea のタスク・skawau のファイル・smohua のフォームをまとめて読む", [SVC],
    body=S(keys={**arr(STR), "description": "skea: タスクID（例: SKEA-123。設定したプロジェクトキーのものだけ使う）。skawau: ファイルの ID（小文字の UUID）。smohua: フォームの ID（小文字の UUID）。100件まで"}),
    resp=S(connected=BOOL, items={"type": "array", "items": {"oneOf": [SKEA_TASK, SKAWAU_FILE, SMOHUA_FORM]}}),

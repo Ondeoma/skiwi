@@ -133,7 +133,6 @@ def colStyle(props: Props): String = s"width: ${colW(props)}px"
 
 def href(props: Props, r: DbRow): String = DbDom.pageHref(props.wid, r.page.id)
 
-def titleOf(r: DbRow): String = if (r.page.title.isEmpty) "無題" else r.page.title
 </script>
 
 <template>
@@ -149,15 +148,15 @@ def titleOf(r: DbRow): String = if (r.page.title.isEmpty) "無題" else r.page.t
       <div class="tl-wrap">
         <div class="tl-names">
           <div class="tl-hrow"></div>
-          <div v-for="it in items(props)" :key="it.row.page.id" class="tl-name"><a :href="href(props, it.row)" class="rlink" @click="DbDom.link(event, href(props, it.row))">{{ titleOf(it.row) }}</a></div>
+          <div v-for="it in items(props)" :key="it.row.page.id" class="tl-name"><a :href="href(props, it.row)" class="rlink" @click="DbDom.link(event, href(props, it.row))">{{ it.row.page.displayTitle }}</a></div>
         </div>
         <div class="tl-grid" :style="gridStyle(props)">
           <div class="tl-hrow">
             <div v-for="di in cols(props).zipWithIndex" :key="di._2" :class="dayClass(di._1)" :style="colStyle(props)">{{ dayLabel(props, di._1, di._2) }}</div>
           </div>
           <div v-for="it in items(props)" :key="it.row.page.id" class="tl-row">
-            <div v-if="visible(it)" :class="barClass(it)" :style="barStyle(s, props, it)" :title="titleOf(it.row)" data-testid="db-tl-bar" @mousedown='down(s, props, event, it.row, "move")'>
-              <span class="tl-label">{{ titleOf(it.row) }}</span>
+            <div v-if="visible(it)" :class="barClass(it)" :style="barStyle(s, props, it)" :title="it.row.page.displayTitle" data-testid="db-tl-bar" @mousedown='down(s, props, event, it.row, "move")'>
+              <span class="tl-label">{{ it.row.page.displayTitle }}</span>
               <span v-if="props.endProp.isDefined" class="tl-grip" @mousedown='down(s, props, event, it.row, "end")'></span>
             </div>
           </div>

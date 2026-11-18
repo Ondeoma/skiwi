@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.shared.Titles
 import io.circe.Json
 import io.circe.syntax.*
 import org.scalajs.dom
@@ -126,7 +127,7 @@ def target(props: Props): Option[RelatedDb] = props.prop.target.flatMap(t => pro
 
 def relRows(s: State, props: Props): List[RelatedRow] = {
   val q = s.relQ.v.trim.toLowerCase
-  target(props).fold(List.empty[RelatedRow])(_.rows).filter(r => q.isEmpty || (if (r.title.isEmpty) "無題" else r.title).toLowerCase.contains(q)).take(50)
+  target(props).fold(List.empty[RelatedRow])(_.rows).filter(r => q.isEmpty || (Titles.display(r.title)).toLowerCase.contains(q)).take(50)
 }
 
 def relTitle(props: Props, id: String): String =
@@ -141,9 +142,8 @@ def openRel(props: Props, e: dom.Event, id: String): Unit = relHref(props, id) m
 
 def relAddTitle(props: Props): String = if (target(props).isDefined) "関連する項目を選ぶ" else "関連先のデータベースを閲覧できません"
 
-def targetTitle(props: Props): String = target(props).map(_.title).filter(_.nonEmpty).getOrElse("無題")
+def targetTitle(props: Props): String = Titles.display(target(props).map(_.title))
 
-def titleOr(t: String): String = if (t.isEmpty) "無題" else t
 
 val ComputedTypes: Set[String] = Set("formula", "created_time", "edited_time", "created_by", "edited_by", "unique_id")
 
@@ -183,7 +183,7 @@ def dateValue(props: Props): String = props.value match {
       <button v-if="props.editable" class="add" :title="relAddTitle(props)" :disabled="target(props).isEmpty" data-testid="db-rel-add" @click='toggle(s, props, "rel")'>＋</button>
       <div v-if='isOpen(s, props, "rel") &amp;&amp; target(props).isDefined' class="pop rel-pop" data-testid="db-rel-pop" @mouseleave="close(s, props)">
         <input v-model="s.relQ" placeholder="🔍 項目を検索" class="rq">
-        <label v-for="r in relRows(s, props)" :key="r.id"><input type="checkbox" :checked="arr(props).contains(r.id)" @change="toggleIn(props, r.id, DbDom.checked(event))"> {{ r.icon.getOrElse("📄") }} {{ titleOr(r.title) }}</label>
+        <label v-for="r in relRows(s, props)" :key="r.id"><input type="checkbox" :checked="arr(props).contains(r.id)" @change="toggleIn(props, r.id, DbDom.checked(event))"> {{ r.icon.getOrElse("📄") }} {{ Titles.display(r.title) }}</label>
         <p v-if="relRows(s, props).isEmpty" class="muted">項目がありません（「{{ targetTitle(props) }}」）</p>
       </div>
     </template>

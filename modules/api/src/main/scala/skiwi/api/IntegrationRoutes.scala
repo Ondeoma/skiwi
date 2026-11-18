@@ -116,10 +116,10 @@ object IntegrationRoutes:
 /**
  * 外部サービス（skea・skawau・smohua）との連携。各ユーザーが OAuth 2.0（認可コード + PKCE）で相手を許可し、
  * 発行された読み取り専用のトークンを暗号化して保存する。本文中の項目（タスク・ファイル・フォームの回答）は、本人のトークンで相手から読む。
- * box（ENCRYPTION_KEY）がなければ連携の機能は使えない（503）。パスは /api/integrations/{サービス名}/…。
+ * 秘密の値は box（APP_SECRET の鍵）で暗号化して保存する。パスは /api/integrations/{サービス名}/…。
  */
 final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStore, protected val sessions: SessionAuth, audit: Audit,
-                              http: Client[IO], publicUrl: String, box: Option[SecretBox], cache: IntegrationRoutes.Cache) extends RouteSupport:
+                              http: Client[IO], publicUrl: String, box: SecretBox, cache: IntegrationRoutes.Cache) extends RouteSupport:
   import IntegrationRoutes.*
 
   private object Svc:
@@ -128,12 +128,8 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
 
   def redirectUri(svc: LinkedService) = s"$publicUrl/api/integrations/${svc.name}/callback"
 
-  private def unavailable(svc: LinkedService) = s"${svc.name} 連携は使えません（サーバーに ENCRYPTION_KEY が設定されていません）"
   private def secretCtx(svc: LinkedService)           = s"${svc.name}.client_secret"
   private def tokenCtx(svc: LinkedService, uid: UUID) = s"${svc.name}.token:$uid"
-
-  private def withBox(svc: LinkedService)(f: SecretBox => IO[Response[IO]]): IO[Response[IO]] =
-    box.fold(err(Status.ServiceUnavailable, unavailable(svc)))(f)
 
   private def load(svc: LinkedService, b: SecretBox): IO[IntegrationSettings] = st.settings(svc.name + ".").map { m =>
     def get(k: String) = m.get(s"${svc.name}.$k")
@@ -146,7 +142,7 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
 
   /** 設定が揃っていれば (鍵, 設定) */
   private def active(svc: LinkedService): IO[Option[(SecretBox, IntegrationSettings)]] =
-    box.flatTraverse(b => load(svc, b).map(s => Option.when(svc.complete(s))((b, s))))
+    load(svc, box).map(s => Option.when(svc.complete(s))((box, s)))
 
   /** 本人のトークン（復号できなければ None） */
   private def token(svc: LinkedService, b: SecretBox, uid: UUID): IO[Option[String]] =
@@ -209,11 +205,11 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
 
     // ------------------------------------------------------------ 管理者の設定
     case req @ GET -> Root / "api" / "admin" / "integrations" / Svc(svc) =>
-      admin(req)(_ => withBox(svc)(b => load(svc, b).flatMap(settingsDto(svc, _)).flatMap(Ok(_))))
+      admin(req)(_ => load(svc, box).flatMap(settingsDto(svc, _)).flatMap(Ok(_)))
 
     case req @ PUT -> Root / "api" / "admin" / "integrations" / Svc(svc) =>
       admin(req) { s =>
-        withBox(svc) { b =>
+        locally { val b = box
           body[SaveIntegrationSettingsReq](req) { raw =>
             validate(svc, raw) match
               case Left(msg) => err(Status.BadRequest, msg)
@@ -252,7 +248,7 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
 
     case req @ GET -> Root / "api" / "integrations" / Svc(svc) / "connect" =>
       authed(req) { s =>
-        withBox(svc) { _ =>
+        locally {
           active(svc).flatMap {
             case None => err(Status.ServiceUnavailable, s"${svc.name} 連携が設定されていません（管理者が設定してください）")
             case Some((_, cfg)) =>
@@ -299,7 +295,7 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
 
     case req @ DELETE -> Root / "api" / "integrations" / Svc(svc) / "connection" =>
       authed(req) { s =>
-        withBox(svc) { b =>
+        locally { val b = box
           (token(svc, b, s.user.id), active(svc)).flatMapN { (tok, cfg) =>
             // 相手側の失効は失敗しても続ける（相手の API キーの画面からも失効できる）
             val revoke = (tok, cfg).mapN { case (t, (_, c)) =>
@@ -315,7 +311,7 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
 
     case req @ POST -> Root / "api" / "integrations" / Svc(svc) / "lookup" =>
       authed(req) { s =>
-        withBox(svc) { _ =>
+        locally {
           body[LookupReq](req) {
             case b if b.keys.size > MaxKeys => err(Status.BadRequest, s"keys は${MaxKeys}件までです")
             case b =>
@@ -335,7 +331,7 @@ final class IntegrationRoutes(services: List[LinkedService], st: IntegrationStor
     /** 項目1つの詳しい中身（smohua のフォームの集計 summary・回答 responses）。本人のトークンで相手から読んで、そのまま返す（キャッシュしない） */
     case req @ GET -> Root / "api" / "integrations" / Svc(svc) / "items" / key / kind if svc.details.contains(kind) =>
       authed(req) { s =>
-        withBox(svc) { _ =>
+        locally {
           val notConnected = Ok(DetailDto(connected = false, Json.Null))
           active(svc).flatMap {
             case None => notConnected

@@ -1,5 +1,6 @@
 <script lang="scala">
-import skiwi.web.{Dialog, Nav, Store, Ui}
+import skiwi.shared.Titles
+import skiwi.web.{Backdrop, Dialog, Nav, Store, Ui}
 
 import scala.concurrent.Future
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
@@ -40,7 +41,7 @@ def restorePage(s: State, p: Props, t: TrashedPage): Unit = guard(s) {
 
 def purgePage(s: State, p: Props, t: TrashedPage): Unit = {
   val extra = if (t.count > 1) s"（子ページ ${t.count - 1} 件を含む）" else ""
-  Dialog.confirm(s"「${if (t.title.isEmpty) "無題" else t.title}」${extra}を完全に削除しますか？\n元に戻せません。添付ファイルも削除されます。", okLabel = "完全に削除", danger = true)
+  Dialog.confirm(s"「${Titles.display(t.title)}」${extra}を完全に削除しますか？\n元に戻せません。添付ファイルも削除されます。", okLabel = "完全に削除", danger = true)
     .foreach(ok => if (ok) guard(s)(WorkspaceApi.purgePage(t.id).flatMap(_ => load(s, p))))
 }
 
@@ -66,7 +67,7 @@ def onKey(p: Props, e: org.scalajs.dom.Event): Unit = if (e.asInstanceOf[org.sca
 </script>
 
 <template>
-  <div class="backdrop" @mousedown.self="props.onClose(())" @keydown="onKey(props, event)">
+  <div class="backdrop" @mousedown="Backdrop.down(event)" @mouseup="Backdrop.up(event)" @click="Backdrop.click(event)(props.onClose(()))" @keydown="onKey(props, event)">
     <div class="dialog" role="dialog" aria-label="ゴミ箱" data-testid="trash">
       <header>
         <h2>🗑 ゴミ箱</h2>
@@ -83,7 +84,7 @@ def onKey(p: Props, e: org.scalajs.dom.Event): Unit = if (e.asInstanceOf[org.sca
           <p v-if="s.pages.v.isEmpty" class="muted">ゴミ箱は空です。</p>
           <table v-else>
             <tr v-for="t in s.pages.v" :key="t.id" data-testid="trash-item">
-              <td class="name">{{ t.icon.getOrElse("📄") }} {{ if (t.title.isEmpty) "無題" else t.title }}<span v-if="t.count > 1" class="muted">（子ページ {{ t.count - 1 }} 件）</span></td>
+              <td class="name">{{ t.icon.getOrElse("📄") }} {{ Titles.display(t.title) }}<span v-if="t.count > 1" class="muted">（子ページ {{ t.count - 1 }} 件）</span></td>
               <td class="muted small">{{ Ui.date(t.deletedAt) }} {{ t.deletedBy.getOrElse("") }} が削除<br>{{ day(t.purgeAt) }} に完全に削除</td>
               <td class="acts">
                 <button :disabled="s.busy.v" data-testid="trash-restore" @click="restorePage(s, props, t)">↩ 戻す</button>

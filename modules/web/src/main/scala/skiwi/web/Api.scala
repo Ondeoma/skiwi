@@ -51,7 +51,7 @@ object Api {
       if (res.status == 401 && redirectOn401) {
         // 未ログイン: IdPへ
         dom.window.location.href = "/auth/login"
-        Future.failed(ApiError(401, "unauthorized"))
+        Future.failed(ApiError(401, "ログインしてください"))
       } else if (!res.ok) {
         res.text().toFuture.recover(_ => "").flatMap { t =>
           val j = parse(t).toOption
@@ -122,7 +122,7 @@ object Api {
 
   def pages(wsId: String): Future[List[Page]] = get[List[Page]](s"/api/workspaces/$wsId/pages")
 
-  /** placement: afterId のページに対する置き方（api.ts の createPage と同じ） */
+  /** placement: afterId のページに対する置き方 */
   def createPage(wsId: String, parentId: Option[String], title: String = "", afterId: Option[String] = None,
                  placement: Option[String] = None): Future[Page] =
     post[Page](s"/api/workspaces/$wsId/pages",

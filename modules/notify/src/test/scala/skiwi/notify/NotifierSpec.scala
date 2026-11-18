@@ -58,8 +58,8 @@ class NotifierSpec extends DbSuite:
         assert(edited.body.contains(s"https://skiwi.example.com/w/${ws.id}/p/${page.id}"), edited.body)
         val shared = sent.find(_.subject.contains("共有")).get
         assert(shared.body.contains("（編集）"), shared.body)
-        assertEquals(rows.find(_._1 == outsider.id).map(r => (r._4, r._5)), Some((true, Some("no access"))))
-        assertEquals(rows.find(_._1 == noMail.id).map(r => (r._4, r._5)), Some((true, Some("no email address"))))
+        assertEquals(rows.find(_._1 == outsider.id).map(r => (r._4, r._5)), Some((true, Some("閲覧の権限がありません"))))
+        assertEquals(rows.find(_._1 == noMail.id).map(r => (r._4, r._5)), Some((true, Some("メールアドレスがありません"))))
     }
   }
 

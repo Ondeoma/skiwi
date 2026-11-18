@@ -1,5 +1,7 @@
 package skiwi.web.content
 
+import skiwi.shared.Titles
+
 import io.circe.*
 import org.scalajs.dom
 import skiwi.web.{Dialog, Progress, Store, Ui}
@@ -22,8 +24,8 @@ object Export {
     Ui.downloadText(fileName(s"${page.displayTitle}.md"), Markdown.toMarkdown(content, page.title), "text/markdown;charset=utf-8")
 
   private def safeName(s: String): String = {
-    val t = JsLike.trim((if (s.isEmpty) "無題" else s).replaceAll("[\\\\/:*?\"<>|\\u0000-\\u001f]", "_")).take(80)
-    if (t.isEmpty) "無題" else t
+    val t = JsLike.trim((Titles.display(s)).replaceAll("[\\\\/:*?\"<>|\\u0000-\\u001f]", "_")).take(80)
+    Titles.display(t)
   }
 
   private val ExtOf = Map("image/png" -> ".png", "image/jpeg" -> ".jpg", "image/gif" -> ".gif", "image/webp" -> ".webp", "application/pdf" -> ".pdf")

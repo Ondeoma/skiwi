@@ -25,3 +25,11 @@ final case class AuditDto(
     targetId: Option[String],
     detail: Json
 ) derives Encoder.AsObject, Decoder
+
+/** 管理者の画面: エージェント専用アカウントとその API キー（キーのハッシュは返さない） */
+final case class AgentKeyDto(id: UUID, name: String, scope: String, createdAt: Timestamp, lastUsedAt: Option[Timestamp],
+                             expiresAt: Option[Timestamp], revoked: Boolean) derives Encoder.AsObject, Decoder
+final case class AgentDto(id: UUID, name: String, disabled: Boolean, createdAt: Timestamp, keys: List[AgentKeyDto])
+    derives Encoder.AsObject, Decoder
+final case class CreateAgentReq(name: String) derives Encoder.AsObject, Decoder
+final case class UpdateAgentReq(name: Option[String] = None, disabled: Option[Boolean] = None) derives Encoder.AsObject, Decoder

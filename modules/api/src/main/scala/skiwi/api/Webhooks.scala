@@ -1,5 +1,7 @@
 package skiwi.api
 
+import skiwi.shared.Titles
+
 import cats.effect.*
 import cats.syntax.all.*
 import io.circe.{Decoder, Encoder, Json}
@@ -10,8 +12,8 @@ import skiwi.core.*
 import skiwi.db.{OutboxResult, Periodic, Store, Webhook, WebhookItem, WebhookStore}
 
 import java.net.URI
-import java.net.http.{HttpClient, HttpRequest, HttpResponse}
-import java.time.{Duration, Instant}
+import org.http4s.client.Client
+import java.time.Instant
 import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -19,11 +21,10 @@ import scala.concurrent.duration.*
 
 /** Webhook の送信。送信時点のページのタイトル・URLで本文を組み立てる。個別に権限を絞ったページ・削除されたページ（削除の通知を除く）は送らない。
   * allowHttp: http:// の送り先を許す（開発・テスト用。既定は https のみ）
-  * allowPrivate: 社内のアドレス（10.x・192.168.x・127.0.0.1 など）にも送る。既定は送らない（編集者にサーバーから社内へ接続させない） */
-final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String, allowHttp: Boolean = false, interval: FiniteDuration = 10.seconds,
-    allowPrivate: Boolean = false):
+  * http: NetGuard.client（WEBHOOK_ALLOW_PRIVATE でなければ、社内のアドレス（10.x・192.168.x・127.0.0.1 など）には送らない。編集者にサーバーから社内へ接続させない） */
+final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String, http: Client[IO], allowHttp: Boolean = false,
+    interval: FiniteDuration = 10.seconds):
   private val base = publicUrl.stripSuffix("/")
-  private val client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build()
 
   def validUrl(u: String): Boolean =
     Either.catchNonFatal(URI.create(u)).toOption.exists { uri =>
@@ -47,13 +48,13 @@ final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String,
   private def message(it: WebhookItem): IO[Either[String, Msg]] =
     val d = io.circe.parser.parse(it.detail).toOption.map(_.hcursor)
     def f(k: String) = d.flatMap(_.get[String](k).toOption).filter(_.nonEmpty)
-    val title = it.pageTitle.filter(_.trim.nonEmpty).getOrElse("無題")
+    val title = Titles.display(it.pageTitle)
     val link = it.pageId.map(id => s"$base/w/${it.workspaceId}/p/$id")
     val ws = it.workspaceName
     val actor = f("actor")
     val who = actor.fold("")(a => s"${a}さんが")
-    if it.event != "test" && it.restricted then IO.pure(Left("restricted page"))
-    else if it.event != "test" && it.event != "page.deleted" && it.pageDeleted then IO.pure(Left("page deleted"))
+    if it.event != "test" && it.restricted then IO.pure(Left("閲覧を制限したページです"))
+    else if it.event != "test" && it.event != "page.deleted" && it.pageDeleted then IO.pure(Left("ページは削除されています"))
     else
       val page = it.pageId.map(_ -> title)
       def msg(text: String, url: Option[String] = link, extra: Json = Json.obj()) = Right(Msg(it.event, text, title, url, (it.workspaceId, ws), page, actor, extra))
@@ -103,20 +104,20 @@ final class WebhookService(hooks: WebhookStore, store: Store, publicUrl: String,
 
   /** 送る。戻り値: (HTTPステータス, エラー) */
   private def post(url: String, format: String, secret: String, event: String, deliveryId: Long, body: String): IO[(Option[Int], Option[String])] =
-    if !validUrl(url) then IO.pure((None, Some("invalid url")))
-    else (if allowPrivate then IO.pure(true) else NetGuard.publicHost(URI.create(url).getHost)).flatMap {
-      case false => IO.pure((None, Some("社内のアドレスには送れません（WEBHOOK_ALLOW_PRIVATE）")))
-      case true =>
-        val b = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
-          .header("Content-Type", "application/json; charset=utf-8").header("User-Agent", "skiwi-webhook/1")
-          .POST(HttpRequest.BodyPublishers.ofString(body))
-        val req = (if format == "generic" then b.header("X-Skiwi-Event", event).header("X-Skiwi-Delivery", deliveryId.toString)
-                     .header("X-Skiwi-Signature", s"sha256=${sign(secret, body)}") else b).build()
-        IO.fromCompletableFuture(IO(client.sendAsync(req, HttpResponse.BodyHandlers.discarding())))
-          .map(r => (Some(r.statusCode()), Option.when(r.statusCode() / 100 != 2)(s"HTTP ${r.statusCode()}")))
+    Uri.fromString(url).toOption.filter(_ => validUrl(url)) match
+      case None => IO.pure((None, Some("URL が正しくありません")))
+      case Some(uri) =>
+        val base = Request[IO](Method.POST, uri).withEntity(body)(using EntityEncoder.stringEncoder)
+          .putHeaders(headers.`Content-Type`(MediaType.application.json, Charset.`UTF-8`), "User-Agent" -> "skiwi-webhook/1")
+        val req = if format == "generic" then base.putHeaders("X-Skiwi-Event" -> event, "X-Skiwi-Delivery" -> deliveryId.toString,
+                    "X-Skiwi-Signature" -> s"sha256=${sign(secret, body)}") else base
+        http.run(req).use(r => IO.pure(r.status.code))
+          .map(c => (Some(c), Option.when(c / 100 != 2)(s"HTTP $c")))
           .timeout(15.seconds)
-          .handleError(e => (None, Some(Option(e.getMessage).getOrElse(e.getClass.getSimpleName).take(300))))
-    }
+          .handleError {
+            case _: NetGuard.Blocked => (None, Some("社内のアドレスには送れません（WEBHOOK_ALLOW_PRIVATE）"))
+            case e                   => (None, Some(Option(e.getMessage).getOrElse(e.getClass.getSimpleName).take(300)))
+          }
 
   def deliver(it: WebhookItem): IO[OutboxResult] =
     skiwi.observe.Telemetry.span("webhook.deliver", "webhook.event" -> it.event)(deliverImpl(it)).flatTap { r =>
@@ -173,14 +174,14 @@ final class WebhookRoutes(protected val store: Store, hooks: WebhookStore, svc: 
     WebhookDto(h.id, h.name, h.url, h.format, h.events, h.enabled, h.createdAt, h.createdBy, h.lastStatus, h.lastError, h.lastAt, Option.when(withSecret)(h.secret))
 
   private def withHook(req: Request[IO], id: UUID)(f: (AuthSession, Workspace, Webhook) => IO[Response[IO]]): IO[Response[IO]] =
-    withWsItem(req, hooks.get(id), "webhook")(_.workspaceId)(f)
+    withWsItem(req, hooks.get(id), "Webhook")(_.workspaceId)(f)
 
   private val Formats = Set("generic", "slack", "teams")
   private def validate(name: Option[String], url: Option[String], format: Option[String], events: Option[List[String]]): Option[String] =
-    if name.exists(n => n.trim.isEmpty || n.length > 100) then Some("name must be 1-100 characters")
-    else if url.exists(u => !svc.validUrl(u.trim)) then Some("invalid url (https only)")
-    else if format.exists(f => !Formats(f)) then Some("invalid format")
-    else if events.exists(es => es.isEmpty || es.exists(e => !WebhookStore.Events.contains(e))) then Some("invalid events")
+    if name.exists(validName(_).isEmpty) then Some("名前は1〜100文字にしてください")
+    else if url.exists(u => !svc.validUrl(u.trim)) then Some("URL が正しくありません（https:// だけ使えます）")
+    else if format.exists(f => !Formats(f)) then Some("形式が正しくありません")
+    else if events.exists(es => es.isEmpty || es.exists(e => !WebhookStore.Events.contains(e))) then Some("イベントが正しくありません")
     else None
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -208,7 +209,7 @@ final class WebhookRoutes(protected val store: Store, hooks: WebhookStore, svc: 
             case Some(m) => err(Status.BadRequest, m)
             case None =>
               hooks.update(id, b.name.map(_.trim), b.url.map(_.trim), b.format, b.events.map(_.distinct), b.enabled).flatMap {
-                case None => err(Status.NotFound, "webhook not found")
+                case None => err(Status.NotFound, "Webhook が見つかりません")
                 case Some(nh) =>
                   audit.log(s, "webhook.update", "workspace", h.workspaceId, Json.obj("name" -> nh.name.asJson, "url" -> nh.url.asJson,
                     "events" -> nh.events.asJson, "enabled" -> nh.enabled.asJson)) *> Ok(dto(nh))

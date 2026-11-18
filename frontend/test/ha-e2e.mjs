@@ -39,7 +39,7 @@ const patroni = () => {
 const leader = () => patroni().find((m) => m.Role === 'Leader')?.Member
 
 function makeUser(name, groups = []) {
-  const id = psql(`insert into app_user (oidc_sub, name) values ('ha-${name}-${Date.now()}', '${name}') returning id`).split('\n')[0]
+  const id = psql(`insert into app_user (sub, name) values ('ha-${name}-${Date.now()}', '${name}') returning id`).split('\n')[0]
   const token = createSession(psql, id, '2 hours')
   for (const g of groups) addToGroup(psql, id, g)
   return { id, token }

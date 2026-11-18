@@ -220,7 +220,7 @@ class Phase4Spec extends DbSuite:
         m1    <- login("メンバー1", List(g), Some("m1@example.com"))
         m2    <- login("メンバー2", List(g), Some("m2@example.com"))
         (_, page) <- newPage(owner)
-        gid   <- sql"select id from app_group where external_id = $g".query[UUID].unique.transact(env.xa)
+        gid   <- sql"select id from user_group where external_id = $g".query[UUID].unique.transact(env.xa)
         before <- env.changed.get
         body = Json.obj("inherit" -> true.asJson, "entries" -> Json.arr(
           Json.obj("principalType" -> "group".asJson, "principalId" -> gid.toString.asJson, "role" -> "view".asJson)))

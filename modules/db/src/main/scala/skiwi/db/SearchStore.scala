@@ -109,8 +109,9 @@ final class SearchStore(xa: Transactor[IO]):
         // 強調表示用: 元の表記の2文字組（スニペット関数は既定の正規化で照合するため）と正規化後の組の両方
         val keywords = (raw.flatMap(bigrams) ++ grams).distinct.toArray
         (fr"select" ++ pageCols ++ fr", (pgroonga_snippet_html(s.plain_text, $keywords::text[], 160))[1]," ++
-          fr"pgroonga_normalize(p.title, $Normalizer), pgroonga_normalize(coalesce(s.plain_text, ''), $Normalizer)" ++
-          fromPages ++ wsCond ++ fr"and" ++ matching(orQ) ++ fr"limit 500")
+          // 一致率は本文の先頭 FuzzyTextChars 文字で見る（候補ごとに本文全体を送って正規化すると、大きなページで重くなるため）
+          fr"pgroonga_normalize(p.title, $Normalizer), pgroonga_normalize(left(coalesce(s.plain_text, ''), $FuzzyTextChars), $Normalizer)" ++
+          fromPages ++ wsCond ++ fr"and" ++ matching(orQ) ++ fr"limit $FuzzyCandidates")
           .query[(Page, Option[String], String, String)].to[List].transact(xa)
           .map { rows =>
             rows.iterator

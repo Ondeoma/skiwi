@@ -1,7 +1,7 @@
 import { addToGroup, createSession, devPsql } from '../test/lib.mjs'
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from '@playwright/test'
 
-export const BASE = process.env.BASE_URL ?? 'http://localhost:8080'
+export const BASE = process.env.BASE_URL ?? 'http://localhost:5173'  // 画面の開発サーバー（/api などはバックエンドへ中継される）
 
 /** 開発用DBに直接SQLを流す（テストの準備・後片付け用） */
 export const psql = devPsql
@@ -13,7 +13,7 @@ const run = Date.now().toString(36)
 /** ログイン済みのテスト用ユーザー（セッションをDBに直接作る） */
 export function makeUser(name: string): TestUser {
   const esc = name.replace(/'/g, "''")
-  const id = psql(`insert into app_user (oidc_sub, name, email) values ('ui-e2e-${run}-${created.length}', '${esc}', 'ui${created.length}-${run}@example.com') returning id`).split('\n')[0]
+  const id = psql(`insert into app_user (sub, name, email) values ('ui-e2e-${run}-${created.length}', '${esc}', 'ui${created.length}-${run}@example.com') returning id`).split('\n')[0]
   const u = { id, token: createSession(psql, id), name }
   created.push(u)
   return u

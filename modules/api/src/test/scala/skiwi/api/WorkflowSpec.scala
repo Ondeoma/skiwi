@@ -31,8 +31,9 @@ class WorkflowSpec extends DbSuite:
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
     case Some(c) =>
       for
-        _  <- Resource.eval(Database.migrate(c))
-        xa <- Database.transactor(c)
+        _    <- Resource.eval(Database.migrate(c))
+        xa   <- Database.transactor(c)
+        http <- NetGuard.client(allowPrivate = true)
       yield
         val store = new Store(xa)
         val ops   = new OpsStore(xa)
@@ -42,7 +43,7 @@ class WorkflowSpec extends DbSuite:
         val attSt = new AttachmentStore(xa)
         val blobs = new InMemoryBlobStore
         val hooks = new WebhookStore(xa)
-        val svc   = new WebhookService(hooks, store, "https://skiwi.example.com", allowHttp = true, allowPrivate = true)
+        val svc   = new WebhookService(hooks, store, "https://skiwi.example.com", http, allowHttp = true)
         val dbSt  = new DatabaseStore(xa)
         val shareR = new ShareRoutes(store, new ShareStore(xa), docs, attSt, new AttachmentRoutes(store, attSt, Some(blobs), sess), sess, audit, true, "https://skiwi.example.com", Some(svc))
         val mentions = new Mentions(store, ops, sess)
@@ -173,7 +174,7 @@ class WorkflowSpec extends DbSuite:
         // 閲覧のみの人は変更できない
         (_, r3)  <- call(Some(vt), Method.POST, "/api/pages/bulk", Some(Json.obj("ids" -> ids.asJson, "action" -> "delete".asJson)))
         _         = assertEquals(r3.hcursor.get[List[UUID]]("done").toOption, Some(Nil))
-        _         = assertEquals(r3.hcursor.downField("failed").downArray.get[String]("error").toOption, Some("insufficient permission"))
+        _         = assertEquals(r3.hcursor.downField("failed").downArray.get[String]("error").toOption, Some("権限がありません"))
         // 削除（子は親と一緒に）
         (_, r4)  <- call(Some(ot), Method.POST, "/api/pages/bulk", Some(Json.obj("ids" -> ids.asJson, "action" -> "delete".asJson)))
         _         = assertEquals(r4.hcursor.get[List[UUID]]("done").toOption, Some(List(a.id, b.id)))

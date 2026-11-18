@@ -301,7 +301,7 @@ def toggleSubs(s: State, id: String): Unit = s.openSubs := (if (s.openSubs.v(id)
 def toggleGroup(s: State, k: String): Unit = s.collapsed := (if (s.collapsed.v(k)) s.collapsed.v - k else s.collapsed.v + k)
 
 def addSub(s: State, props: Props, parent: DbRow): Unit = run(for {
-  t <- need(trimmed(Dialog.prompt(s"「${titleOf(parent)}」のサブ項目の名前", "", okLabel = "追加")))
+  t <- need(trimmed(Dialog.prompt(s"「${parent.page.displayTitle}」のサブ項目の名前", "", okLabel = "追加")))
   r <- DbApi.addRow(props.pageId, t, Map.empty, Some(parent.page.id)).recoverWith { case e => Dialog.alertError("追加できませんでした", e).flatMap(_ => Future.failed(Stop)) }
 } yield {
   s.db.v.foreach(cur => s.db := Some(cur.copy(rows = cur.rows :+ r)))
@@ -579,7 +579,6 @@ def addToColumn(s: State, props: Props, c: Column): Unit =
 
 def rowHref(props: Props, r: DbRow): String = DbDom.pageHref(props.wid, r.page.id)
 
-def titleOf(r: DbRow): String = if (r.page.title.isEmpty) "無題" else r.page.title
 
 def iconOf(r: DbRow): String = r.page.iconOr
 
@@ -731,7 +730,7 @@ def convertBack(s: State, props: Props): Unit =
                   <span class="tcell" :style='"padding-left: " + (x.depth * 1.3) + "rem"'>
                     <button v-if="s.nest.v &amp;&amp; x.depth == 0 &amp;&amp; hasSubs(s, x.row.page.id)" class="ghost twisty" :title='if (s.openSubs.v(x.row.page.id)) "サブ項目を閉じる" else "サブ項目を開く"' data-testid="db-sub-toggle" @click="toggleSubs(s, x.row.page.id)">{{ if (s.openSubs.v(x.row.page.id)) "▾" else "▸" }}</button>
                     <span v-else-if="s.nest.v &amp;&amp; x.depth == 0" class="twisty-space"></span>
-                    <a :href="rowHref(props, x.row)" class="rlink" @click="DbDom.link(event, rowHref(props, x.row))">{{ iconOf(x.row) }} {{ titleOf(x.row) }}</a>
+                    <a :href="rowHref(props, x.row)" class="rlink" @click="DbDom.link(event, rowHref(props, x.row))">{{ iconOf(x.row) }} {{ x.row.page.displayTitle }}</a>
                     <button v-if="s.nest.v &amp;&amp; x.depth == 0 &amp;&amp; x.row.page.canEdit" class="ghost add-sub" title="サブ項目を追加" data-testid="db-sub-add" @click="addSub(s, props, x.row)">＋</button>
                   </span>
                 </td>
@@ -775,7 +774,7 @@ def convertBack(s: State, props: Props): Unit =
         <template v-for="g in s.groups" :key="g.key">
           <div v-if="s.tableGroup.v.isDefined" class="lgh"><span :class="tagClass(g.color)">{{ g.label }}</span><span class="muted small">{{ g.items.size }}</span></div>
           <div v-for="x in g.items" :key="x.row.page.id" class="litem" data-testid="db-list-item">
-            <a :href="rowHref(props, x.row)" class="rlink" @click="DbDom.link(event, rowHref(props, x.row))">{{ iconOf(x.row) }} {{ titleOf(x.row) }}</a>
+            <a :href="rowHref(props, x.row)" class="rlink" @click="DbDom.link(event, rowHref(props, x.row))">{{ iconOf(x.row) }} {{ x.row.page.displayTitle }}</a>
             <span class="lprops">
               <template v-for="p in listProps(s)" :key="p.id">
                 <DbCell v-if="shown(s, p, x.row)" :prop="p" :value="cellVal(s, p, x.row)" :users="d(s).users" :ctx="Some(s.ctx.v)" :editable="false" :compact="true" :wid="props.wid" />
@@ -794,7 +793,7 @@ def convertBack(s: State, props: Props): Unit =
             <span v-else class="gexcerpt">{{ r.meta.flatMap(_.excerpt).getOrElse("") }}</span>
           </div>
           <div class="gbody">
-            <div class="gtitle">{{ iconOf(r) }} {{ titleOf(r) }}</div>
+            <div class="gtitle">{{ iconOf(r) }} {{ r.page.displayTitle }}</div>
             <template v-for="p in listProps(s)" :key="p.id">
               <DbCell v-if="shown(s, p, r)" :prop="p" :value="cellVal(s, p, r)" :users="d(s).users" :ctx="Some(s.ctx.v)" :editable="false" :compact="true" :wid="props.wid" />
             </template>
@@ -815,7 +814,7 @@ def convertBack(s: State, props: Props): Unit =
           @dragover="over(s, event, c.option.id)" @dragleave="s.dropCol := None" @drop="dropOn(s, props, event, c.option.id)">
           <div class="bhead"><span :class="tagClass(Some(c.option.color))">{{ c.option.name }}</span><span class="muted small">{{ c.rows.size }}</span></div>
           <div v-for="r in c.rows" :key="r.page.id" class="card" :draggable="draggable(r)" data-testid="db-card" @dragstart="s.dragRow := Some(r.page.id)" @dragend="s.dragRow := None">
-            <a :href="rowHref(props, r)" class="rlink" @click="DbDom.link(event, rowHref(props, r))">{{ iconOf(r) }} {{ titleOf(r) }}</a>
+            <a :href="rowHref(props, r)" class="rlink" @click="DbDom.link(event, rowHref(props, r))">{{ iconOf(r) }} {{ r.page.displayTitle }}</a>
             <template v-for="p in cardProps(s)" :key="p.id">
               <div v-if="shown(s, p, r)" class="cprop">
                 <DbCell :prop="p" :value="cellVal(s, p, r)" :users="d(s).users" :ctx="Some(s.ctx.v)" :editable="false" :compact="true" :wid="props.wid" />
