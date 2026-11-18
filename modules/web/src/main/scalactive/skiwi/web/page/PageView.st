@@ -460,13 +460,22 @@ def onCls(b: Boolean): String = if (b) "on" else ""
 
 def statusCls(p: Page): String = s"meta-chip st ${p.status.getOrElse("none")}"
 
+/** ツールバーの左に出すモードの印（編集中・閲覧モード・閲覧のみ） */
+def modeText(s: State, props: Props): String =
+  if (editing(s, props)) "✏️ 編集中" else if (canEdit(s, props)) "📖 閲覧モード" else "📖 閲覧のみ"
+def modeTitle(s: State, props: Props): String =
+  if (editing(s, props)) "編集しています（変更は自動で保存されます）. 「完了」で閲覧モードに戻ります"
+  else if (canEdit(s, props)) "閲覧モードです. 「編集」（E）で編集できます"
+  else "このページは閲覧のみです"
+def modeCls(s: State, props: Props): String = if (editing(s, props)) "mode-badge edit" else "mode-badge view"
+
 def crumbIcon(c: Page): String = c.icon.getOrElse(if (c.isDatabase) "📊" else "📄")
 </script>
 
 <template>
   <article v-if="hasPage(props)" :class="articleCls(s, props)">
     <div ref="s.toolbarEl" class="toolbar">
-      <span class="mode-label">{{ if (editing(s, props)) "編集中" else "" }}</span>
+      <span class="mode-label"><span :class="modeCls(s, props)" data-testid="mode-badge" :title="modeTitle(s, props)">{{ modeText(s, props) }}</span></span>
       <span v-if="s.people.mapC(_.nonEmpty)" class="people" data-testid="presence" :title="peopleTitle(s)">
         <span v-for="p in s.people.mapC(_.take(5))" :key="p.name" class="avatar" :class='if (p.editing) "editing" else ""' :style='s"background: ${p.color}"'>
           <img v-if="p.avatar.isDefined" :src='p.avatar.getOrElse("")' alt=""><template v-else>{{ initialOf(p.name) }}</template><span v-if="p.editing" class="pen">✎</span>
@@ -641,7 +650,10 @@ def crumbIcon(c: Page): String = c.icon.getOrElse(if (c.isDatabase) "📊" else 
 .toolbar button.on { color: var(--accent); }
 .toolbar button.primary { color: #fff; background: var(--accent); border-color: var(--accent); padding: 2px 12px; }
 .toolbar button.primary:hover { filter: brightness(1.1); }
-.toolbar > .mode-label { flex: 1 0 auto; font-size: .78rem; color: var(--accent); }
+.toolbar > .mode-label { flex: 1 0 auto; font-size: .78rem; }
+.mode-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.mode-badge.view { color: var(--muted); background: var(--hover, transparent); }
+.mode-badge.edit { color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 600; }
 .head { margin-bottom: 1rem; }
 .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem .35rem; font-size: .78rem; color: var(--muted); margin: -.6rem 0 .6rem; }
 .crumb { color: var(--muted); text-decoration: none; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 4px; border-radius: 4px; }

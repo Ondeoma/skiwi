@@ -120,8 +120,8 @@ def pickIcon(id: String, icon: Option[String]): Unit = {
   guard(Store.setIcon(id, icon))
 }
 
-val MenuW = 180
-val MenuH = 200
+val MenuW = 260
+val MenuH = 320
 
 def openMenuAt(id: String, x: Double, y: Double): Unit = {
   iconFor := None
@@ -330,7 +330,7 @@ def menuStyle: String = popAt.v.fold("")((x, y) => s"left: ${x}px; top: ${y}px")
           <button role="menuitem" data-testid="tree-duplicate" @click="duplicate(n.page)">⧉ 複製…</button>
           <button role="menuitem" data-testid="tree-move-ws" @click="moveToWorkspace(n.page)">🗂 別のワークスペースへ移動…</button>
           <button role="menuitem" data-testid="tree-select-start" @click="startSelect(n.page.id)">☑ 選択（まとめて操作）</button>
-          <button role="menuitem" @click="importChild(props.wid, n.page.id)">⤒ 子ページとして取り込む（Markdown・Word・Notion・Confluence など）</button>
+          <button role="menuitem" @click="importChild(props.wid, n.page.id)">⤒ 子ページとして取り込む<span class="sub">Markdown・Word・Notion・Confluence など</span></button>
           <hr>
           <button role="menuitem" class="danger" data-testid="tree-delete" @click="del(n.page.id, n.page.title, props.wid)">🗑 削除</button>
         </div>
@@ -362,8 +362,9 @@ def menuStyle: String = popAt.v.fold("")((x, y) => s"left: ${x}px; top: ${y}px")
 .actions { display: none; gap: 2px; padding-right: 4px; }
 .row:hover .actions, .row.pinned .actions { display: flex; }
 .actions button { border: none; padding: 0 4px; }
-.menu { position: fixed; z-index: 40; width: 180px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.18); display: flex; flex-direction: column; }
-.menu button { text-align: left; padding: 4px 8px; white-space: nowrap; }
+.menu { position: fixed; z-index: 40; min-width: 180px; max-width: min(260px, calc(100vw - 8px)); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.18); display: flex; flex-direction: column; }
+.menu button { text-align: left; padding: 4px 8px; white-space: normal; overflow-wrap: anywhere; }
+.menu button .sub { display: block; font-size: .78em; color: var(--muted); padding-left: 1.4em; }
 .menu hr { border: none; border-top: 1px solid var(--line); margin: 3px 0; width: 100%; }
 .menu .danger:hover { color: var(--danger); }
 </style>
