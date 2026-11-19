@@ -123,7 +123,7 @@ final class OAuthProviderRoutes(st: IntegrationStore, ops: OpsStore, store: Stor
       |border:1px solid #d1d5db;background:transparent;color:inherit}button.primary{background:#2563eb;border-color:#2563eb;color:#fff}
       |ul{padding-left:1.2rem;margin:.4rem 0}</style></head><body><div class="card"><div class="logo">skiwi</div>$body</div></body></html>""".stripMargin
     IO.pure(Response[IO](Status.Ok).withEntity(html)(using EntityEncoder.stringEncoder).putHeaders(`Content-Type`(MediaType.text.html, Charset.`UTF-8`),
-      "Cache-Control" -> "no-store", "X-Frame-Options" -> "DENY", "Referrer-Policy" -> "no-referrer",
+      "Cache-Control" -> "no-store", "X-Frame-Options" -> "DENY", "Referrer-Policy" -> "same-origin",
       "Content-Security-Policy" -> s"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"))
 
   private def errorPage(msg: String): IO[Response[IO]] =

@@ -100,6 +100,8 @@ class OAuthProviderSpec extends DbSuite:
       page <- env.app.run(Request[IO](Method.GET, Uri.unsafeFromString(authorizeQuery())).addCookie("skiwi_session", session))
       html <- page.bodyText.compile.string
       _     = assertEquals(page.status, Status.Ok)
+      // no-referrer だとフォームの POST に Origin: null が付き、Security.csrf に弾かれる
+      _     = assertEquals(page.headers.get(org.typelevel.ci.CIString("Referrer-Policy")).map(_.head.value), Some("same-origin"))
       csrf  = page.cookies.find(_.name == OAuthProviderRoutes.CsrfCookie).get.content
       _     = assert(html.contains(s"""name="csrf" value="$csrf""""))
       form  = UrlForm("client_id" -> clientId, "redirect_uri" -> redirect, "state" -> "st-1", "code_challenge" -> challenge,
