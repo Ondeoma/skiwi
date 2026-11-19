@@ -14,9 +14,7 @@ object Security {
   private val safeMethods = Set(Method.GET, Method.HEAD, Method.OPTIONS)
 
   /** "https://wiki.example.com/" → "https://wiki.example.com" */
-  private def originOf(
-    url: String
-  ): Option[String] =
+  private def originOf(url: String): Option[String] =
     Uri.fromString(url).toOption.flatMap(u =>
       (u.scheme, u.authority).match {
         case (Some(s), Some(a)) => Some(s"${s.value}://${a.renderString}".toLowerCase)
@@ -32,22 +30,12 @@ object Security {
    * API トークン（Authorization ヘッダ）で認証するリクエストは対象外。
    * devLogin=true（DEV_LOGIN）のときは、画面の開発サーバー（http://localhost:… ・http://127.0.0.1:…）からも受ける。
    */
-  def csrf(
-    publicUrl: String,
-    cookieName: String,
-    devLogin: Boolean = false
-  )(
-    routes: HttpRoutes[IO]
-  ): HttpRoutes[IO] = {
+  def csrf(publicUrl: String, cookieName: String, devLogin: Boolean = false)(routes: HttpRoutes[IO]): HttpRoutes[IO] = {
     val own = originOf(publicUrl)
-    def devOrigin(
-      o: String
-    ) = devLogin && Uri.fromString(o).toOption.exists(u =>
+    def devOrigin(o: String) = devLogin && Uri.fromString(o).toOption.exists(u =>
       u.scheme.exists(_.value.toString == "http") && u.host.exists(h => Set("localhost", "127.0.0.1").contains(h.value))
     )
-    def sameOrigin(
-      req: Request[IO]
-    ): Boolean =
+    def sameOrigin(req: Request[IO]): Boolean =
       req.headers.get(org.typelevel.ci.CIString("Origin")).map(_.head.value.trim.toLowerCase) match {
         case Some(o) =>
           own.contains(o) || devOrigin(o) || req.headers.get(org.typelevel.ci.CIString("Host")).exists(h =>
@@ -66,13 +54,10 @@ object Security {
   }
 
   /** 本文が上限を超えた（ErrorHandling で 413 にする） */
-  final case class BodyTooLarge(
-    limit: Long) extends Exception(s"リクエストの本文が大きすぎます（$limit バイトまで）")
+  final case class BodyTooLarge(limit: Long) extends Exception(s"リクエストの本文が大きすぎます（$limit バイトまで）")
 
   /** パスごとの本文の上限（None は各ルートに任せる）。サーバー（Ember）の既定には上限がないため、メモリを使い切らせないよう全体にかける。 */
-  def bodyLimitFor(
-    path: String
-  ): Option[Long] = {
+  def bodyLimitFor(path: String): Option[Long] = {
     val MB = 1024L * 1024
     if path.matches("/api/pages/[^/]+/attachments") then None // 添付ファイル（AttachmentRoutes が 100MB で制限）
     else if path.matches("/api/pages/[^/]+/import") then Some(64 * MB)
@@ -81,13 +66,8 @@ object Security {
   }
 
   /** 本文を limit バイトまでに限る（Content-Length のない chunked の本文も数える。超えたら BodyTooLarge） */
-  def limitStream(
-    limit: Long
-  ): Pipe[IO, Byte, Byte] = {
-    def go(
-      s: Stream[IO, Byte],
-      seen: Long
-    ): Pull[IO, Byte, Unit] = s.pull.uncons.flatMap {
+  def limitStream(limit: Long): Pipe[IO, Byte, Byte] = {
+    def go(s: Stream[IO, Byte], seen: Long): Pull[IO, Byte, Unit] = s.pull.uncons.flatMap {
       case None => Pull.done
       case Some((chunk, rest)) =>
         val n = seen + chunk.size
@@ -96,9 +76,7 @@ object Security {
     in => go(in, 0L).stream
   }
 
-  def bodyLimit(
-    routes: HttpRoutes[IO]
-  ): HttpRoutes[IO] = Kleisli { (req: Request[IO]) =>
+  def bodyLimit(routes: HttpRoutes[IO]): HttpRoutes[IO] = Kleisli { (req: Request[IO]) =>
     bodyLimitFor(req.uri.path.renderString) match {
       case None => routes(req)
       case Some(limit) if req.contentLength.exists(_ > limit) => OptionT.liftF(IO.raiseError(BodyTooLarge(limit)))
@@ -107,11 +85,7 @@ object Security {
   }
 
   /** セキュリティヘッダ。各ルートが自分で付けたもの（添付の CSP など）は上書きしない。 */
-  def headers(
-    publicUrl: String
-  )(
-    app: HttpApp[IO]
-  ): HttpApp[IO] = {
+  def headers(publicUrl: String)(app: HttpApp[IO]): HttpApp[IO] = {
     val base = List(
       "X-Content-Type-Options" -> "nosniff",
       // 公開リンクの URL（/s/{key}）が、外部へのリンクの Referer で漏れないように

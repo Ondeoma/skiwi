@@ -11,10 +11,7 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 // データベース・フォームの API の型
 
 /** 選択肢 */
-final case class DbOption(
-  id: String,
-  name: String,
-  color: String)
+final case class DbOption(id: String, name: String, color: String)
 
 object DbOption {
 
@@ -36,17 +33,16 @@ object DbOption {
  * relation: target（関連先のデータベース）/ rollup: relation（関連の列）・fn（集計）・prop（関連先の列）/
  * formula: expr（式）/ unique_id: prefix（例: TASK → TASK-12）
  */
-final case class DbProp(
-  id: String,
-  name: String,
-  `type`: String,
-  options: Option[List[DbOption]] = None,
-  target: Option[String] = None,
-  relation: Option[String] = None,
-  fn: Option[String] = None,
-  prop: Option[String] = None,
-  expr: Option[String] = None,
-  prefix: Option[String] = None) derives Codec.AsObject {
+final case class DbProp(id: String,
+                        name: String,
+                        `type`: String,
+                        options: Option[List[DbOption]] = None,
+                        target: Option[String] = None,
+                        relation: Option[String] = None,
+                        fn: Option[String] = None,
+                        prop: Option[String] = None,
+                        expr: Option[String] = None,
+                        prefix: Option[String] = None) derives Codec.AsObject {
 
   def opts: List[DbOption] = options.getOrElse(Nil)
 
@@ -55,15 +51,10 @@ final case class DbProp(
 }
 
 /** 絞り込みの条件. op: contains・is・isNot・empty・notEmpty・gt・lt */
-final case class DbFilter(
-  prop: String,
-  op: String,
-  value: Option[String] = None) derives Codec.AsObject
+final case class DbFilter(prop: String, op: String, value: Option[String] = None) derives Codec.AsObject
 
 /** 並べ替え. dir: asc・desc */
-final case class DbSort(
-  prop: String,
-  dir: String) derives Codec.AsObject
+final case class DbSort(prop: String, dir: String) derives Codec.AsObject
 
 /**
  * ビュー. type: table・board・calendar・list・gallery・timeline.
@@ -71,21 +62,20 @@ final case class DbSort(
  * group: 表・リストでグループ化する列 / subItems: 表でサブ項目を親の下に入れる（既定は true）/ calcs: 表の列の下の集計 /
  * startProp・endProp: タイムラインの開始・終了 / cover: ギャラリーの表紙（content・none・URL の列のID）
  */
-final case class DbView(
-  id: String,
-  name: String,
-  `type`: String,
-  groupBy: Option[String] = None,
-  dateProp: Option[String] = None,
-  sort: Option[DbSort] = None,
-  filters: Option[List[DbFilter]] = None,
-  hidden: Option[List[String]] = None,
-  group: Option[String] = None,
-  subItems: Option[Boolean] = None,
-  calcs: Option[Map[String, String]] = None,
-  startProp: Option[String] = None,
-  endProp: Option[String] = None,
-  cover: Option[String] = None) derives Codec.AsObject {
+final case class DbView(id: String,
+                        name: String,
+                        `type`: String,
+                        groupBy: Option[String] = None,
+                        dateProp: Option[String] = None,
+                        sort: Option[DbSort] = None,
+                        filters: Option[List[DbFilter]] = None,
+                        hidden: Option[List[String]] = None,
+                        group: Option[String] = None,
+                        subItems: Option[Boolean] = None,
+                        calcs: Option[Map[String, String]] = None,
+                        startProp: Option[String] = None,
+                        endProp: Option[String] = None,
+                        cover: Option[String] = None) derives Codec.AsObject {
 
   def tpe: String = `type`
 
@@ -100,36 +90,25 @@ final case class DbView(
 object DbView {
 
   /** ビューの JSON（ページの中のデータベースの views）を読む */
-  def parseList(
-    s: String
-  ): List[DbView] = parser.decode[List[DbView]](s).getOrElse(Nil)
+  def parseList(s: String): List[DbView] = parser.decode[List[DbView]](s).getOrElse(Nil)
 
-  def toJson(
-    vs: List[DbView]
-  ): String = vs.asJson.deepDropNullValues.noSpaces
+  def toJson(vs: List[DbView]): String = vs.asJson.deepDropNullValues.noSpaces
 
 }
 
 /** 項目の情報（自動の列・ギャラリー用） */
-final case class RowMeta(
-  createdAt: String,
-  createdBy: Option[String] = None,
-  editedAt: String,
-  editedBy: Option[String] = None,
-  cover: Option[String] = None,
-  excerpt: Option[String] = None) derives Codec.AsObject
+final case class RowMeta(createdAt: String,
+                         createdBy: Option[String] = None,
+                         editedAt: String,
+                         editedBy: Option[String] = None,
+                         cover: Option[String] = None,
+                         excerpt: Option[String] = None) derives Codec.AsObject
 
-private def valuesOf(
-  c: HCursor,
-  key: String = "values"
-): Decoder.Result[Map[String, Json]] =
+private def valuesOf(c: HCursor, key: String = "values"): Decoder.Result[Map[String, Json]] =
   c.getOrElse[Map[String, Json]](key)(Map.empty)
 
 /** 項目（子ページ）と値 */
-final case class DbRow(
-  page: Page,
-  values: Map[String, Json],
-  meta: Option[RowMeta] = None)
+final case class DbRow(page: Page, values: Map[String, Json], meta: Option[RowMeta] = None)
 
 object DbRow {
 
@@ -144,11 +123,7 @@ object DbRow {
 }
 
 /** 関連先のデータベースの項目 */
-final case class RelatedRow(
-  id: String,
-  title: String,
-  icon: Option[String],
-  values: Map[String, Json])
+final case class RelatedRow(id: String, title: String, icon: Option[String], values: Map[String, Json])
 
 object RelatedRow {
 
@@ -164,11 +139,7 @@ object RelatedRow {
 }
 
 /** 関連先のデータベース（閲覧できる項目だけ） */
-final case class RelatedDb(
-  pageId: String,
-  title: String,
-  props: List[DbProp],
-  rows: List[RelatedRow])
+final case class RelatedDb(pageId: String, title: String, props: List[DbProp], rows: List[RelatedRow])
 
 object RelatedDb {
 
@@ -184,14 +155,13 @@ object RelatedDb {
 }
 
 /** データベース: props 列、views ビュー、rows 項目、users 値に出てくるユーザーの名前、targets「関連」の先のデータベース */
-final case class Database(
-  pageId: String,
-  props: List[DbProp],
-  views: List[DbView],
-  rows: List[DbRow],
-  users: Map[String, String],
-  canEdit: Boolean,
-  targets: Map[String, RelatedDb])
+final case class Database(pageId: String,
+                          props: List[DbProp],
+                          views: List[DbView],
+                          rows: List[DbRow],
+                          users: Map[String, String],
+                          canEdit: Boolean,
+                          targets: Map[String, RelatedDb])
 
 object Database {
 
@@ -210,10 +180,7 @@ object Database {
 }
 
 /** 項目のページの親のデータベース */
-final case class DbRef(
-  pageId: String,
-  title: String,
-  props: List[DbProp])
+final case class DbRef(pageId: String, title: String, props: List[DbProp])
 
 object DbRef {
 
@@ -228,12 +195,11 @@ object DbRef {
 }
 
 /** 項目の値. database: 親がデータベースならその列の定義 */
-final case class PageProps(
-  database: Option[DbRef],
-  values: Map[String, Json],
-  users: Map[String, String],
-  canEdit: Boolean,
-  targets: Map[String, RelatedDb])
+final case class PageProps(database: Option[DbRef],
+                           values: Map[String, Json],
+                           users: Map[String, String],
+                           canEdit: Boolean,
+                           targets: Map[String, RelatedDb])
 
 object PageProps {
 
@@ -252,45 +218,39 @@ object PageProps {
 // ---------------------------------------------------------------- フォーム
 
 /** フォームの質問. prop: 列のID（title は項目の名前） */
-final case class FormField(
-  prop: String,
-  label: Option[String] = None,
-  required: Boolean = false,
-  help: Option[String] = None) derives Codec.AsObject
+final case class FormField(prop: String,
+                           label: Option[String] = None,
+                           required: Boolean = false,
+                           help: Option[String] = None) derives Codec.AsObject
 
-final case class DbFormDef(
-  id: String,
-  title: String,
-  description: Option[String],
-  fields: List[FormField],
-  requireLogin: Boolean,
-  respondentProp: Option[String],
-  enabled: Boolean,
-  url: String,
-  createdBy: Option[String] = None,
-  createdAt: String,
-  lastAt: Option[String] = None,
-  useCount: Int = 0) derives Codec.AsObject
+final case class DbFormDef(id: String,
+                           title: String,
+                           description: Option[String],
+                           fields: List[FormField],
+                           requireLogin: Boolean,
+                           respondentProp: Option[String],
+                           enabled: Boolean,
+                           url: String,
+                           createdBy: Option[String] = None,
+                           createdAt: String,
+                           lastAt: Option[String] = None,
+                           useCount: Int = 0) derives Codec.AsObject
 
-final case class SaveForm(
-  title: String,
-  description: Option[String],
-  fields: List[FormField],
-  requireLogin: Boolean,
-  respondentProp: Option[String],
-  enabled: Boolean) derives Codec.AsObject
+final case class SaveForm(title: String,
+                          description: Option[String],
+                          fields: List[FormField],
+                          requireLogin: Boolean,
+                          respondentProp: Option[String],
+                          enabled: Boolean) derives Codec.AsObject
 
-final case class PublicOption(
-  id: String,
-  name: String) derives Codec.AsObject
+final case class PublicOption(id: String, name: String) derives Codec.AsObject
 
-final case class PublicField(
-  prop: String,
-  label: String,
-  `type`: String,
-  required: Boolean = false,
-  help: Option[String] = None,
-  options: List[PublicOption] = Nil)
+final case class PublicField(prop: String,
+                             label: String,
+                             `type`: String,
+                             required: Boolean = false,
+                             help: Option[String] = None,
+                             options: List[PublicOption] = Nil)
 
 object PublicField {
 
@@ -307,13 +267,12 @@ object PublicField {
 
 }
 
-final case class PublicForm(
-  title: String,
-  description: Option[String],
-  requireLogin: Boolean,
-  loggedIn: Boolean,
-  userName: Option[String],
-  fields: List[PublicField])
+final case class PublicForm(title: String,
+                            description: Option[String],
+                            requireLogin: Boolean,
+                            loggedIn: Boolean,
+                            userName: Option[String],
+                            fields: List[PublicField])
 
 object PublicForm {
 
@@ -333,44 +292,30 @@ object PublicForm {
 /** データベースの API */
 object DbApi {
 
-  private def valuesJson(
-    values: Map[String, Json]
-  ): Json = Json.fromFields(values)
+  private def valuesJson(values: Map[String, Json]): Json = Json.fromFields(values)
 
-  def get(
-    id: String
-  ): Future[Database] = Api.get[Database](s"/api/pages/$id/database")
+  def get(id: String): Future[Database] = Api.get[Database](s"/api/pages/$id/database")
 
   /** 列・ビューを保存する（null の項目は送らない） */
-  def save(
-    id: String,
-    props: List[DbProp],
-    views: List[DbView]
-  ): Future[Database] =
+  def save(id: String, props: List[DbProp], views: List[DbView]): Future[Database] =
     Api.put[Database](
       s"/api/pages/$id/database",
       Json.obj("props" -> props.asJson, "views" -> views.asJson).deepDropNullValues
     )
 
-  def remove(
-    id: String
-  ): Future[Unit] = Api.del(s"/api/pages/$id/database")
+  def remove(id: String): Future[Unit] = Api.del(s"/api/pages/$id/database")
 
   /** ページをデータベースにする（既定の列: 状態・担当者・期限、ビュー: 表・ボード・カレンダー） */
-  def createDefault(
-    id: String
-  ): Future[Unit] = {
+  def createDefault(id: String): Future[Unit] = {
     val (props, views) = Db.defaultDatabase()
     save(id, props, views).map(_ => ())
   }
 
   /** parentId: サブ項目にするときの親の項目 */
-  def addRow(
-    id: String,
-    title: String,
-    values: Map[String, Json] = Map.empty,
-    parentId: Option[String] = None
-  ): Future[DbRow] =
+  def addRow(id: String,
+             title: String,
+             values: Map[String, Json] = Map.empty,
+             parentId: Option[String] = None): Future[DbRow] =
     Api.post[DbRow](
       s"/api/pages/$id/database/rows",
       Json.obj("title" -> title.asJson, "values" -> valuesJson(values)).deepMerge(parentId.fold(Json.obj())(p =>
@@ -379,30 +324,17 @@ object DbApi {
     )
 
   /** 戻り値: 作った数 */
-  def addRows(
-    id: String,
-    rows: List[(String, Map[String, Json])]
-  ): Future[Int] =
+  def addRows(id: String, rows: List[(String, Map[String, Json])]): Future[Int] =
     Api.post[Json](
       s"/api/pages/$id/database/rows/bulk",
-      Json.obj("rows" -> Json.arr(rows.map(
-        (
-          t,
-          v
-        ) => Json.obj("title" -> t.asJson, "values" -> valuesJson(v))
-      )*))
+      Json.obj("rows" -> Json.arr(rows.map((t, v) => Json.obj("title" -> t.asJson, "values" -> valuesJson(v)))*))
     )
       .map(_.hcursor.get[Int]("created").getOrElse(0))
 
-  def props(
-    id: String
-  ): Future[PageProps] = Api.get[PageProps](s"/api/pages/$id/props")
+  def props(id: String): Future[PageProps] = Api.get[PageProps](s"/api/pages/$id/props")
 
   /** 値を変える（null は消す） */
-  def setValues(
-    id: String,
-    values: Map[String, Json]
-  ): Future[PageProps] =
+  def setValues(id: String, values: Map[String, Json]): Future[PageProps] =
     Api.patch[PageProps](s"/api/pages/$id/props", Json.obj("values" -> valuesJson(values)))
 
 }

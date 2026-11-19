@@ -13,9 +13,7 @@ import java.util.UUID
 
 /** ラベルの正規化: 前後の空白・# を除き、40文字まで、大文字小文字の違いで重複させない（最大20個）。 */
 object Labels {
-  def normalize(
-    ls: List[String]
-  ): List[String] =
+  def normalize(ls: List[String]): List[String] =
     ls.map(_.trim.stripPrefix("#").trim.replaceAll(
       "\\s+",
       " "
@@ -28,15 +26,14 @@ object Labels {
  *  - labels: addLabels / removeLabels
  *  - owner: ownerId（null=外す）、status: status（null=外す）
  */
-final case class BulkReq(
-  ids: List[UUID],
-  action: String,
-  parentId: Option[Option[UUID]] = None,
-  workspaceId: Option[UUID] = None,
-  addLabels: List[String] = Nil,
-  removeLabels: List[String] = Nil,
-  ownerId: Option[Option[UUID]] = None,
-  status: Option[Option[String]] = None)
+final case class BulkReq(ids: List[UUID],
+                         action: String,
+                         parentId: Option[Option[UUID]] = None,
+                         workspaceId: Option[UUID] = None,
+                         addLabels: List[String] = Nil,
+                         removeLabels: List[String] = Nil,
+                         ownerId: Option[Option[UUID]] = None,
+                         status: Option[Option[String]] = None)
 object BulkReq {
   given Decoder[BulkReq] = Decoder.instance { c =>
     for {
@@ -51,33 +48,25 @@ object BulkReq {
     } yield BulkReq(ids, action, parent, ws, add.getOrElse(Nil), rm.getOrElse(Nil), owner, status)
   }
 }
-final case class BulkFailDto(
-  id: UUID,
-  title: Option[String],
-  error: String) derives Encoder.AsObject
+final case class BulkFailDto(id: UUID, title: Option[String], error: String) derives Encoder.AsObject
 
 /** done: 処理したページ（子ページごと移動・削除したものは、選んだページだけ）。skipped: 選んだ祖先と一緒に処理されたページ */
-final case class BulkResultDto(
-  done: List[UUID],
-  skipped: List[UUID],
-  failed: List[BulkFailDto]) derives Encoder.AsObject
+final case class BulkResultDto(done: List[UUID], skipped: List[UUID], failed: List[BulkFailDto])
+  derives Encoder.AsObject
 
 /** ページツリーの一括操作（移動・削除・ラベル・所有者・状態）。ページごとに権限を確認し、できなかったものは理由を返す。 */
-final class BulkRoutes(
-  protected val store: Store,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  accessChanged: AccessChanged = IO.unit,
-  webhooks: Option[WebhookService] = None,
-  automations: Option[Automations] = None) extends PageRouteSupport {
+final class BulkRoutes(protected val store: Store,
+                       protected val sessions: SessionAuth,
+                       audit: Audit,
+                       accessChanged: AccessChanged = IO.unit,
+                       webhooks: Option[WebhookService] = None,
+                       automations: Option[Automations] = None) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "api" / "pages" / "bulk" => postPagesBulk(req)
   }
 
-  private def postPagesBulk(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postPagesBulk(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       body[BulkReq](req) {
         case b if b.ids.isEmpty || b.ids.size > MaxPages =>
@@ -92,21 +81,14 @@ final class BulkRoutes(
   private val MaxPages = 500
 
   /** 親（なければワークスペース直下）に子を作れるか（作れなければ理由） */
-  private def targetError(
-    s: AuthSession,
-    wsId: UUID,
-    parent: Option[UUID]
-  ): IO[Option[String]] =
+  private def targetError(s: AuthSession, wsId: UUID, parent: Option[UUID]): IO[Option[String]] =
     canEditUnder(s, wsId, parent).map(_.swap.toOption.map {
       case EditUnderError.Forbidden => "移動先の権限がありません"
       case EditUnderError.ParentNotFound => "移動先のページが見つかりません"
       case EditUnderError.WorkspaceNotFound => "ワークスペースが見つかりません"
     })
 
-  private def run(
-    s: AuthSession,
-    b: BulkReq
-  ): IO[Response[IO]] = {
+  private def run(s: AuthSession, b: BulkReq): IO[Response[IO]] = {
     val ids = b.ids.distinct
     store.pagesAccess(ids, s).flatMap { found =>
       val notFound = ids.filterNot(found.contains).map(id => BulkFailDto(id, None, "ページが見つかりません"))
@@ -117,15 +99,8 @@ final class BulkRoutes(
         val wsId = wsIds.head
         // 選んだページの祖先も選ばれていれば、そのページは祖先と一緒に処理される（移動・削除のみ）
         store.listPages(wsId, s).flatMap { all =>
-          val parentOf = all.map(
-            (
-              p,
-              _
-            ) => p.id -> p.parentId
-          ).toMap
-          def underSelected(
-            id: UUID
-          ): Boolean =
+          val parentOf = all.map((p, _) => p.id -> p.parentId).toMap
+          def underSelected(id: UUID): Boolean =
             Iterator.iterate(
               parentOf.get(id).flatten
             )(_.flatMap(p => parentOf.get(p).flatten)).takeWhile(_.isDefined).flatten.exists(found.contains)
@@ -136,10 +111,7 @@ final class BulkRoutes(
           )
           val todo = targets.filterNot(id => found(id)._2 == Role.View)
           perform(s, b, wsId, todo.map(found(_)._1)).flatMap {
-            (
-              done,
-              failed
-            ) =>
+            (done, failed) =>
               val detail = Json.obj(
                 "action" -> b.action.asJson,
                 "count" -> done.size.asJson,
@@ -154,15 +126,11 @@ final class BulkRoutes(
     }
   }
 
-  private def perform(
-    s: AuthSession,
-    b: BulkReq,
-    wsId: UUID,
-    pages: List[Page]
-  ): IO[(List[UUID], List[BulkFailDto])] = {
-    def each(
-      f: Page => IO[Option[String]]
-    ): IO[(List[UUID], List[BulkFailDto])] =
+  private def perform(s: AuthSession,
+                      b: BulkReq,
+                      wsId: UUID,
+                      pages: List[Page]): IO[(List[UUID], List[BulkFailDto])] = {
+    def each(f: Page => IO[Option[String]]): IO[(List[UUID], List[BulkFailDto])] =
       pages.traverse(p => f(p).handleError(e => Some(e.getMessage)).map(p -> _)).map { rs =>
         (rs.collect { case (p, None) => p.id }, rs.collect { case (p, Some(e)) => BulkFailDto(p.id, Some(p.title), e) })
       }

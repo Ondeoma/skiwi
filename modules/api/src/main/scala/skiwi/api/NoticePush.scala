@@ -11,12 +11,9 @@ import skiwi.shared.NoticeText
  * OpsStore の onNotified から呼ぶ（メンション・コメント・ウォッチ中のページの更新・共有・権限の申請・ToDo の期限・自動化ルール）.
  * 見出し・文・開く場所は画面のベルと同じ（skiwi.shared.NoticeText）.
  */
-final class NoticePush(
-  push: PushService) {
+final class NoticePush(push: PushService) {
 
-  def send(
-    ns: List[Notified]
-  ): IO[Unit] =
+  def send(ns: List[Notified]): IO[Unit] =
     ns.traverse_ { n =>
       val d = NotificationDto.of(n.row)
       val title = NoticeText.heading(d.kind, d.pageId.isDefined, d.pageIcon, d.pageTitle, d.workspaceName)

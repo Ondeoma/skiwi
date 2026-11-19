@@ -14,12 +14,11 @@ import sbirds.storage.BlobStore
 import java.net.URLEncoder
 import java.util.UUID
 
-final class BackupRoutes(
-  backups: BackupStore,
-  svc: BackupService,
-  blobs: Option[BlobStore],
-  protected val sessions: SessionAuth,
-  audit: Audit) extends RouteSupport {
+final class BackupRoutes(backups: BackupStore,
+                         svc: BackupService,
+                         blobs: Option[BlobStore],
+                         protected val sessions: SessionAuth,
+                         audit: Audit) extends RouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "api" / "admin" / "workspaces" / UUIDVar(ws) / "backups" =>
@@ -32,23 +31,14 @@ final class BackupRoutes(
     case req @ DELETE -> Root / "api" / "admin" / "backups" / UUIDVar(id) => deleteAdminBackup(req, id)
   }
 
-  private def getAdminWorkspaceBackups(
-    req: Request[IO],
-    ws: UUID
-  ): IO[Response[IO]] =
+  private def getAdminWorkspaceBackups(req: Request[IO], ws: UUID): IO[Response[IO]] =
     admin(req)(_ =>
-      (backups.config(ws), backups.list(ws)).flatMapN(
-        (
-          c,
-          bs
-        ) => Ok(BackupsDto(c.map(cfgDto), bs.map(dto), blobs.isDefined))
+      (backups.config(ws), backups.list(ws)).flatMapN((c, bs) =>
+        Ok(BackupsDto(c.map(cfgDto), bs.map(dto), blobs.isDefined))
       )
     )
 
-  private def putAdminWorkspaceBackupsConfig(
-    req: Request[IO],
-    ws: UUID
-  ): IO[Response[IO]] =
+  private def putAdminWorkspaceBackupsConfig(req: Request[IO], ws: UUID): IO[Response[IO]] =
     admin(req) { s =>
       decodeBody[BackupConfigDto](req).flatMap {
         case Right(b) if b.hour >= 0 && b.hour <= 23 && b.keep >= 1 && b.keep <= 90 =>
@@ -65,10 +55,7 @@ final class BackupRoutes(
       }
     }
 
-  private def postAdminWorkspaceBackups(
-    req: Request[IO],
-    ws: UUID
-  ): IO[Response[IO]] =
+  private def postAdminWorkspaceBackups(req: Request[IO], ws: UUID): IO[Response[IO]] =
     admin(req) { s =>
       if blobs.isEmpty then err(ErrorCode.BackupStorageNotConfigured)
       else
@@ -82,10 +69,7 @@ final class BackupRoutes(
         }
     }
 
-  private def getAdminBackupDownload(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getAdminBackupDownload(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req) { s =>
       backups.get(id).flatMap {
         case Some(b) if b.status == "done" && b.s3Key.isDefined =>
@@ -108,10 +92,7 @@ final class BackupRoutes(
       }
     }
 
-  private def deleteAdminBackup(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteAdminBackup(req: Request[IO], id: UUID): IO[Response[IO]] =
     admin(req) { s =>
       backups.get(id).flatMap {
         case None => err(ErrorCode.BackupNotFound)
@@ -123,11 +104,8 @@ final class BackupRoutes(
       }
     }
 
-  private def dto(
-    b: BackupRow
-  ) = BackupDto(b.id, b.createdAt, b.finishedAt, b.status, b.size, b.pages, b.attachments, b.error, b.manual)
-  private def cfgDto(
-    c: BackupConfig
-  ) = BackupConfigDto(c.enabled, c.hour, c.keep)
+  private def dto(b: BackupRow) =
+    BackupDto(b.id, b.createdAt, b.finishedAt, b.status, b.size, b.pages, b.attachments, b.error, b.manual)
+  private def cfgDto(c: BackupConfig) = BackupConfigDto(c.enabled, c.hour, c.keep)
 
 }

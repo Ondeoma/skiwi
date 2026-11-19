@@ -20,9 +20,7 @@ object YjsNode {
   def available: Boolean = frontend.isDefined
 
   /** 要求の配列を送り、結果の配列を受け取る（失敗は例外）。 */
-  def run(
-    reqs: Vector[Json]
-  ): Vector[Json] = {
+  def run(reqs: Vector[Json]): Vector[Json] = {
     val p = new ProcessBuilder("node", "test/yjs-check.mjs").directory(frontend.get).start()
     p.getOutputStream.write(Json.fromValues(reqs).noSpaces.getBytes(UTF_8)); p.getOutputStream.close()
     val out = String(p.getInputStream.readAllBytes(), UTF_8)
@@ -34,9 +32,7 @@ object YjsNode {
   }
 
   /** update を順に当てた文書の本文（最上位のブロックの JSON）。 */
-  def blocks(
-    updates: Seq[Array[Byte]]
-  ): Vector[Json] = {
+  def blocks(updates: Seq[Array[Byte]]): Vector[Json] = {
     val req =
       Json.obj("mode" -> "apply".asJson, "updates" -> updates.map(u => Base64.getEncoder.encodeToString(u)).asJson)
     run(Vector(req)).head.hcursor.downField("doc").downField("content").focus.flatMap(_.asArray).getOrElse(Vector.empty)

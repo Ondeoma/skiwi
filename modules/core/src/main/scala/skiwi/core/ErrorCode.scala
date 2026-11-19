@@ -9,10 +9,7 @@ package skiwi.core
  * 7xxx: 外部との連携（7001〜: 受信用 Webhook, 7101〜: ページの照会, 7201〜: Webhook, 7301〜: リンクのカード, 7401〜: 兄弟のサービス）,
  * 9xxx: サーバー内部・バックグラウンドの処理（9001〜: 共通, 9101〜: 通知・定期の処理, 9201〜: 同時編集・クラスタ, 9301〜: 各機能の裏の処理）.
  */
-enum ErrorCode(
-  val code: String,
-  val status: Int,
-  val message: String) extends sbirds.shared.ErrorCode {
+enum ErrorCode(val code: String, val status: Int, val message: String) extends sbirds.shared.ErrorCode {
   case InvalidInput extends ErrorCode("SKIWI-1001", 400, "入力が正しくありません")
   case RequestBodyInvalid extends ErrorCode("SKIWI-1002", 400, "リクエストの本文が正しくありません")
   case PermissionDenied extends ErrorCode("SKIWI-1003", 403, "権限がありません")

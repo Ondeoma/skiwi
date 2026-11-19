@@ -19,12 +19,11 @@ import java.util.UUID
  * 認証は固定の Bearer トークン（SCIM_TOKEN）。対応: Users / Groups の作成・取得・一覧(eqフィルタ)・置換・PATCH・削除。
  * ユーザーの userName を OIDC の sub として扱う（IdP側でOIDCのsubjectをユーザー名にする）。
  */
-final class ScimRoutes(
-  scim: ScimStore,
-  token: String,
-  audit: Audit,
-  accessChanged: AccessChanged = IO.unit,
-  baseUrl: String = "")
+final class ScimRoutes(scim: ScimStore,
+                       token: String,
+                       audit: Audit,
+                       accessChanged: AccessChanged = IO.unit,
+                       baseUrl: String = "")
   extends Http4sDsl[IO] {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -66,24 +65,15 @@ final class ScimRoutes(
       )
     )
 
-  private def getScimV2Users(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getScimV2Users(req: Request[IO]): IO[Response[IO]] =
     filterOf(req) match {
       case Left(m) => error(Status.BadRequest, m, Some("invalidFilter"))
       case Right(f) =>
         val (start, count) = paging(req)
-        scim.listUsers(f, start, count).flatMap(
-          (
-            t,
-            us
-          ) => json(Status.Ok, listJson(t, start, us.map(userJson)))
-        )
+        scim.listUsers(f, start, count).flatMap((t, us) => json(Status.Ok, listJson(t, start, us.map(userJson))))
     }
 
-  private def postScimV2Users(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postScimV2Users(req: Request[IO]): IO[Response[IO]] =
     body(req).flatMap {
       case None => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
       case Some(j) =>
@@ -97,18 +87,13 @@ final class ScimRoutes(
         }
     }
 
-  private def getScimV2User(
-    id: String
-  ): IO[Response[IO]] =
+  private def getScimV2User(id: String): IO[Response[IO]] =
     uuidOpt(id).flatTraverse(scim.getUser).flatMap {
       case Some(u) => json(Status.Ok, userJson(u))
       case None => error(Status.NotFound, "ユーザーが見つかりません")
     }
 
-  private def putScimV2User(
-    req: Request[IO],
-    id: String
-  ): IO[Response[IO]] =
+  private def putScimV2User(req: Request[IO], id: String): IO[Response[IO]] =
     (uuidOpt(id).flatTraverse(scim.getUser), body(req)).tupled.flatMap {
       case (None, _) => error(Status.NotFound, "ユーザーが見つかりません")
       case (_, None) => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
@@ -119,10 +104,7 @@ final class ScimRoutes(
         }
     }
 
-  private def patchScimV2User(
-    req: Request[IO],
-    id: String
-  ): IO[Response[IO]] =
+  private def patchScimV2User(req: Request[IO], id: String): IO[Response[IO]] =
     (uuidOpt(id).flatTraverse(scim.getUser), body(req)).tupled.flatMap {
       case (None, _) => error(Status.NotFound, "ユーザーが見つかりません")
       case (_, None) => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
@@ -133,28 +115,21 @@ final class ScimRoutes(
         }
     }
 
-  private def deleteScimV2User(
-    id: String
-  ): IO[Response[IO]] =
+  private def deleteScimV2User(id: String): IO[Response[IO]] =
     uuidOpt(id).flatTraverse(scim.getUser).flatMap {
       case None => error(Status.NotFound, "ユーザーが見つかりません")
       case Some(u) =>
         scim.deleteUser(u.id) *> auditUser("scim.user.delete", u.copy(active = false)) *> accessChanged *> NoContent()
     }
 
-  private def getScimV2Groups(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getScimV2Groups(req: Request[IO]): IO[Response[IO]] =
     filterOf(req) match {
       case Left(m) => error(Status.BadRequest, m, Some("invalidFilter"))
       case Right(f) =>
         val (start, count) = paging(req)
         val excludeMembers = req.uri.query.params.get("excludedAttributes").exists(_.toLowerCase.contains("members"))
         scim.listGroups(f, start, count).flatMap {
-          (
-            t,
-            gs
-          ) =>
+          (t, gs) =>
             json(
               Status.Ok,
               listJson(
@@ -169,9 +144,7 @@ final class ScimRoutes(
         }
     }
 
-  private def postScimV2Groups(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postScimV2Groups(req: Request[IO]): IO[Response[IO]] =
     body(req).flatMap {
       case None => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
       case Some(j) =>
@@ -193,18 +166,13 @@ final class ScimRoutes(
         }
     }
 
-  private def getScimV2Group(
-    id: String
-  ): IO[Response[IO]] =
+  private def getScimV2Group(id: String): IO[Response[IO]] =
     uuidOpt(id).flatTraverse(scim.getGroup).flatMap {
       case Some(g) => json(Status.Ok, groupJson(g))
       case None => error(Status.NotFound, "グループが見つかりません")
     }
 
-  private def putScimV2Group(
-    req: Request[IO],
-    id: String
-  ): IO[Response[IO]] =
+  private def putScimV2Group(req: Request[IO], id: String): IO[Response[IO]] =
     (uuidOpt(id).flatTraverse(scim.getGroup), body(req)).tupled.flatMap {
       case (None, _) => error(Status.NotFound, "グループが見つかりません")
       case (_, None) => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
@@ -224,10 +192,7 @@ final class ScimRoutes(
         }
     }
 
-  private def patchScimV2Group(
-    req: Request[IO],
-    id: String
-  ): IO[Response[IO]] =
+  private def patchScimV2Group(req: Request[IO], id: String): IO[Response[IO]] =
     (uuidOpt(id).flatTraverse(scim.getGroup), body(req)).tupled.flatMap {
       case (None, _) => error(Status.NotFound, "グループが見つかりません")
       case (_, None) => error(Status.BadRequest, "invalid JSON", Some("invalidSyntax"))
@@ -268,9 +233,7 @@ final class ScimRoutes(
         }
     }
 
-  private def deleteScimV2Group(
-    id: String
-  ): IO[Response[IO]] =
+  private def deleteScimV2Group(id: String): IO[Response[IO]] =
     uuidOpt(id).flatTraverse(scim.getGroup).flatMap {
       case None => error(Status.NotFound, "グループが見つかりません")
       case Some(g) =>
@@ -286,17 +249,10 @@ final class ScimRoutes(
 
   private val scimJson = `Content-Type`(MediaType.unsafeParse("application/scim+json"), Charset.`UTF-8`)
 
-  private def json(
-    status: Status,
-    body: Json
-  ): IO[Response[IO]] =
+  private def json(status: Status, body: Json): IO[Response[IO]] =
     Response[IO](status).withEntity(body.noSpaces).withContentType(scimJson).pure[IO]
 
-  private def error(
-    status: Status,
-    detail: String,
-    scimType: Option[String] = None
-  ): IO[Response[IO]] =
+  private def error(status: Status, detail: String, scimType: Option[String] = None): IO[Response[IO]] =
     json(
       status,
       Json.obj(
@@ -307,25 +263,19 @@ final class ScimRoutes(
       ).dropNullValues
     )
 
-  private def authorized(
-    req: Request[IO]
-  ): Boolean =
+  private def authorized(req: Request[IO]): Boolean =
     req.headers.get[Authorization].exists {
       case Authorization(Credentials.Token(AuthScheme.Bearer, t)) =>
         MessageDigest.isEqual(t.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))
       case _ => false
     }
 
-  private def body(
-    req: Request[IO]
-  ): IO[Option[Json]] =
+  private def body(req: Request[IO]): IO[Option[Json]] =
     req.bodyText.compile.string.map(s => _root_.io.circe.parser.parse(s).toOption)
 
   // ---------------------------------------------------------------- 表現
 
-  private def userJson(
-    u: ScimUser
-  ): Json = Json.obj(
+  private def userJson(u: ScimUser): Json = Json.obj(
     "schemas" -> List(UserSchema).asJson,
     "id" -> u.id.toString.asJson,
     "externalId" -> u.externalId.asJson,
@@ -342,19 +292,12 @@ final class ScimRoutes(
     )
   ).dropNullValues
 
-  private def groupJson(
-    g: ScimGroup
-  ): Json = Json.obj(
+  private def groupJson(g: ScimGroup): Json = Json.obj(
     "schemas" -> List(GroupSchema).asJson,
     "id" -> g.id.toString.asJson,
     "externalId" -> g.externalId.asJson,
     "displayName" -> g.displayName.asJson,
-    "members" -> g.members.map(
-      (
-        id,
-        n
-      ) => Json.obj("value" -> id.toString.asJson, "display" -> n.asJson)
-    ).asJson,
+    "members" -> g.members.map((id, n) => Json.obj("value" -> id.toString.asJson, "display" -> n.asJson)).asJson,
     "meta" -> Json.obj(
       "resourceType" -> "Group".asJson,
       "created" -> g.createdAt.toString.asJson,
@@ -363,11 +306,7 @@ final class ScimRoutes(
     )
   ).dropNullValues
 
-  private def listJson(
-    total: Int,
-    start: Int,
-    items: List[Json]
-  ): Json = Json.obj(
+  private def listJson(total: Int, start: Int, items: List[Json]): Json = Json.obj(
     "schemas" -> List(ListSchema).asJson,
     "totalResults" -> total.asJson,
     "startIndex" -> start.asJson,
@@ -377,14 +316,9 @@ final class ScimRoutes(
 
   // ---------------------------------------------------------------- 入力の解釈
 
-  private def str(
-    c: ACursor
-  ): Option[String] = c.as[String].toOption.map(_.trim).filter(_.nonEmpty)
+  private def str(c: ACursor): Option[String] = c.as[String].toOption.map(_.trim).filter(_.nonEmpty)
 
-  private def userInput(
-    j: Json,
-    base: Option[ScimUser] = None
-  ): Either[String, ScimUserInput] = {
+  private def userInput(j: Json, base: Option[ScimUser] = None): Either[String, ScimUserInput] = {
     val c = j.hcursor
     val userName = str(c.downField("userName")).orElse(base.map(_.userName))
     val name = str(c.downField("displayName"))
@@ -410,25 +344,19 @@ final class ScimRoutes(
       .map(un => ScimUserInput(un, ext, name.getOrElse(un), email, active))
   }
 
-  private def memberIds(
-    j: Json
-  ): List[UUID] =
+  private def memberIds(j: Json): List[UUID] =
     j.as[List[Json]].getOrElse(Nil).flatMap(m => str(m.hcursor.downField("value"))).flatMap(uuidOpt)
 
   /** `attr eq "value"` 形式のフィルタ（属性名は小文字化）。 */
   private val FilterRe = """(?i)^\s*([A-Za-z.]+)\s+eq\s+"((?:[^"\\]|\\.)*)"\s*$""".r
-  private def filterOf(
-    req: Request[IO]
-  ): Either[String, Option[(String, String)]] =
+  private def filterOf(req: Request[IO]): Either[String, Option[(String, String)]] =
     req.uri.query.params.get("filter") match {
       case None => Right(None)
       case Some(FilterRe(attr, v)) => Right(Some(attr.toLowerCase -> v.replace("\\\"", "\"").replace("\\\\", "\\")))
       case Some(other) => Left(s"使えない絞り込みです: $other")
     }
 
-  private def paging(
-    req: Request[IO]
-  ): (Int, Int) = {
+  private def paging(req: Request[IO]): (Int, Int) = {
     val p = req.uri.query.params
     (
       p.get("startIndex").flatMap(_.toIntOption).map(math.max(1, _)).getOrElse(1),
@@ -436,9 +364,7 @@ final class ScimRoutes(
     )
   }
 
-  private def ops(
-    j: Json
-  ): List[(String, Option[String], Json)] =
+  private def ops(j: Json): List[(String, Option[String], Json)] =
     j.hcursor.downField("Operations").as[List[Json]].getOrElse(Nil).map { o =>
       val c = o.hcursor
       (
@@ -449,10 +375,7 @@ final class ScimRoutes(
     }
 
   /** PATCH(ユーザー): 対象属性を JSON に適用してから置換と同じ処理を行う。 */
-  private def patchUser(
-    u: ScimUser,
-    j: Json
-  ): Either[String, ScimUserInput] = {
+  private def patchUser(u: ScimUser, j: Json): Either[String, ScimUserInput] = {
     val start = userJson(u)
     val patched = ops(j).foldLeft(start) {
       case (acc, ("replace" | "add", None, v)) if v.isObject => acc.deepMerge(v)
@@ -487,10 +410,7 @@ final class ScimRoutes(
 
   // ---------------------------------------------------------------- ルート
 
-  private def auditUser(
-    action: String,
-    u: ScimUser
-  ): IO[Unit] =
+  private def auditUser(action: String, u: ScimUser): IO[Unit] =
     audit.system(
       "scim",
       action,
@@ -499,16 +419,10 @@ final class ScimRoutes(
       Json.obj("userName" -> u.userName.asJson, "name" -> u.name.asJson, "active" -> u.active.asJson)
     )
 
-  private def auditGroup(
-    action: String,
-    id: UUID,
-    detail: Json
-  ): IO[Unit] = audit.system("scim", action, "group", id, detail)
+  private def auditGroup(action: String, id: UUID, detail: Json): IO[Unit] =
+    audit.system("scim", action, "group", id, detail)
 
-  private def replaceUser(
-    cur: ScimUser,
-    in: ScimUserInput
-  ): IO[Response[IO]] =
+  private def replaceUser(cur: ScimUser, in: ScimUserInput): IO[Response[IO]] =
     scim.replaceUser(cur.id, in).attempt.flatMap {
       case Left(e) if e.getMessage != null && e.getMessage.contains("duplicate key") =>
         error(Status.Conflict, "userName はすでに使われています", Some("uniqueness"))

@@ -48,11 +48,7 @@ class S3BlobStoreSpec extends CatsEffectSuite {
     }
   }
 
-  extension [A](
-    io: IO[A]
-  ) {
-    private def withFilter(
-      p: A => Boolean
-    ): IO[A] = io
+  extension [A](io: IO[A]) {
+    private def withFilter(p: A => Boolean): IO[A] = io
   }
 }

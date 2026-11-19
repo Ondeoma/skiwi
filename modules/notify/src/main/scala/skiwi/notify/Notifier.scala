@@ -15,71 +15,46 @@ import scala.concurrent.duration.*
  * メール送信ワーカー。mail_outbox から期限の来たものを取り出し、送信時点の権限・タイトルで本文を組み立てて送る。
  * 複数ノードで動かしても SKIP LOCKED により重複送信しない。mailer が None ならメールは送らず、積まれた分は破棄する。
  */
-final class Notifier(
-  store: Store,
-  ops: OpsStore,
-  mailer: Option[Mailer],
-  publicUrl: String,
-  adminGroups: Set[String],
-  interval: FiniteDuration = 30.seconds) {
+final class Notifier(store: Store,
+                     ops: OpsStore,
+                     mailer: Option[Mailer],
+                     publicUrl: String,
+                     adminGroups: Set[String],
+                     interval: FiniteDuration = 30.seconds) {
   private val base = publicUrl.stripSuffix("/")
 
-  private def roleLabel(
-    r: String
-  ) = if r == "edit" then "編集" else "閲覧"
+  private def roleLabel(r: String) = if r == "edit" then "編集" else "閲覧"
 
   /** 送信時点で閲覧できるページ（権限変更・削除後のメール漏洩を防ぐ）。見られなければ Left(理由) */
-  private def visiblePage(
-    userId: UUID,
-    pageId: UUID
-  ): IO[Either[String, (User, Page)]] =
+  private def visiblePage(userId: UUID, pageId: UUID): IO[Either[String, (User, Page)]] =
     store.userWithGroups(userId).flatMap {
       case None => IO.pure(Left("無効なユーザーです"))
       case Some((u, gs)) =>
         val s = AuthSession(u, gs, AgentAccounts.isAdmin(u.sub, gs.map(_.externalId), adminGroups))
-        store.pageAccess(pageId, s).map(_.map(
-          (
-            p,
-            _
-          ) => (u, p)
-        ).toRight("閲覧の権限がありません"))
+        store.pageAccess(pageId, s).map(_.map((p, _) => (u, p)).toRight("閲覧の権限がありません"))
     }
 
   /** 1件分のメールを組み立てる。送らない場合は Left(理由)。 */
-  def render(
-    it: OutboxItem
-  ): IO[Either[String, Mail]] =
+  def render(it: OutboxItem): IO[Either[String, Mail]] =
     it.email.filter(_.contains("@")) match {
       case _ if !it.active => IO.pure(Left("無効なユーザーです"))
       case None => IO.pure(Left("メールアドレスがありません"))
       case Some(to) =>
         val detail = parse(it.detail).toOption.map(_.hcursor)
-        def field(
-          k: String
-        ) = detail.flatMap(_.downField(k).as[String].toOption)
+        def field(k: String) = detail.flatMap(_.downField(k).as[String].toOption)
         val role = roleLabel(field("role").getOrElse("view"))
         val sharedBy = field("by").getOrElse("")
         val by = field("by").filter(_.nonEmpty).getOrElse("誰か")
         val excerpt = field("excerpt").filter(_.nonEmpty)
 
         /** 本文: 「宛名さん」・空行・各行 */
-        def mail(
-          name: String,
-          subject: String,
-          lines: String*
-        ): Either[String, Mail] =
+        def mail(name: String, subject: String, lines: String*): Either[String, Mail] =
           Right(Mail(to, name, subject, s"${name}さん\n\n" + lines.mkString("\n") + "\n"))
 
         /** 引用（前後に空行） */
-        def quote(
-          t: Option[String]
-        ) = t.fold("")(e => s"\n> $e\n")
+        def quote(t: Option[String]) = t.fold("")(e => s"\n> $e\n")
 
-        def pageMail(
-          kind: String,
-          u: User,
-          p: Page
-        ): IO[Either[String, Mail]] = {
+        def pageMail(kind: String, u: User, p: Page): IO[Either[String, Mail]] = {
           val title = Titles.display(p.title)
           val link = s"$base/w/${p.workspaceId}/p/${p.id}"
           kind match {

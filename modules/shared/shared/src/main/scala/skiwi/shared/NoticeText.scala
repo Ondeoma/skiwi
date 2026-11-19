@@ -6,30 +6,24 @@ package skiwi.shared
  */
 object NoticeText {
 
-  def roleLabel(
-    role: Option[String]
-  ): String = if role.contains("edit") then "編集" else "閲覧"
+  def roleLabel(role: Option[String]): String = if role.contains("edit") then "編集" else "閲覧"
 
   /** 通知の見出し（ページのアイコンとタイトル、またはワークスペースの名前） */
-  def heading(
-    kind: String,
-    hasPage: Boolean,
-    pageIcon: Option[String],
-    pageTitle: Option[String],
-    workspaceName: Option[String]
-  ): String =
+  def heading(kind: String,
+              hasPage: Boolean,
+              pageIcon: Option[String],
+              pageTitle: Option[String],
+              workspaceName: Option[String]): String =
     if hasPage then s"${pageIcon.getOrElse("📄")} ${Titles.display(pageTitle)}"
     else if kind == "access_denied" then "🔒 権限の申請"
     else s"🗂 ${workspaceName.getOrElse("")}"
 
   /** 通知の文（誰が・何をしたか） */
-  def text(
-    kind: String,
-    actors: List[String],
-    role: Option[String],
-    excerpt: Option[String],
-    due: Option[String]
-  ): String = {
+  def text(kind: String,
+           actors: List[String],
+           role: Option[String],
+           excerpt: Option[String],
+           due: Option[String]): String = {
     val who = if actors.size > 2 then s"${actors.take(2).mkString("、")} ほか${actors.size - 2}人" else actors.mkString("、")
     val r = roleLabel(role)
     val ex = excerpt.getOrElse("")
@@ -48,12 +42,10 @@ object NoticeText {
   }
 
   /** 通知を押したときに開くパス（開く先がなければ None） */
-  def link(
-    kind: String,
-    pageId: Option[String],
-    workspaceId: Option[String],
-    threadId: Option[String]
-  ): Option[String] =
+  def link(kind: String,
+           pageId: Option[String],
+           workspaceId: Option[String],
+           threadId: Option[String]): Option[String] =
     (pageId, workspaceId) match {
       case (Some(pid), Some(wid)) =>
         val q = threadId.map(t => s"?comment=$t").getOrElse(if kind == "access_request" then "?access=requests" else "")

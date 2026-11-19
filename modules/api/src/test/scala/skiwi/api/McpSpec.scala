@@ -20,10 +20,7 @@ class McpSpec extends DbSuite {
   private val publicUrl = "https://skiwi.example.com"
   private val apiCfg = ApiConfig(adminGroups = Set("skiwi-admins"), cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    app: HttpApp[IO])
+  final case class Env(store: Store, docs: DocStore, app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -49,10 +46,7 @@ class McpSpec extends DbSuite {
             ops,
             sess,
             audit,
-            (
-              id,
-              u
-            ) => docs.appendUpdate(id, u)
+            (id, u) => docs.appendUpdate(id, u)
           ).routes
         val routes = rest <+> new McpRoutes(rest, sess, publicUrl).routes
         val app = cats.data.Kleisli { (req: Request[IO]) =>
@@ -67,10 +61,7 @@ class McpSpec extends DbSuite {
   private def env = fixture()
 
   /** ログインして Cookie のセッションを作り、そのセッションで API トークンを発行する。 */
-  private def tokenFor(
-    name: String,
-    scope: String
-  ): IO[(String, String)] = {
+  private def tokenFor(name: String, scope: String): IO[(String, String)] = {
     val cookie = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -82,12 +73,10 @@ class McpSpec extends DbSuite {
   }
 
   private var nextId = 0
-  private def rpc(
-    token: Option[String],
-    method: String,
-    params: Json = Json.obj(),
-    notify: Boolean = false
-  ): IO[(Status, Json)] = {
+  private def rpc(token: Option[String],
+                  method: String,
+                  params: Json = Json.obj(),
+                  notify: Boolean = false): IO[(Status, Json)] = {
     nextId += 1
     val msg = Json.obj("jsonrpc" -> "2.0".asJson, "method" -> method.asJson, "params" -> params)
       .deepMerge(if notify then Json.obj() else Json.obj("id" -> nextId.asJson))
@@ -97,16 +86,9 @@ class McpSpec extends DbSuite {
   }
 
   /** ツールを呼び、(エラーか, 文字) を返す。 */
-  private def tool(
-    token: String,
-    name: String,
-    args: (String, Json)*
-  ): IO[(Boolean, String)] =
+  private def tool(token: String, name: String, args: (String, Json)*): IO[(Boolean, String)] =
     rpc(Some(token), "tools/call", Json.obj("name" -> name.asJson, "arguments" -> Json.obj(args*))).map {
-      (
-        st,
-        j
-      ) =>
+      (st, j) =>
         assertEquals(st, Status.Ok)
         val r = j.hcursor.downField("result")
         (r.get[Boolean]("isError").getOrElse(false), r.downField("content").downN(0).get[String]("text").getOrElse(""))

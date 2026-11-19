@@ -18,11 +18,7 @@ class FeaturesSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set("feat-admins"), cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    ops: OpsStore,
-    app: HttpApp[IO])
+  final case class Env(store: Store, docs: DocStore, ops: OpsStore, app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -53,10 +49,7 @@ class FeaturesSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String,
-    groups: List[String] = Nil
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String, groups: List[String] = Nil): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -65,41 +58,26 @@ class FeaturesSpec extends DbSuite {
     } yield (AuthSession(u, Nil, false), token)
   }
 
-  private def call(
-    token: Option[String],
-    method: Method,
-    path: String,
-    body: Option[Json] = None,
-    cookies: List[(String, String)] = Nil
-  ): IO[(Status, Json, Response[IO])] = {
+  private def call(token: Option[String],
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None,
+                   cookies: List[(String, String)] = Nil): IO[(Status, Json, Response[IO])] = {
     var req = Request[IO](method, Uri.unsafeFromString(path))
     token.foreach(t => req = req.addCookie("skiwi_session", t))
-    cookies.foreach(
-      (
-        k,
-        v
-      ) => req = req.addCookie(k, v)
-    )
+    cookies.foreach((k, v) => req = req.addCookie(k, v))
     body.foreach(b => req = req.withEntity(b))
     env.app.run(req).flatMap(r =>
       r.bodyText.compile.string.map(s => (r.status, io.circe.parser.parse(s).getOrElse(Json.Null), r))
     )
   }
 
-  private def titles(
-    j: Json,
-    path: String*
-  ): List[String] =
+  private def titles(j: Json, path: String*): List[String] =
     j.asArray.get.toList.map(x =>
       path.foldLeft(x.hcursor: io.circe.ACursor)(_.downField(_)).get[String]("title").toOption.get
     )
 
-  private def page(
-    ws: UUID,
-    title: String,
-    parent: Option[UUID],
-    by: UUID
-  ) =
+  private def page(ws: UUID, title: String, parent: Option[UUID], by: UUID) =
     env.store.createPage(ws, parent, Placement.Last, title, None, by).map(_.toOption.get)
 
   test("trash: delete, list, restore (to root if parent is gone) and purge") {

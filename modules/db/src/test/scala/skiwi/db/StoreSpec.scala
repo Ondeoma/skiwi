@@ -19,17 +19,10 @@ class StoreSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(storeFixture) else Nil
 
   private def store = storeFixture()
-  private def withDb(
-    body: => IO[Unit]
-  )(using munit.Location
-  ): IO[Unit] =
+  private def withDb(body: => IO[Unit])(using munit.Location): IO[Unit] =
     if cfg.isEmpty then IO(assume(false, "TEST_DATABASE_URL not set")) else body
 
-  private def newUser(
-    name: String,
-    groups: List[String] = Nil,
-    admin: Boolean = false
-  ): IO[AuthSession] = {
+  private def newUser(name: String, groups: List[String] = Nil, admin: Boolean = false): IO[AuthSession] = {
     val sub = s"$name-${UUID.randomUUID()}"
     for {
       u <- store.upsertUser(sub, Some(s"$name@example.com"), name)
@@ -39,10 +32,7 @@ class StoreSpec extends DbSuite {
   }
 
   // グループはセッション経由で取得して検証する
-  private def groupsOf(
-    u: User,
-    names: List[String]
-  ): IO[List[Group]] = {
+  private def groupsOf(u: User, names: List[String]): IO[List[Group]] = {
     val hash = java.security.MessageDigest.getInstance("SHA-256").digest(UUID.randomUUID().toString.getBytes)
     for {
       _ <- store.createSession(hash, u.id, Instant.now().plusSeconds(60))

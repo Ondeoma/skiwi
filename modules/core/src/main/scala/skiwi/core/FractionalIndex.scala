@@ -10,15 +10,10 @@ import java.util.UUID
 object FractionalIndex {
   private val digits = (('0' to '9') ++ ('A' to 'Z') ++ ('a' to 'z')).mkString
   private val zero = digits.head
-  private def idx(
-    c: Char
-  ): Int = digits.indexOf(c)
+  private def idx(c: Char): Int = digits.indexOf(c)
 
   /** lo < result < hi（lo, hi が None の場合はそれぞれ下限・上限なし）。 */
-  def between(
-    lo: Option[String],
-    hi: Option[String]
-  ): String = {
+  def between(lo: Option[String], hi: Option[String]): String = {
     val a = lo.getOrElse("")
     require(a.isEmpty || a.last != zero, s"invalid key: $a")
     hi.foreach { b =>
@@ -28,10 +23,7 @@ object FractionalIndex {
     midpoint(a, hi)
   }
 
-  private def midpoint(
-    a: String,
-    b: Option[String]
-  ): String = {
+  private def midpoint(a: String, b: Option[String]): String = {
     b match {
       case Some(bb) =>
         var n = 0
@@ -47,10 +39,7 @@ object FractionalIndex {
   }
 
   /** siblings は position 昇順の (id, position)。placement に応じた新しい position を返す。 */
-  def place(
-    siblings: List[(UUID, String)],
-    placement: Placement
-  ): Either[String, String] =
+  def place(siblings: List[(UUID, String)], placement: Placement): Either[String, String] =
     placement match {
       case Placement.First => Right(between(None, siblings.headOption.map(_._2)))
       case Placement.Last => Right(between(siblings.lastOption.map(_._2), None))

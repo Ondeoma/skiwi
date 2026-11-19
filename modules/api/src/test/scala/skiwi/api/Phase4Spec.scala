@@ -22,13 +22,12 @@ class Phase4Spec extends DbSuite {
   private val apiCfg = ApiConfig(adminGroups = Set("skiwi-admins"), cookieSecure = false)
   private val scimToken = "scim-test-token-0123456789"
 
-  final case class Env(
-    xa: doobie.Transactor[IO],
-    store: Store,
-    docs: DocStore,
-    ops: OpsStore,
-    app: HttpApp[IO],
-    changed: Ref[IO, Int])
+  final case class Env(xa: doobie.Transactor[IO],
+                       store: Store,
+                       docs: DocStore,
+                       ops: OpsStore,
+                       app: HttpApp[IO],
+                       changed: Ref[IO, Int])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -58,16 +57,9 @@ class Phase4Spec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private final case class Who(
-    token: String,
-    id: UUID,
-    name: String)
+  private final case class Who(token: String, id: UUID, name: String)
 
-  private def login(
-    name: String,
-    groups: List[String] = Nil,
-    email: Option[String] = None
-  ): IO[Who] = {
+  private def login(name: String, groups: List[String] = Nil, email: Option[String] = None): IO[Who] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", email, name)
@@ -84,12 +76,7 @@ class Phase4Spec extends DbSuite {
     case None
   }
 
-  private def call(
-    auth: Auth,
-    method: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[(Status, Json)] = {
+  private def call(auth: Auth, method: Method, path: String, body: Option[Json] = None): IO[(Status, Json)] = {
     var req = Request[IO](method, Uri.unsafeFromString(path))
     auth match {
       case Auth.Cookie(t) => req = req.addCookie("skiwi_session", t)
@@ -102,38 +89,25 @@ class Phase4Spec extends DbSuite {
     )
   }
 
-  private def as(
-    w: Who
-  ) = Auth.Cookie(w.token)
+  private def as(w: Who) = Auth.Cookie(w.token)
 
-  private def scim(
-    method: Method,
-    path: String,
-    body: Option[Json] = None,
-    token: String = scimToken
-  ): IO[(Status, Json)] =
+  private def scim(method: Method,
+                   path: String,
+                   body: Option[Json] = None,
+                   token: String = scimToken): IO[(Status, Json)] =
     call(Auth.Bearer(token), method, path, body)
 
-  private def str(
-    j: Json,
-    f: String*
-  ) = f.foldLeft(j.hcursor: io.circe.ACursor)(_.downField(_)).as[String].toOption
-  private def uid(
-    j: Json
-  ) = UUID.fromString(str(j, "id").get)
+  private def str(j: Json, f: String*) = f.foldLeft(j.hcursor: io.circe.ACursor)(_.downField(_)).as[String].toOption
+  private def uid(j: Json) = UUID.fromString(str(j, "id").get)
 
-  private def newPage(
-    w: Who
-  ): IO[(UUID, UUID)] =
+  private def newPage(w: Who): IO[(UUID, UUID)] =
     for {
       (_, ws) <-
         call(as(w), Method.POST, "/api/workspaces", Some(Json.obj("name" -> s"WS-${UUID.randomUUID()}".asJson)))
       (_, p) <- call(as(w), Method.POST, s"/api/workspaces/${uid(ws)}/pages", Some(Json.obj("title" -> "議事録".asJson)))
     } yield (uid(ws), uid(p))
 
-  private def auditFor(
-    target: UUID
-  ): IO[List[String]] =
+  private def auditFor(target: UUID): IO[List[String]] =
     sql"select action from audit_log where target_id = ${target.toString} order by id".query[String].to[List].transact(
       env.xa
     )

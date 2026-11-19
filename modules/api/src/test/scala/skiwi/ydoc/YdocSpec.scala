@@ -13,32 +13,20 @@ import java.util.Base64
  */
 class YdocSpec extends FunSuite {
 
-  private def node(
-    reqs: Vector[Json]
-  ): Vector[Json] = YjsNode.run(reqs)
+  private def node(reqs: Vector[Json]): Vector[Json] = YjsNode.run(reqs)
 
-  private def run(
-    body: => Unit
-  ): Unit = {
+  private def run(body: => Unit): Unit = {
     assume(YjsNode.available, "node / frontend/node_modules not found")
     body
   }
 
   private val b64 = Base64.getEncoder
   private val unb64 = Base64.getDecoder
-  private def bytes(
-    j: Json
-  ): Array[Byte] = unb64.decode(j.asString.get)
+  private def bytes(j: Json): Array[Byte] = unb64.decode(j.asString.get)
 
-  private final case class Case(
-    full: Array[Byte],
-    parts: Vector[Array[Byte]],
-    ids: Vector[YId],
-    doc: Json)
+  private final case class Case(full: Array[Byte], parts: Vector[Array[Byte]], ids: Vector[YId], doc: Json)
 
-  private def gen(
-    seeds: Range
-  ): Vector[Case] =
+  private def gen(seeds: Range): Vector[Case] =
     node(seeds.toVector.map(s =>
       Json.obj(
         "mode" -> "gen".asJson,
@@ -59,17 +47,13 @@ class YdocSpec extends FunSuite {
         )
       }
 
-  private def blocksOf(
-    doc: Json
-  ): Vector[Json] = doc.hcursor.downField("content").focus.flatMap(_.asArray).getOrElse(Vector.empty)
+  private def blocksOf(doc: Json): Vector[Json] =
+    doc.hcursor.downField("content").focus.flatMap(_.asArray).getOrElse(Vector.empty)
 
   test("最上位のブロックの並びが Yjs と同じ（全状態から・各編集の update から）") {
     run {
       gen(1 to 200).zipWithIndex.foreach {
-        (
-          c,
-          i
-        ) =>
+        (c, i) =>
           val ids = (d: YEdit.Doc) => d.blocks.map(_._1.id)
           assertEquals(ids(YEdit.load(Seq(c.full))), c.ids, s"full #$i")
           assertEquals(ids(YEdit.load(c.parts)), c.ids, s"parts #$i")
@@ -95,26 +79,18 @@ class YdocSpec extends FunSuite {
       """{"type":"codeBlock","attrs":{"language":"scala"},"content":[{"type":"text","text":"val x = 1\nprintln(x)"}]}"""
     ).toOption.get
   )
-  private def objs(
-    js: Vector[Json]
-  ): Vector[JsonObject] = js.flatMap(_.asObject)
+  private def objs(js: Vector[Json]): Vector[JsonObject] = js.flatMap(_.asObject)
 
   test("置き換え・追記・先頭への挿入を本物の Yjs に当てると、期待した本文になる") {
     run {
       val cases = gen(100 to 140)
       val reqs = cases.zipWithIndex.flatMap {
-        (
-          c,
-          i
-        ) =>
+        (c, i) =>
           val doc = YEdit.load(Seq(c.full))
           val n = doc.blocks.size
           val ranges = Vector((0, n), (n, n), (0, 0), (n / 3, (n * 2 + 2) / 3))
           ranges.distinct.map {
-            (
-              from,
-              until
-            ) =>
+            (from, until) =>
               val upd = YEdit.replace(doc, from, until, objs(newBlocks))
               val expected = blocksOf(c.doc).patch(from, newBlocks, until - from)
               (
@@ -128,10 +104,7 @@ class YdocSpec extends FunSuite {
           }
       }
       node(reqs.map(_._1)).zip(reqs).foreach {
-        (
-          res,
-          req
-        ) =>
+        (res, req) =>
           assertEquals(blocksOf(res.hcursor.downField("doc").focus.get), req._2.map(normalize), req._3)
       }
     }
@@ -155,9 +128,7 @@ class YdocSpec extends FunSuite {
   }
 
   /** 比べるための形: マークは名前順、属性のないマークは attrs を付けない。 */
-  private def normalize(
-    j: Json
-  ): Json = j.arrayOrObject(
+  private def normalize(j: Json): Json = j.arrayOrObject(
     j,
     arr => Json.fromValues(arr.map(normalize)),
     obj =>

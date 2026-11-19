@@ -24,21 +24,16 @@ class IntegrationSpec extends DbSuite {
   private val box = SecretBox.fromSecret("integration-spec-secret-0123456789")
 
   /** 偽の skea が受け取ったもの */
-  final case class Seen(
-    token: Option[(Option[Authorization], UrlForm)] = None,
-    revoked: List[(Option[Authorization], UrlForm)] = Nil,
-    lookups: List[(Option[Authorization], List[String])] = Nil)
-  final case class Env(
-    store: Store,
-    app: HttpApp[IO],
-    seen: Ref[IO, Seen],
-    revokedTokens: Ref[IO, Set[String]],
-    ist: IntegrationStore)
+  final case class Seen(token: Option[(Option[Authorization], UrlForm)] = None,
+                        revoked: List[(Option[Authorization], UrlForm)] = Nil,
+                        lookups: List[(Option[Authorization], List[String])] = Nil)
+  final case class Env(store: Store,
+                       app: HttpApp[IO],
+                       seen: Ref[IO, Seen],
+                       revokedTokens: Ref[IO, Set[String]],
+                       ist: IntegrationStore)
 
-  private def fakeSkea(
-    seen: Ref[IO, Seen],
-    revoked: Ref[IO, Set[String]]
-  ): HttpApp[IO] = HttpRoutes.of[IO] {
+  private def fakeSkea(seen: Ref[IO, Seen], revoked: Ref[IO, Set[String]]): HttpApp[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "oauth" / "token" =>
       req.as[UrlForm].flatMap { f =>
         seen.update(_.copy(token = Some((req.headers.get[Authorization], f)))) *>
@@ -153,10 +148,7 @@ class IntegrationSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String,
-    groups: List[String] = Nil
-  ): IO[(User, String)] = {
+  private def user(name: String, groups: List[String] = Nil): IO[(User, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -165,13 +157,11 @@ class IntegrationSpec extends DbSuite {
     } yield (u, token)
   }
 
-  private def call(
-    token: String,
-    method: Method,
-    path: String,
-    body: Option[Json] = None,
-    app: HttpApp[IO] = env.app
-  ): IO[(Response[IO], Json)] = {
+  private def call(token: String,
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None,
+                   app: HttpApp[IO] = env.app): IO[(Response[IO], Json)] = {
     val req = body.fold(Request[IO](method, Uri.unsafeFromString(path)))(b =>
       Request[IO](method, Uri.unsafeFromString(path)).withEntity(b)
     )
@@ -188,10 +178,7 @@ class IntegrationSpec extends DbSuite {
   )
 
   /** 連携する（connect → callback）。戻り値は callback の Location */
-  private def connect(
-    token: String,
-    code: String = "good"
-  ): IO[(Map[String, String], String)] =
+  private def connect(token: String, code: String = "good"): IO[(Map[String, String], String)] =
     for {
       (r, _) <- call(token, Method.GET, "/api/integrations/skea/connect?returnTo=/w/1/p/2%3Fx%3D1%23h")
       q = r.headers.get[Location].get.uri.query.params

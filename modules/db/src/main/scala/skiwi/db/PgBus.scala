@@ -15,15 +15,10 @@ import skiwi.core.ErrorCode
  * 受信側は専用のJDBC接続を張り、切れたら（Patroniのフェイルオーバー等）張り直して onConnect を呼ぶ。
  * 切断中の通知は失われるため、受信側は onConnect で状態を取り直すこと。
  */
-final class PgBus(
-  cfg: DbConfig,
-  xa: Transactor[IO]) {
+final class PgBus(cfg: DbConfig, xa: Transactor[IO]) {
 
   /** ペイロードは8000バイト未満であること（PostgreSQLの制限）。 */
-  def publish(
-    channel: String,
-    payload: String
-  ): IO[Unit] =
+  def publish(channel: String, payload: String): IO[Unit] =
     sql"select count(*) from (select pg_notify($channel, $payload)) t".query[Long].unique.transact(xa).void
 
   private def connect: Resource[IO, Connection] =
@@ -36,12 +31,7 @@ final class PgBus(
     })(c => IO.blocking(c.close()).handleError(_ => ()))
 
   /** 指定チャネルを購読し続ける（キャンセルされるまで終わらない）。 */
-  def subscribe(
-    channels: List[String],
-    onConnect: IO[Unit]
-  )(
-    handle: (String, String) => IO[Unit]
-  ): IO[Nothing] = {
+  def subscribe(channels: List[String], onConnect: IO[Unit])(handle: (String, String) => IO[Unit]): IO[Nothing] = {
     val once: IO[Unit] = connect.use { c =>
       val pg = c.unwrap(classOf[PGConnection])
       IO.blocking {

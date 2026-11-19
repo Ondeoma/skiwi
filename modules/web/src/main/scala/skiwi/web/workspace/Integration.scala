@@ -16,8 +16,7 @@ import scala.scalajs.js.JSConverters.*
  * ログイン中の画面で共有する. ゲスト向けの公開ページでは使わない（API を呼ばない）.
  * 状態と項目は API の JSON のまま持ち、エディタ（JS）へは window.__skiwiHost.integration(name) で渡す.
  */
-final class Integration(
-  val name: String) {
+final class Integration(val name: String) {
 
   private val Ttl = 60000.0
   private val Batch = 100
@@ -35,20 +34,13 @@ final class Integration(
   private val cache = mutable.Map.empty[String, (Double, js.Any)]
   private val inflight = mutable.Set.empty[String]
 
-  private def toJs(
-    j: Json
-  ): js.Any = js.JSON.parse(j.noSpaces)
+  private def toJs(j: Json): js.Any = js.JSON.parse(j.noSpaces)
 
-  private def bool(
-    j: Json,
-    key: String
-  ): Boolean = j.hcursor.get[Boolean](key).getOrElse(false)
+  private def bool(j: Json, key: String): Boolean = j.hcursor.get[Boolean](key).getOrElse(false)
 
   private def fire(): Unit = listeners.values.toList.foreach(_())
 
-  private def setStatus(
-    s: Option[Json]
-  ): Unit = {
+  private def setStatus(s: Option[Json]): Unit = {
     current = s
     currentJs = s.fold[js.Any](null)(toJs)
     Integrations.refresh()
@@ -61,9 +53,7 @@ final class Integration(
   def status: Option[IntegrationState] = current.map(j => IntegrationState(bool(j, "enabled"), bool(j, "connected")))
 
   /** 状態を読む（1回だけ. force で読み直す）. 読めなければ None（連携なしとして扱う） */
-  def load(
-    force: Boolean = false
-  ): Future[Option[Json]] = loading match {
+  def load(force: Boolean = false): Future[Option[Json]] = loading match {
     case Some(f) if !force => f
     case _ =>
       val f = Api.request(dom.HttpMethod.GET, s"/api/integrations/$name", redirectOn401 = false).map(Api.as[Json])
@@ -74,9 +64,7 @@ final class Integration(
   }
 
   /** 状態や項目が変わったときに呼ぶ（エディタの表示の更新）. 戻り値で解除 */
-  def onChange(
-    f: () => Unit
-  ): () => Unit = {
+  def onChange(f: () => Unit): () => Unit = {
     val id = nextId
     nextId += 1
     listeners += id -> f
@@ -84,14 +72,10 @@ final class Integration(
   }
 
   /** 分かっている項目（JS の値. undefined / null の意味は cache と同じ） */
-  def item(
-    key: String
-  ): js.Any = cache.get(key).fold[js.Any](js.undefined)(_._2)
+  def item(key: String): js.Any = cache.get(key).fold[js.Any](js.undefined)(_._2)
 
   /** まだ知らない（または古い）項目だけ、まとめて問い合わせる. 結果が届いたら onChange に知らせる */
-  def request(
-    keys: Seq[String]
-  ): Unit =
+  def request(keys: Seq[String]): Unit =
     if (status.exists(s => s.enabled && s.connected)) {
       val now = js.Date.now()
       val need = keys.distinct.filter(k => !inflight(k) && !cache.get(k).exists(_._1 + Ttl > now))

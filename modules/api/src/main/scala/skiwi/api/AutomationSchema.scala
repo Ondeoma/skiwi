@@ -7,17 +7,11 @@ import java.util.UUID
 
 object AutomationSchema {
   val Triggers = Set("status_changed", "label_added", "page_created", "value_changed", "date_reached")
-  private def uuid(
-    s: Option[String]
-  ) = s.exists(uuidOpt(_).isDefined)
+  private def uuid(s: Option[String]) = s.exists(uuidOpt(_).isDefined)
 
-  def trigger(
-    j: Json
-  ): Either[String, Unit] = {
+  def trigger(j: Json): Either[String, Unit] = {
     val c = j.hcursor
-    def s(
-      k: String
-    ) = c.get[String](k).toOption.filter(_.nonEmpty)
+    def s(k: String) = c.get[String](k).toOption.filter(_.nonEmpty)
     s("type") match {
       case Some(t) if !Triggers(t) => Left("きっかけが正しくありません")
       case None => Left("きっかけが正しくありません")
@@ -35,13 +29,9 @@ object AutomationSchema {
     }
   }
 
-  def action(
-    j: Json
-  ): Either[String, Unit] = {
+  def action(j: Json): Either[String, Unit] = {
     val c = j.hcursor
-    def s(
-      k: String
-    ) = c.get[String](k).toOption.filter(_.nonEmpty)
+    def s(k: String) = c.get[String](k).toOption.filter(_.nonEmpty)
     val base: Either[String, Unit] = s("type") match {
       case Some("notify") =>
         s("to") match {

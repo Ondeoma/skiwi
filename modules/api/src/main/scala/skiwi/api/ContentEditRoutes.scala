@@ -21,10 +21,7 @@ object ContentEditMode {
     Decoder[String].emap(s => values.find(_.toString == s).toRight(s"mode は ${values.mkString(" / ")} のどれかです"))
 }
 
-final case class ContentEditReq(
-  mode: ContentEditMode,
-  markdown: String,
-  heading: Option[String]) derives Decoder
+final case class ContentEditReq(mode: ContentEditMode, markdown: String, heading: Option[String]) derives Decoder
 
 /**
  * 本文を Markdown で書き換える（API・MCP 用）。サーバーで Yjs の状態を読み、変えるブロックだけの update を作って、開いている人にもそのまま届ける。
@@ -34,28 +31,20 @@ final case class ContentEditReq(
  * 置き換える前の本文は版として残す（版の履歴から戻せる）。
  * inject: update を保存して配る（Collab.injectUpdate）
  */
-final class ContentEditRoutes(
-  protected val store: Store,
-  docs: DocStore,
-  ops: OpsStore,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  inject: (UUID, Array[Byte]) => IO[Long]) extends PageRouteSupport {
+final class ContentEditRoutes(protected val store: Store,
+                              docs: DocStore,
+                              ops: OpsStore,
+                              protected val sessions: SessionAuth,
+                              audit: Audit,
+                              inject: (UUID, Array[Byte]) => IO[Long]) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ POST -> Root / "api" / "pages" / UUIDVar(id) / "content" => postPageContent(req, id)
   }
 
-  private def postPageContent(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postPageContent(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        page,
-        _
-      ) =>
+      (s, page, _) =>
         decodeBody[ContentEditReq](req).flatMap {
           case Left(e) => err(ErrorCode.InvalidInput, e)
           case Right(b) if b.markdown.length > MaxMarkdown => err(ErrorCode.MarkdownTooLarge)
@@ -71,15 +60,10 @@ final class ContentEditRoutes(
   private val MaxMarkdown = 256 * 1024
   private val MaxBlocks = 5000
 
-  private def doc(
-    blocks: Vector[Json]
-  ): Json = Json.obj("type" -> "doc".asJson, "content" -> Json.fromValues(blocks))
+  private def doc(blocks: Vector[Json]): Json = Json.obj("type" -> "doc".asJson, "content" -> Json.fromValues(blocks))
 
   /** 見出しの節の範囲（最上位のブロックの番号。until は含まない）。 */
-  private def section(
-    blocks: Vector[Json],
-    heading: String
-  ): Either[String, (Int, Int)] = {
+  private def section(blocks: Vector[Json], heading: String): Either[String, (Int, Int)] = {
     // (見出しの階層, 文字)。見出しでなければ None
     val heads = blocks.map { b =>
       val c = b.hcursor
@@ -99,12 +83,7 @@ final class ContentEditRoutes(
     }
   }
 
-  private def edit(
-    s: AuthSession,
-    page: Page,
-    b: ContentEditReq,
-    newBlocks: Vector[Json]
-  ): IO[Response[IO]] =
+  private def edit(s: AuthSession, page: Page, b: ContentEditReq, newBlocks: Vector[Json]): IO[Response[IO]] =
     docs.load(page.id).flatMap { parts =>
       // Yjs の状態を読む（CPU を使うので、計算用のスレッドを長く占めないよう blocking で）
       IO.blocking(YEdit.load(parts.snapshots.map(_._2) ++ parts.updates.map(_._2))).attempt

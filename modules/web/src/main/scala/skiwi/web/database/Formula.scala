@@ -12,46 +12,33 @@ object Val {
 
   case object Null extends Val
 
-  final case class Num(
-    v: Double) extends Val
+  final case class Num(v: Double) extends Val
 
-  final case class Str(
-    v: String) extends Val
+  final case class Str(v: String) extends Val
 
-  final case class Bool(
-    v: Boolean) extends Val
+  final case class Bool(v: Boolean) extends Val
 
   /** 日付（ミリ秒. 表示・計算はブラウザのタイムゾーン） */
-  final case class Dt(
-    ms: Double) extends Val
+  final case class Dt(ms: Double) extends Val
 
-  final case class Arr(
-    v: List[Val]) extends Val
+  final case class Arr(v: List[Val]) extends Val
 
   /** 保存した値（JSON）を Val に */
-  def of(
-    j: Json
-  ): Val = j.fold(
+  def of(j: Json): Val = j.fold(
     Null,
     Bool(_),
     n => Num(n.toDouble),
     Str(_),
     a => Arr(a.toList.map(of)),
-    o => Str(Json.fromJsonObject(o).noSpaces),
+    o => Str(Json.fromJsonObject(o).noSpaces)
   )
 
-  def of(
-    j: Option[Json]
-  ): Val = j.fold(Null)(of)
+  def of(j: Option[Json]): Val = j.fold(Null)(of)
 
   /** JS の Number(v) */
-  def jsNumber(
-    s: String
-  ): Double = js.Dynamic.global.Number(s).asInstanceOf[Double]
+  def jsNumber(s: String): Double = js.Dynamic.global.Number(s).asInstanceOf[Double]
 
-  def jsNumber(
-    v: Val
-  ): Double = v match {
+  def jsNumber(v: Val): Double = v match {
     case Num(d) => d
     case Str(s) => jsNumber(s)
     case Bool(b) => if (b) 1 else 0
@@ -63,14 +50,10 @@ object Val {
   }
 
   /** JS の parseFloat */
-  def parseFloat(
-    s: String
-  ): Double = js.Dynamic.global.parseFloat(s).asInstanceOf[Double]
+  def parseFloat(s: String): Double = js.Dynamic.global.parseFloat(s).asInstanceOf[Double]
 
   /** JS の !!v */
-  def truthy(
-    v: Val
-  ): Boolean = v match {
+  def truthy(v: Val): Boolean = v match {
     case Null => false
     case Num(d) => !(d == 0 || d.isNaN)
     case Str(s) => s.nonEmpty
@@ -79,9 +62,7 @@ object Val {
   }
 
   /** JS の String(v) */
-  def jsString(
-    v: Val
-  ): String = v match {
+  def jsString(v: Val): String = v match {
     case Null => ""
     case Num(d) => d.toString
     case Str(s) => s
@@ -104,8 +85,7 @@ object Formula {
 
   import Val.*
 
-  final class FormulaError(
-    msg: String) extends Exception(msg)
+  final class FormulaError(msg: String) extends Exception(msg)
 
   private enum Tok {
     case TNum(
@@ -139,22 +119,15 @@ object Formula {
 
   private val NumRe = """^\d*\.?\d+([eE][+-]?\d+)?""".r
 
-  private def isSpace(
-    c: Char
-  ): Boolean = c.isWhitespace || c == ' ' || c == '﻿'
+  private def isSpace(c: Char): Boolean = c.isWhitespace || c == ' ' || c == '﻿'
 
-  private def isIdStart(
-    c: Char
-  ): Boolean = Character.isLetter(c) || c == '_'
+  private def isIdStart(c: Char): Boolean = Character.isLetter(c) || c == '_'
 
-  private def isIdPart(
-    c: Char
-  ): Boolean = Character.isLetterOrDigit(c) || c == '_' || Character.getType(c) == Character.LETTER_NUMBER ||
+  private def isIdPart(c: Char): Boolean = Character.isLetterOrDigit(c) || c == '_' ||
+    Character.getType(c) == Character.LETTER_NUMBER ||
     Character.getType(c) == Character.OTHER_NUMBER
 
-  private def tokenize(
-    src: String
-  ): List[Tok] = {
+  private def tokenize(src: String): List[Tok] = {
     val out = List.newBuilder[Tok]
     var i = 0
     while (i < src.length) {
@@ -208,18 +181,12 @@ object Formula {
       "%" -> 6
     )
 
-  def parse(
-    src: String
-  ): Node = {
+  def parse(src: String): Node = {
     val toks = tokenize(src).toVector
     var p = 0
     def peek: Option[Tok] = toks.lift(p)
-    def isOp(
-      v: String
-    ): Boolean = peek.contains(TOp(v))
-    def expect(
-      v: String
-    ): Unit = { if (!isOp(v)) throw FormulaError(s"「$v」が必要です"); p += 1 }
+    def isOp(v: String): Boolean = peek.contains(TOp(v))
+    def expect(v: String): Unit = { if (!isOp(v)) throw FormulaError(s"「$v」が必要です"); p += 1 }
     def primary(): Node = {
       val t = toks.lift(p)
       p += 1
@@ -244,9 +211,7 @@ object Formula {
         case Some(TOp(v)) => throw FormulaError(s"「$v」の位置が正しくありません")
       }
     }
-    def expr(
-      min: Int
-    ): Node = {
+    def expr(min: Int): Node = {
       var a = primary()
       var go = true
       while (go) peek match {
@@ -266,24 +231,18 @@ object Formula {
 
   private val Day = 86400000.0
 
-  def ymd(
-    d: js.Date
-  ): String = f"${d.getFullYear().toInt}%d-${d.getMonth().toInt + 1}%02d-${d.getDate().toInt}%02d"
+  def ymd(d: js.Date): String = f"${d.getFullYear().toInt}%d-${d.getMonth().toInt + 1}%02d-${d.getDate().toInt}%02d"
 
   private val DateRe = """^\d{4}-\d{2}-\d{2}""".r
 
-  private def toDate(
-    v: Val
-  ): Option[Double] = v match {
+  private def toDate(v: Val): Option[Double] = v match {
     case Dt(ms) => Some(ms)
     case Str(s) if DateRe.findPrefixOf(s).isDefined =>
       Some(new js.Date(if (s.length == 10) s + "T00:00:00" else s).getTime())
     case _ => None
   }
 
-  private def num(
-    v: Val
-  ): Double = v match {
+  private def num(v: Val): Double = v match {
     case Num(d) => d
     case Bool(b) => if (b) 1 else 0
     case Str(s) if s.trim.nonEmpty && !jsNumber(s).isNaN => jsNumber(s)
@@ -291,9 +250,7 @@ object Formula {
     case _ => Double.NaN
   }
 
-  def show(
-    v: Val
-  ): String = v match {
+  def show(v: Val): String = v match {
     case Null => ""
     case Dt(ms) => ymd(new js.Date(ms))
     case Arr(xs) => xs.map(show).mkString(", ")
@@ -302,29 +259,20 @@ object Formula {
     case Str(s) => s
   }
 
-  private def empty(
-    v: Val
-  ): Boolean = v match {
+  private def empty(v: Val): Boolean = v match {
     case Null | Str("") | Arr(Nil) => true
     case Num(d) => d.isNaN
     case _ => false
   }
 
-  private def eq(
-    a: Val,
-    b: Val
-  ): Boolean = (a, b) match {
+  private def eq(a: Val, b: Val): Boolean = (a, b) match {
     case (_: Dt, _) | (_, _: Dt) => toDate(a) == toDate(b)
     case (_: Num, _) | (_, _: Num) => num(a) == num(b)
     case (Arr(xs), _) => xs.exists(eq(_, b))
     case _ => show(a) == show(b)
   }
 
-  private def addUnit(
-    ms: Double,
-    n: Double,
-    unit: String
-  ): Val = {
+  private def addUnit(ms: Double, n: Double, unit: String): Val = {
     val r = new js.Date(ms)
     if (unit.startsWith("year")) r.setFullYear(r.getFullYear() + n)
     else if (unit.startsWith("month")) r.setMonth(r.getMonth() + n)
@@ -334,17 +282,10 @@ object Formula {
     Dt(r.getTime())
   }
 
-  private def truthy(
-    v: Val
-  ): Boolean = !empty(v) && v != Bool(false) && v != Num(0)
+  private def truthy(v: Val): Boolean = !empty(v) && v != Bool(false) && v != Num(0)
 
-  private def evaluate(
-    n: Node,
-    prop: String => Val
-  ): Val = {
-    def ev(
-      x: Node
-    ) = evaluate(x, prop)
+  private def evaluate(n: Node, prop: String => Val): Val = {
+    def ev(x: Node) = evaluate(x, prop)
     n match {
       case Lit(v) => v
       case Un(op, a) => val x = ev(a); if (op == "-") Num(-num(x)) else Bool(!truthy(x))
@@ -393,13 +334,7 @@ object Formula {
     }
   }
 
-  private def cmp(
-    op: String,
-    lt: Boolean,
-    gt: Boolean,
-    le: Boolean,
-    ge: Boolean
-  ): Boolean =
+  private def cmp(op: String, lt: Boolean, gt: Boolean, le: Boolean, ge: Boolean): Boolean =
     op match {
       case "<" => lt
       case ">" => gt
@@ -407,42 +342,25 @@ object Formula {
       case _ => ge
     }
 
-  private def flat(
-    a: List[Val]
-  ): List[Val] = a.flatMap {
+  private def flat(a: List[Val]): List[Val] = a.flatMap {
     case Arr(xs) => xs
     case x => List(x)
   }
 
-  private def arg(
-    a: List[Val],
-    i: Int
-  ): Val = a.lift(i).getOrElse(Null)
+  private def arg(a: List[Val], i: Int): Val = a.lift(i).getOrElse(Null)
 
   /** a[i] ?? 既定値 */
-  private def argOr(
-    a: List[Val],
-    i: Int,
-    d: Val
-  ): Val = a.lift(i).filter(_ != Null).getOrElse(d)
+  private def argOr(a: List[Val], i: Int, d: Val): Val = a.lift(i).filter(_ != Null).getOrElse(d)
 
-  private def dateNum(
-    a: List[Val],
-    f: js.Date => Double
-  ): Val = toDate(arg(a, 0)).fold[Val](Null)(ms => Num(f(new js.Date(ms))))
+  private def dateNum(a: List[Val], f: js.Date => Double): Val =
+    toDate(arg(a, 0)).fold[Val](Null)(ms => Num(f(new js.Date(ms))))
 
-  private def replaceOnce(
-    s: String,
-    from: String,
-    to: String
-  ): String = {
+  private def replaceOnce(s: String, from: String, to: String): String = {
     val i = s.indexOf(from)
     if (i < 0) s else s.substring(0, i) + to + s.substring(i + from.length)
   }
 
-  private def p2(
-    d: Double
-  ): String = f"${d.toInt}%02d"
+  private def p2(d: Double): String = f"${d.toInt}%02d"
 
   private val Funcs: Map[String, List[Val] => Val] = Map(
     "if" -> (_ => Null),
@@ -546,15 +464,10 @@ object Formula {
 
   private val cache = mutable.Map.empty[String, Either[String, Node]]
 
-  private def message(
-    e: Throwable
-  ): String = Option(e.getMessage).getOrElse(e.toString)
+  private def message(e: Throwable): String = Option(e.getMessage).getOrElse(e.toString)
 
   /** 式を計算する（解析した結果は覚えておく）。エラーは「⚠ …」の文字にする */
-  def run(
-    expr: String,
-    prop: String => Val
-  ): Val = {
+  def run(expr: String, prop: String => Val): Val = {
     val ast = cache.getOrElseUpdate(
       expr,
       try Right(parse(expr))
@@ -568,9 +481,7 @@ object Formula {
   }
 
   /** 式を読めるか（読めなければその理由） */
-  def check(
-    expr: String
-  ): Option[String] = try { parse(expr); None }
+  def check(expr: String): Option[String] = try { parse(expr); None }
   catch { case e: Throwable => Some(message(e)) }
 
 }

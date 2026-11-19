@@ -11,37 +11,33 @@ import java.time.Instant
 import java.util.UUID
 
 /** SCIMのユーザー。userName は OIDC の sub と同じ値（IdP側でsubjectをユーザー名にする設定が前提）。 */
-final case class ScimUser(
-  id: UUID,
-  userName: String,
-  externalId: Option[String],
-  name: String,
-  email: Option[String],
-  active: Boolean,
-  createdAt: Instant,
-  updatedAt: Instant)
+final case class ScimUser(id: UUID,
+                          userName: String,
+                          externalId: Option[String],
+                          name: String,
+                          email: Option[String],
+                          active: Boolean,
+                          createdAt: Instant,
+                          updatedAt: Instant)
 
-final case class ScimGroup(
-  id: UUID,
-  displayName: String,
-  externalId: Option[String],
-  members: List[(UUID, String)],
-  createdAt: Instant,
-  updatedAt: Instant)
+final case class ScimGroup(id: UUID,
+                           displayName: String,
+                           externalId: Option[String],
+                           members: List[(UUID, String)],
+                           createdAt: Instant,
+                           updatedAt: Instant)
 
-final case class ScimUserInput(
-  userName: String,
-  externalId: Option[String],
-  name: String,
-  email: Option[String],
-  active: Boolean)
+final case class ScimUserInput(userName: String,
+                               externalId: Option[String],
+                               name: String,
+                               email: Option[String],
+                               active: Boolean)
 
 /**
  * SCIM 2.0（IdPからのプッシュ）用の永続化。
  * ユーザーは sub(=userName) で、グループは external_id(=表示名) でOIDCログイン側と突き合わせる。
  */
-final class ScimStore(
-  xa: Transactor[IO]) extends TxStore(xa) {
+final class ScimStore(xa: Transactor[IO]) extends TxStore(xa) {
 
   private val userCols = fr"id, sub, scim_external_id, name, email, not disabled, created_at, updated_at"
 
@@ -51,9 +47,7 @@ final class ScimStore(
   // ---------------------------------------------------------------- users
 
   /** 作成（既存の同名ユーザーがいればそれを更新して返す。ログインが先行した場合に対応）。 */
-  def upsertUser(
-    in: ScimUserInput
-  ): IO[ScimUser] = tx(
+  def upsertUser(in: ScimUserInput): IO[ScimUser] = tx(
     (fr"""insert into app_user (sub, username, scim_external_id, name, email, disabled)
           values (${in.userName}, ${in.userName}, ${in.externalId}, ${in.name}, ${in.email}, ${!in.active})
           on conflict (sub) do update set
@@ -62,17 +56,11 @@ final class ScimStore(
           returning""" ++ userCols).query[ScimUser].unique
   )
 
-  def getUser(
-    id: UUID
-  ): IO[Option[ScimUser]] = tx(
-    (fr"select" ++ userCols ++ fr"from app_user where id = $id and" ++ notAgent).query[ScimUser].option
-  )
+  def getUser(id: UUID): IO[Option[ScimUser]] =
+    tx((fr"select" ++ userCols ++ fr"from app_user where id = $id and" ++ notAgent).query[ScimUser].option)
 
   /** 置き換え（PUT）。無効化された場合はセッションとグループ所属を消す。 */
-  def replaceUser(
-    id: UUID,
-    in: ScimUserInput
-  ): IO[Option[ScimUser]] = tx {
+  def replaceUser(id: UUID, in: ScimUserInput): IO[Option[ScimUser]] = tx {
     (fr"""update app_user set sub = ${in.userName}, username = ${in.userName}, scim_external_id = ${in.externalId},
             name = ${in.name}, email = ${in.email}, disabled = ${!in.active}, updated_at = now()
           where id = $id and""" ++ notAgent ++ fr"returning" ++ userCols).query[ScimUser].option.flatTap {
@@ -81,16 +69,12 @@ final class ScimStore(
     }
   }
 
-  private def deactivateC(
-    id: UUID
-  ): ConnectionIO[Unit] =
+  private def deactivateC(id: UUID): ConnectionIO[Unit] =
     sql"delete from session where user_id = $id".update.run *>
       sql"delete from group_member where user_id = $id".update.run.void
 
   /** 削除。作成者・版の作者などの参照を保つため、行は残して無効化する。 */
-  def deleteUser(
-    id: UUID
-  ): IO[Boolean] = tx {
+  def deleteUser(id: UUID): IO[Boolean] = tx {
     (fr"update app_user set disabled = true, updated_at = now() where id = $id and" ++ notAgent).update.run.flatMap {
       case 0 => false.pure[ConnectionIO]
       case _ => deactivateC(id).as(true)
@@ -98,15 +82,13 @@ final class ScimStore(
   }
 
   /** 一覧の絞り込み（attrs: 属性名 → 列。id は共通）と、件数・ページ分けした行（startIndex は1始まり） */
-  private def page[A: Read](
-    table: String,
-    cols: Fragment,
-    attrs: Map[String, String],
-    filter: Option[(String, String)],
-    startIndex: Int,
-    count: Int,
-    base: Fragment = fr"true"
-  ): ConnectionIO[(Int, List[A])] = {
+  private def page[A: Read](table: String,
+                            cols: Fragment,
+                            attrs: Map[String, String],
+                            filter: Option[(String, String)],
+                            startIndex: Int,
+                            count: Int,
+                            base: Fragment = fr"true"): ConnectionIO[(Int, List[A])] = {
     val cond = fr"where" ++ base ++
       (filter match {
         case Some(("id", v)) => fr"and id::text = $v"
@@ -124,12 +106,8 @@ final class ScimStore(
   }
 
   /** filter は userName / externalId の eq のみ対応。 */
-  def listUsers(
-    filter: Option[(String, String)],
-    startIndex: Int,
-    count: Int
-  ): IO[(Int, List[ScimUser])] = tx(
-    page[ScimUser](
+  def listUsers(filter: Option[(String, String)], startIndex: Int, count: Int): IO[(Int, List[ScimUser])] =
+    tx(page[ScimUser](
       "app_user",
       userCols,
       Map("username" -> "sub", "externalid" -> "scim_external_id"),
@@ -137,8 +115,7 @@ final class ScimStore(
       startIndex,
       count,
       notAgent
-    )
-  )
+    ))
 
   // ---------------------------------------------------------------- groups
 
@@ -146,9 +123,7 @@ final class ScimStore(
   private val groupCols = fr"id, name, scim_external_id, created_at, updated_at"
 
   /** グループの行にメンバーを付ける（メンバーはまとめて読む） */
-  private def withMembersC(
-    rows: List[GroupRow]
-  ): ConnectionIO[List[ScimGroup]] = {
+  private def withMembersC(rows: List[GroupRow]): ConnectionIO[List[ScimGroup]] = {
     val ids = rows.map(_._1).toArray
     val members =
       if ids.isEmpty then Map.empty[UUID, List[(UUID, String)]].pure[ConnectionIO]
@@ -157,33 +132,19 @@ final class ScimStore(
                  where m.group_id = any($ids) order by u.name""".query[(UUID, UUID, String)].to[List]
           .map(_.groupMap(_._1)(r => (r._2, r._3)))
     members.map(ms =>
-      rows.map(
-        (
-          id,
-          n,
-          ext,
-          c,
-          u
-        ) => ScimGroup(id, n, ext, ms.getOrElse(id, Nil), c, u)
-      )
+      rows.map((id, n, ext, c, u) => ScimGroup(id, n, ext, ms.getOrElse(id, Nil), c, u))
     )
   }
 
-  private def groupRowC(
-    gid: UUID
-  ): ConnectionIO[Option[ScimGroup]] = (fr"select" ++ groupCols ++ fr"from user_group where id = $gid").query[
-    GroupRow
-  ].to[List].flatMap(withMembersC).map(_.headOption)
+  private def groupRowC(gid: UUID): ConnectionIO[Option[ScimGroup]] =
+    (fr"select" ++ groupCols ++ fr"from user_group where id = $gid").query[
+      GroupRow
+    ].to[List].flatMap(withMembersC).map(_.headOption)
 
-  def getGroup(
-    id: UUID
-  ): IO[Option[ScimGroup]] = tx(groupRowC(id))
+  def getGroup(id: UUID): IO[Option[ScimGroup]] = tx(groupRowC(id))
 
   /** 存在するユーザーIDだけをメンバーにする（未知のIDは無視）。 */
-  private def setMembersC(
-    gid: UUID,
-    members: List[UUID]
-  ): ConnectionIO[Unit] = {
+  private def setMembersC(gid: UUID, members: List[UUID]): ConnectionIO[Unit] = {
     val arr = members.distinct.toArray
     sql"delete from group_member where group_id = $gid".update.run *>
       (fr"""insert into group_member (group_id, user_id)
@@ -191,11 +152,7 @@ final class ScimStore(
         fr"on conflict do nothing").update.run.void
   }
 
-  def createGroup(
-    displayName: String,
-    externalId: Option[String],
-    members: List[UUID]
-  ): IO[ScimGroup] = tx {
+  def createGroup(displayName: String, externalId: Option[String], members: List[UUID]): IO[ScimGroup] = tx {
     for {
       gid <-
         sql"""insert into user_group (external_id, name, scim_external_id) values ($displayName, $displayName, $externalId)
@@ -208,12 +165,10 @@ final class ScimStore(
   }
 
   /** 置き換え（PUT）。members が None なら所属は変更しない。 */
-  def replaceGroup(
-    id: UUID,
-    displayName: String,
-    externalId: Option[String],
-    members: Option[List[UUID]]
-  ): IO[Option[ScimGroup]] = tx {
+  def replaceGroup(id: UUID,
+                   displayName: String,
+                   externalId: Option[String],
+                   members: Option[List[UUID]]): IO[Option[ScimGroup]] = tx {
     sql"""update user_group set external_id = $displayName, name = $displayName, scim_external_id = $externalId, updated_at = now()
           where id = $id""".update.run.flatMap {
       case 0 => none[ScimGroup].pure[ConnectionIO]
@@ -221,19 +176,13 @@ final class ScimStore(
     }
   }
 
-  def renameGroup(
-    id: UUID,
-    displayName: String
-  ): IO[Boolean] = tx(
+  def renameGroup(id: UUID, displayName: String): IO[Boolean] = tx(
     sql"update user_group set external_id = $displayName, name = $displayName, updated_at = now() where id = $id".update.run.map(
       _ > 0
     )
   )
 
-  def addMembers(
-    id: UUID,
-    users: List[UUID]
-  ): IO[Unit] = tx {
+  def addMembers(id: UUID, users: List[UUID]): IO[Unit] = tx {
     val arr = users.distinct.toArray
     (fr"""insert into group_member (group_id, user_id)
           select $id, u.id from app_user u where u.id = any($arr) and not u.disabled and""" ++ notAgent ++
@@ -241,24 +190,16 @@ final class ScimStore(
       sql"update user_group set updated_at = now() where id = $id".update.run.void
   }
 
-  def removeMembers(
-    id: UUID,
-    users: List[UUID]
-  ): IO[Unit] = tx {
+  def removeMembers(id: UUID, users: List[UUID]): IO[Unit] = tx {
     val arr = users.distinct.toArray
     sql"delete from group_member where group_id = $id and user_id = any($arr)".update.run *>
       sql"update user_group set updated_at = now() where id = $id".update.run.void
   }
 
-  def replaceMembers(
-    id: UUID,
-    users: List[UUID]
-  ): IO[Unit] = tx(setMembersC(id, users))
+  def replaceMembers(id: UUID, users: List[UUID]): IO[Unit] = tx(setMembersC(id, users))
 
   /** グループ削除。このグループを指すACLエントリも消す。 */
-  def deleteGroup(
-    id: UUID
-  ): IO[Boolean] = tx {
+  def deleteGroup(id: UUID): IO[Boolean] = tx {
     for {
       _ <- sql"delete from page_acl where principal_type = 'group' and principal_id = $id".update.run
       _ <- sql"delete from workspace_acl where principal_type = 'group' and principal_id = $id".update.run
@@ -266,24 +207,13 @@ final class ScimStore(
     } yield n > 0
   }
 
-  def listGroups(
-    filter: Option[(String, String)],
-    startIndex: Int,
-    count: Int
-  ): IO[(Int, List[ScimGroup])] = tx(
-    page[GroupRow](
+  def listGroups(filter: Option[(String, String)], startIndex: Int, count: Int): IO[(Int, List[ScimGroup])] =
+    tx(page[GroupRow](
       "user_group",
       groupCols,
       Map("displayname" -> "name", "externalid" -> "scim_external_id"),
       filter,
       startIndex,
       count
-    )
-      .flatMap(
-        (
-          total,
-          rows
-        ) => withMembersC(rows).map(total -> _)
-      )
-  )
+    ).flatMap((total, rows) => withMembersC(rows).map(total -> _)))
 }

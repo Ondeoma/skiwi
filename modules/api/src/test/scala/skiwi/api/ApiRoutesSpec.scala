@@ -35,10 +35,7 @@ class ApiRoutesSpec extends DbSuite {
   private val fixture = ResourceSuiteLocalFixture("api", res)
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
 
-  private def login(
-    name: String,
-    groups: List[String] = Nil
-  ): IO[String] = {
+  private def login(name: String, groups: List[String] = Nil): IO[String] = {
     val (store, _) = fixture()
     val token = Crypto.randomToken()
     for {
@@ -48,12 +45,10 @@ class ApiRoutesSpec extends DbSuite {
     } yield token
   }
 
-  private def call(
-    token: Option[String],
-    method: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[(Status, Json)] = {
+  private def call(token: Option[String],
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None): IO[(Status, Json)] = {
     val (_, app) = fixture()
     var req = Request[IO](method, Uri.unsafeFromString(path))
     token.foreach(t => req = req.addCookie("skiwi_session", t))
@@ -63,17 +58,10 @@ class ApiRoutesSpec extends DbSuite {
     )
   }
 
-  private def id(
-    j: Json
-  ) = UUID.fromString(j.hcursor.get[String]("id").toOption.get)
+  private def id(j: Json) = UUID.fromString(j.hcursor.get[String]("id").toOption.get)
 
   test("unauthenticated requests get 401") {
-    run(call(None, Method.GET, "/api/me").map(
-      (
-        st,
-        _
-      ) => assertEquals(st, Status.Unauthorized)
-    ))
+    run(call(None, Method.GET, "/api/me").map((st, _) => assertEquals(st, Status.Unauthorized)))
   }
 
   test("me returns Japanese name and groups") {
@@ -91,23 +79,15 @@ class ApiRoutesSpec extends DbSuite {
   }
 
   test("admin group makes isAdmin true") {
-    run(login("boss", List("skiwi-admins")).flatMap(t => call(Some(t), Method.GET, "/api/me")).map(
-      (
-        _,
-        j
-      ) =>
-        assertEquals(j.hcursor.get[Boolean]("isAdmin"), Right(true))
+    run(login("boss", List("skiwi-admins")).flatMap(t => call(Some(t), Method.GET, "/api/me")).map((_, j) =>
+      assertEquals(j.hcursor.get[Boolean]("isAdmin"), Right(true))
     ))
   }
 
   test("workspace favorites are per user and listed first") {
     run {
-      def ids(
-        j: Json
-      ) = j.asArray.get.toList.map(id)
-      def favs(
-        j: Json
-      ) = j.asArray.get.toList.filter(_.hcursor.get[Boolean]("favorite").contains(true)).map(id)
+      def ids(j: Json) = j.asArray.get.toList.map(id)
+      def favs(j: Json) = j.asArray.get.toList.filter(_.hcursor.get[Boolean]("favorite").contains(true)).map(id)
       for {
         owner <- login("fav-owner")
         other <- login("fav-other")
@@ -171,12 +151,7 @@ class ApiRoutesSpec extends DbSuite {
         _ = assertEquals(s3, Status.NotFound)
 
         // other に view を付与 → GET 可、PATCH は 403
-        otherId <- call(Some(other), Method.GET, "/api/me").map(
-          (
-            _,
-            j
-          ) => id(j)
-        )
+        otherId <- call(Some(other), Method.GET, "/api/me").map((_, j) => id(j))
         acl = Json.obj(
           "inherit" -> true.asJson,
           "entries" -> List(

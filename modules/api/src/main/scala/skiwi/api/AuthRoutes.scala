@@ -18,14 +18,13 @@ import java.time.Instant
  * scimManagesGroups=true のとき、ログイン時のgroupsクレームでグループ所属を上書きしない（SCIMを正とする）。
  * devLogin=true（DEV_LOGIN. OIDC を設定しないときだけ）のときは、IdP の代わりに開発用のログイン（/login の画面と /auth/dev-login）を使う。
  */
-final class AuthRoutes(
-  oidc: Option[OidcClient],
-  store: Store,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  scimManagesGroups: Boolean = false,
-  publicUrl: String = "",
-  devLogin: Boolean = false) extends RouteSupport {
+final class AuthRoutes(oidc: Option[OidcClient],
+                       store: Store,
+                       protected val sessions: SessionAuth,
+                       audit: Audit,
+                       scimManagesGroups: Boolean = false,
+                       publicUrl: String = "",
+                       devLogin: Boolean = false) extends RouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
@@ -36,9 +35,7 @@ final class AuthRoutes(
     case req @ POST -> Root / "auth" / "dev-login" if devLogin && oidc.isEmpty => postAuthDevLogin(req)
   }
 
-  private def getAuthLogin(
-    req: Request[IO]
-  ): IO[Response[IO]] = {
+  private def getAuthLogin(req: Request[IO]): IO[Response[IO]] = {
     val state, verifier, nonce = Crypto.randomToken()
     val back = safeReturnTo(req.uri.query.params.get("returnTo")).filter(_ != "/")
     oidc match {
@@ -53,9 +50,7 @@ final class AuthRoutes(
     }
   }
 
-  private def getAuthCallback(
-    req: Request[IO]
-  ): IO[Response[IO]] = {
+  private def getAuthCallback(req: Request[IO]): IO[Response[IO]] = {
     val params = req.uri.query.params
     (params.get("state"), params.get("code"), params.get("error")) match {
       case _ if oidc.isEmpty => err(ErrorCode.OidcNotConfigured)
@@ -94,16 +89,11 @@ final class AuthRoutes(
     }
   }
 
-  private def postAuthLogout(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAuthLogout(req: Request[IO]): IO[Response[IO]] =
     sessions.fromRequest(req).attempt.flatMap { who =>
       who.toOption.flatten.traverse_(s => audit.log(s, "auth.logout", "user", s.user.id)) *>
         sessions.revoke(req).flatMap {
-          (
-            idToken,
-            c
-          ) =>
+          (idToken, c) =>
             (if publicUrl.isEmpty then IO.pure(None)
              else oidc.flatTraverse(_.logoutUri(idToken, s"${publicUrl.stripSuffix("/")}/"))).map { idp =>
               Response[IO](Status.Ok).withEntity(Json.obj("redirect" ->
@@ -112,9 +102,7 @@ final class AuthRoutes(
         }
     }
 
-  private def postAuthDevLogin(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postAuthDevLogin(req: Request[IO]): IO[Response[IO]] =
     body[Json](req) { j =>
       val c = j.hcursor
       val name = c.get[String]("name").getOrElse("").trim
@@ -143,9 +131,7 @@ final class AuthRoutes(
         }
     }
 
-  private def redirect(
-    to: String
-  ): Response[IO] =
+  private def redirect(to: String): Response[IO] =
     Response[IO](Status.Found).putHeaders(Location(Uri.unsafeFromString(to)))
 
   /**
@@ -153,10 +139,7 @@ final class AuthRoutes(
    * IdP からの戻りはトップレベルの GET なので SameSite=Lax でも送られる。
    */
   private val StateCookie = "skiwi_login_state"
-  private def stateCookie(
-    v: String,
-    maxAge: Long
-  ) =
+  private def stateCookie(v: String, maxAge: Long) =
     ResponseCookie(
       StateCookie,
       v,

@@ -15,17 +15,16 @@ import java.util.UUID
 type AccessChanged = IO[Unit]
 
 /** REST API（Cookieセッション or APIトークン）。権限のないリソースは存在を隠すため 404、閲覧可だが編集不可は 403。 */
-final class ApiRoutes(
-  protected val store: Store,
-  docs: DocStore,
-  ops: OpsStore,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  accessChanged: AccessChanged = IO.unit,
-  shares: Option[ShareStore] = None,
-  webhooks: Option[WebhookService] = None,
-  databases: Option[skiwi.db.DatabaseStore] = None,
-  automations: Option[Automations] = None) extends PageRouteSupport {
+final class ApiRoutes(protected val store: Store,
+                      docs: DocStore,
+                      ops: OpsStore,
+                      protected val sessions: SessionAuth,
+                      audit: Audit,
+                      accessChanged: AccessChanged = IO.unit,
+                      shares: Option[ShareStore] = None,
+                      webhooks: Option[WebhookService] = None,
+                      databases: Option[skiwi.db.DatabaseStore] = None,
+                      automations: Option[Automations] = None) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
@@ -54,22 +53,14 @@ final class ApiRoutes(
       postPageVersionRestore(req, id, vid)
   }
 
-  private def getMe(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getMe(req: Request[IO]): IO[Response[IO]] =
     authed(req)(s =>
-      (AvatarRoutes.urls(ops, List(s.user.id)), sessions.appNames(req)).flatMapN(
-        (
-          av,
-          names
-        ) =>
-          Ok(MeDto(s.user.id, s.user.name, s.user.email, s.groups.map(_.name), s.isAdmin, av.get(s.user.id), names))
+      (AvatarRoutes.urls(ops, List(s.user.id)), sessions.appNames(req)).flatMapN((av, names) =>
+        Ok(MeDto(s.user.id, s.user.name, s.user.email, s.groups.map(_.name), s.isAdmin, av.get(s.user.id), names))
       )
     )
 
-  private def getDirectory(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getDirectory(req: Request[IO]): IO[Response[IO]] =
     authed(req) { _ =>
       val q = req.uri.query.params.getOrElse("q", "").trim
       if q.isEmpty then Ok(List.empty[DirectoryDto])
@@ -77,29 +68,16 @@ final class ApiRoutes(
         ops.searchDirectory(q.take(100)).flatMap(es => Ok(es.map(e => DirectoryDto(e.tpe, e.id, e.name, e.detail))))
     }
 
-  private def getWorkspaces(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getWorkspaces(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       (store.listWorkspaces(s), ops.favoriteWorkspaces(s.user.id)).flatMapN {
-        (
-          ws,
-          favs
-        ) =>
-          val dtos = ws.map(
-            (
-              w,
-              r
-            ) => WorkspaceDto(w.id, w.name, r, favs(w.id))
-          )
+        (ws, favs) =>
+          val dtos = ws.map((w, r) => WorkspaceDto(w.id, w.name, r, favs(w.id)))
           Ok(dtos.filter(_.favorite) ++ dtos.filterNot(_.favorite))
       }
     }
 
-  private def putWorkspaceFavorite(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putWorkspaceFavorite(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       body[FavoriteDto](req) { b =>
         // 見えるワークスペースだけ登録できる（存在の有無を漏らさないよう、見えなければ404）
@@ -110,9 +88,7 @@ final class ApiRoutes(
       }
     }
 
-  private def postWorkspaces(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postWorkspaces(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       decodeBody[CreateWorkspaceReq](req).flatMap {
         case Right(b) if validName(b.name, MaxWorkspaceName).isDefined =>
@@ -123,34 +99,17 @@ final class ApiRoutes(
       }
     }
 
-  private def getWorkspaceAcl(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getWorkspaceAcl(req: Request[IO], id: UUID): IO[Response[IO]] =
     withWs(req, id, Role.Edit) {
-      (
-        _,
-        ws,
-        _
-      ) =>
-        (store.workspaceAcl(id), store.workspaceAclExpiry(id)).flatMapN(
-          (
-            es,
-            ex
-          ) => aclView(es, ex)
-        ).flatMap(v => Ok(WorkspaceAclViewDto(ws.defaultRole, v)))
+      (_, ws, _) =>
+        (store.workspaceAcl(id), store.workspaceAclExpiry(id)).flatMapN((es, ex) => aclView(es, ex)).flatMap(v =>
+          Ok(WorkspaceAclViewDto(ws.defaultRole, v))
+        )
     }
 
-  private def putWorkspaceAcl(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putWorkspaceAcl(req: Request[IO], id: UUID): IO[Response[IO]] =
     withWs(req, id, Role.Edit) {
-      (
-        s,
-        ws,
-        _
-      ) =>
+      (s, ws, _) =>
         body[WorkspaceAclDto](req) { b =>
           // 設定者自身が締め出されないよう、自分のEdit権限を保持する（管理者以外）
           val entries =
@@ -177,10 +136,7 @@ final class ApiRoutes(
         }
     }
 
-  private def getWorkspacePages(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getWorkspacePages(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       (
         store.listPages(id, s),
@@ -190,36 +146,22 @@ final class ApiRoutes(
         store.lockedIn(id),
         store.fullWidthIn(id)
       ).flatMapN {
-        (
-          ps,
-          pub,
-          labels,
-          dbIds,
-          locked,
-          wide
-        ) =>
+        (ps, pub, labels, dbIds, locked, wide) =>
           store.pageMeta(ps.map(_._1.id)).flatMap { meta =>
-            Ok(ps.map(
-              (
-                p,
-                r
-              ) =>
-                PageDto.of(p, r).withMeta(meta.get(p.id)).copy(
-                  published = pub(p.id),
-                  labels = labels.getOrElse(p.id, Nil),
-                  database = dbIds(p.id),
-                  locked = locked(p.id),
-                  fullWidth = wide(p.id)
-                )
+            Ok(ps.map((p, r) =>
+              PageDto.of(p, r).withMeta(meta.get(p.id)).copy(
+                published = pub(p.id),
+                labels = labels.getOrElse(p.id, Nil),
+                database = dbIds(p.id),
+                locked = locked(p.id),
+                fullWidth = wide(p.id)
+              )
             ))
           }
       }
     }
 
-  private def postWorkspacePages(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postWorkspacePages(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       body[CreatePageReq](req) { b =>
         placement(b.afterId, b.placement) match {
@@ -255,28 +197,12 @@ final class ApiRoutes(
       }
     }
 
-  private def getPage(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
-    withPage(req, id, Role.View)(
-      (
-        _,
-        p,
-        r
-      ) => fullDto(p, r).flatMap(Ok(_))
-    )
+  private def getPage(req: Request[IO], id: UUID): IO[Response[IO]] =
+    withPage(req, id, Role.View)((_, p, r) => fullDto(p, r).flatMap(Ok(_)))
 
-  private def patchPage(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def patchPage(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        p,
-        r
-      ) =>
+      (s, p, r) =>
         body[UpdatePageReq](req) {
           case b if b.icon.flatten.exists(_.length > 32) => err(ErrorCode.IconTooLong)
           case b if b.status.flatten.exists(st => !UpdatePageReq.Statuses(st)) =>
@@ -317,16 +243,9 @@ final class ApiRoutes(
         }
     }
 
-  private def postPageMove(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postPageMove(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        p,
-        r
-      ) =>
+      (s, p, r) =>
         body[MovePageReq](req) { b =>
           placement(b.afterId, b.placement) match {
             case Left(m) => err(ErrorCode.InvalidInput, m)
@@ -369,16 +288,9 @@ final class ApiRoutes(
         }
     }
 
-  private def deletePage(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deletePage(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        p,
-        _
-      ) =>
+      (s, p, _) =>
         uneditableDescendants(s, id, inTrash = false).flatMap {
           case n if n > 0 => err(ErrorCode.DescendantsNotEditable, descendantsBlocked(n))
           case _ =>
@@ -397,32 +309,18 @@ final class ApiRoutes(
         }
     }
 
-  private def getPageAcl(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageAcl(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        _,
-        _,
-        _
-      ) =>
+      (_, _, _) =>
         store.getPageAcl(id).flatMap {
           case None => err(ErrorCode.PageNotFound)
           case Some(a) => aclView(a.entries, a.expires).flatMap(v => Ok(AclViewDto(a.inherit, v)))
         }
     }
 
-  private def putPageAcl(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putPageAcl(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        _,
-        _
-      ) =>
+      (s, _, _) =>
         body[AclDto](req) { b =>
           val entries =
             b.entries.map(e => AclEntry(Principal(e.principalType, e.principalId), e.role)).distinctBy(_.principal)
@@ -451,36 +349,17 @@ final class ApiRoutes(
         }
     }
 
-  private def getPageWatch(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
-    withPage(req, id, Role.View)(
-      (
-        s,
-        _,
-        _
-      ) => watchState(id, s).flatMap(Ok(_))
-    )
+  private def getPageWatch(req: Request[IO], id: UUID): IO[Response[IO]] =
+    withPage(req, id, Role.View)((s, _, _) => watchState(id, s).flatMap(Ok(_)))
 
-  private def putPageWatch(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putPageWatch(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.View) {
-      (
-        s,
-        _,
-        _
-      ) =>
+      (s, _, _) =>
         body[SetWatchReq](req) { b =>
           val set =
             if b.edits.isDefined || b.comments.isDefined || b.subtree.isDefined then
               ops.watchState(id, s.user.id).flatMap {
-                (
-                  own,
-                  _
-                ) =>
+                (own, _) =>
                   val cur = own.getOrElse(skiwi.db.WatchOpts(true, true, false))
                   ops.setWatchOpts(
                     id,
@@ -497,61 +376,30 @@ final class ApiRoutes(
         }
     }
 
-  private def getPageContent(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageContent(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.View) {
-      (
-        _,
-        p,
-        _
-      ) =>
+      (_, p, _) =>
         docs.currentContent(id).flatMap {
           case Some((json, text, at)) => Ok(PageContentDto(parseOrNull(json), text, at))
           case None => Ok(PageContentDto(Json.Null, "", p.createdAt))
         }
     }
 
-  private def getPageVersions(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
-    withPage(req, id, Role.View)(
-      (
-        _,
-        _,
-        _
-      ) => docs.listVersions(id).flatMap(vs => Ok(vs.map(versionDto)))
-    )
+  private def getPageVersions(req: Request[IO], id: UUID): IO[Response[IO]] =
+    withPage(req, id, Role.View)((_, _, _) => docs.listVersions(id).flatMap(vs => Ok(vs.map(versionDto))))
 
-  private def getPageVersion(
-    req: Request[IO],
-    id: UUID,
-    vid: UUID
-  ): IO[Response[IO]] =
+  private def getPageVersion(req: Request[IO], id: UUID, vid: UUID): IO[Response[IO]] =
     withPage(req, id, Role.View) {
-      (
-        _,
-        _,
-        _
-      ) =>
+      (_, _, _) =>
         docs.getVersion(id, vid).flatMap {
           case Some((m, json, text)) => Ok(VersionContentDto(versionDto(m), parseOrNull(json), text))
           case None => err(ErrorCode.PageVersionNotFound)
         }
     }
 
-  private def postPageVersions(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postPageVersions(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        _,
-        _
-      ) =>
+      (s, _, _) =>
         body[DocStateReq](req) {
           case b if b.content.isObject =>
             decodeYdoc(b.ydoc) match {
@@ -573,17 +421,9 @@ final class ApiRoutes(
         }
     }
 
-  private def postPageVersionRestore(
-    req: Request[IO],
-    id: UUID,
-    vid: UUID
-  ): IO[Response[IO]] =
+  private def postPageVersionRestore(req: Request[IO], id: UUID, vid: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        _,
-        _
-      ) =>
+      (s, _, _) =>
         body[DocStateReq](req) {
           case b if b.content.isObject =>
             decodeYdoc(b.ydoc) match {
@@ -614,10 +454,7 @@ final class ApiRoutes(
         }
     }
 
-  private def fullDto(
-    p: Page,
-    r: Role
-  ): IO[PageDto] =
+  private def fullDto(p: Page, r: Role): IO[PageDto] =
     store.pageDetail(p.id).map(d =>
       PageDto.of(p, r).withMeta(Some(d.meta)).copy(
         database = databases.isDefined && d.database,
@@ -626,10 +463,7 @@ final class ApiRoutes(
       )
     )
 
-  private def placement(
-    afterId: Option[UUID],
-    kw: Option[String]
-  ): Either[String, Placement] =
+  private def placement(afterId: Option[UUID], kw: Option[String]): Either[String, Placement] =
     (afterId, kw.map(_.toLowerCase)) match {
       case (Some(id), _) => Right(Placement.After(id))
       case (None, None | Some("last")) => Right(Placement.Last)
@@ -637,10 +471,7 @@ final class ApiRoutes(
       case (None, Some(other)) => Left(s"置き場所が正しくありません: $other")
     }
 
-  private def aclView(
-    entries: List[AclEntry],
-    expires: Map[Principal, java.time.Instant]
-  ): IO[List[AclEntryViewDto]] =
+  private def aclView(entries: List[AclEntry], expires: Map[Principal, java.time.Instant]): IO[List[AclEntryViewDto]] =
     ops.principalNames(entries.map(_.principal.id)).map { names =>
       entries.map { e =>
         val n = names.get(e.principal.id)
@@ -656,18 +487,14 @@ final class ApiRoutes(
     }
 
   /** 期限付きのエントリ（過去の日時は無視する） */
-  private def expiries(
-    es: List[AclEntryDto]
-  ): Map[Principal, java.time.Instant] = {
+  private def expiries(es: List[AclEntryDto]): Map[Principal, java.time.Instant] = {
     val now = java.time.Instant.now()
     es.collect {
       case e if e.expiresAt.exists(_.isAfter(now)) => Principal(e.principalType, e.principalId) -> e.expiresAt.get
     }.toMap
   }
 
-  private def aclJson(
-    entries: List[AclEntry]
-  ): Json =
+  private def aclJson(entries: List[AclEntry]): Json =
     entries.map(e =>
       Json.obj(
         "type" -> e.principal.tpe.asString.asJson,
@@ -677,27 +504,19 @@ final class ApiRoutes(
     ).asJson
 
   /** 新たに付与された（または権限が上がった）プリンシパル。共有通知の対象。 */
-  private def granted(
-    before: List[AclEntry],
-    after: List[AclEntry]
-  ): List[(Principal, Role)] = {
+  private def granted(before: List[AclEntry], after: List[AclEntry]): List[(Principal, Role)] = {
     val old = before.map(e => e.principal -> e.role).toMap
     after.collect { case e if old.get(e.principal).forall(_ < e.role) => e.principal -> e.role }
   }
 
   /** 共有通知をメールアウトボックスに積む（本人は除く）。 */
-  private def notifyShared(
-    s: AuthSession,
-    pageId: Option[UUID],
-    wsName: Option[String],
-    grants: List[(Principal, Role)],
-    wsId: Option[UUID] = None
-  ): IO[Unit] =
+  private def notifyShared(s: AuthSession,
+                           pageId: Option[UUID],
+                           wsName: Option[String],
+                           grants: List[(Principal, Role)],
+                           wsId: Option[UUID] = None): IO[Unit] =
     grants.groupMap(_._2)(_._1).toList.traverse_ {
-      (
-        role,
-        ps
-      ) =>
+      (role, ps) =>
         ops.expandToUsers(ps).flatMap { users =>
           val to = users - s.user.id
           pageId match {
@@ -707,20 +526,12 @@ final class ApiRoutes(
         }
     }.handleErrorWith(e => sbirds.observe.Log.report(ErrorCode.NotifyEnqueueFailed, s"share: $e", e))
 
-  private def versionDto(
-    v: skiwi.db.VersionMeta
-  ) = VersionDto(v.id, v.createdAt, v.label, v.createdBy, v.authors)
+  private def versionDto(v: skiwi.db.VersionMeta) = VersionDto(v.id, v.createdAt, v.label, v.createdBy, v.authors)
 
   /** ウォッチの状態（祖先のウォッチは、閲覧できるものだけ示す） */
-  private def watchState(
-    id: UUID,
-    s: AuthSession
-  ): IO[WatchStateDto] =
+  private def watchState(id: UUID, s: AuthSession): IO[WatchStateDto] =
     ops.watchState(id, s.user.id).flatMap {
-      (
-        own,
-        anc
-      ) =>
+      (own, anc) =>
         anc.filterA(a => store.pageAccess(a._1, s).map(_.isDefined)).map { visibleAnc =>
           val o = own.getOrElse(skiwi.db.WatchOpts(false, false, false))
           WatchStateDto(
@@ -728,13 +539,7 @@ final class ApiRoutes(
             o.edits,
             o.comments,
             o.subtree,
-            visibleAnc.map(
-              (
-                pid,
-                t,
-                w
-              ) => WatchInheritedDto(pid, t, w.edits, w.comments)
-            )
+            visibleAnc.map((pid, t, w) => WatchInheritedDto(pid, t, w.edits, w.comments))
           )
         }
     }

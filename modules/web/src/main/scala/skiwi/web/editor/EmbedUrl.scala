@@ -19,9 +19,7 @@ object EmbedUrl {
   private val SpotifyPath = "^/(track|album|playlist|episode|show)/(\\w+).*".r
 
   /** 埋め込みに対応しているサービスの URL なら、埋め込み用の URL */
-  def known(
-    raw: String
-  ): Option[String] =
+  def known(raw: String): Option[String] =
     Try(new dom.URL(raw.trim)).toOption.filter(_.protocol == "https:").flatMap { u =>
       val host = u.hostname.stripPrefix("www.")
       val path = u.pathname
@@ -54,9 +52,7 @@ object EmbedUrl {
     }
 
   /** 共有 URL を埋め込み用の URL にする. https 以外は拒否. 対応サービス以外はそのまま埋め込む */
-  def toEmbed(
-    raw: String
-  ): Option[String] =
+  def toEmbed(raw: String): Option[String] =
     known(raw).orElse(Try(new dom.URL(raw.trim)).toOption.filter(_.protocol == "https:").flatMap(u =>
       SafeUrl.embed(u.toString)
     ))

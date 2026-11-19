@@ -21,12 +21,7 @@ class ShareRoutesSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set.empty, cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    app: HttpApp[IO],
-    disabled: HttpApp[IO],
-    smallUpload: HttpApp[IO])
+  final case class Env(store: Store, docs: DocStore, app: HttpApp[IO], disabled: HttpApp[IO], smallUpload: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -43,9 +38,7 @@ class ShareRoutesSpec extends DbSuite {
         val attach = new AttachmentRoutes(store, attSt, Some(new InMemoryBlobStore), sess)
         val shares = new ShareStore(xa)
         val audit = new Audit(ops)
-        def share(
-          on: Boolean
-        ) = new ShareRoutes(store, shares, docs, attSt, attach, sess, audit, on)
+        def share(on: Boolean) = new ShareRoutes(store, shares, docs, attSt, attach, sess, audit, on)
         val api = new ApiRoutes(store, docs, ops, sess, audit, IO.unit, Some(shares))
         val small = new AttachmentRoutes(store, attSt, Some(new InMemoryBlobStore), sess, maxBytes = 1024)
         Env(
@@ -62,9 +55,7 @@ class ShareRoutesSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -72,13 +63,11 @@ class ShareRoutesSpec extends DbSuite {
     } yield (AuthSession(u, Nil, false), token)
   }
 
-  private def call(
-    token: Option[String],
-    method: Method,
-    path: String,
-    body: Option[Json] = None,
-    app: HttpApp[IO] = env.app
-  ): IO[(Status, Json, Headers)] = {
+  private def call(token: Option[String],
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None,
+                   app: HttpApp[IO] = env.app): IO[(Status, Json, Headers)] = {
     var req = Request[IO](method, Uri.unsafeFromString(path))
     token.foreach(t => req = req.addCookie("skiwi_session", t))
     body.foreach(b => req = req.withEntity(b))
@@ -87,10 +76,7 @@ class ShareRoutesSpec extends DbSuite {
     )
   }
 
-  private def upload(
-    token: String,
-    pageId: UUID
-  ): IO[UUID] =
+  private def upload(token: String, pageId: UUID): IO[UUID] =
     Multiparts.forSync[IO].flatMap { mps =>
       val part = Part.fileData[IO](
         "file",
@@ -105,9 +91,8 @@ class ShareRoutesSpec extends DbSuite {
       }
     }
 
-  private def ids(
-    j: Json
-  ): List[String] = j.hcursor.get[List[Json]]("pages").toOption.get.map(_.hcursor.get[String]("id").toOption.get)
+  private def ids(j: Json): List[String] =
+    j.hcursor.get[List[Json]]("pages").toOption.get.map(_.hcursor.get[String]("id").toOption.get)
 
   test("guests can read a published page tree, but nothing else") {
     run {

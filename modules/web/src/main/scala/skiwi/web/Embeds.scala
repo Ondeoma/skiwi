@@ -15,17 +15,9 @@ object Embeds {
 
   private var registry: Map[String, Mount] = Map.empty
 
-  def register(
-    name: String
-  )(
-    m: Mount
-  ): Unit = registry += name -> m
+  def register(name: String)(m: Mount): Unit = registry += name -> m
 
-  def open(
-    name: String,
-    el: dom.Element,
-    params: js.Dictionary[js.Any]
-  ): () => Unit = registry.get(name) match {
+  def open(name: String, el: dom.Element, params: js.Dictionary[js.Any]): () => Unit = registry.get(name) match {
     case Some(m) => m(el, params)
     case None =>
       dom.console.error(s"mountView: unknown view $name")
@@ -33,11 +25,7 @@ object Embeds {
   }
 
   /** 部品を el に描画し、片付ける関数を返す */
-  def render(
-    el: dom.Element
-  )(
-    cmp: => GenComponentF
-  ): () => Unit =
+  def render(el: dom.Element)(cmp: => GenComponentF): () => Unit =
     mount(el, cmp) match {
       case Right(h) => () => h.unmount()
       case Left(e) =>

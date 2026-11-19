@@ -31,9 +31,7 @@ object Host {
    * エディタのデータベースブロック: 既存のデータベースを選ぶか、pageId のページの子ページとして新しく作る.
    * 戻り値はデータベースのページの ID（取り消しは None）
    */
-  def pickDatabase(
-    pageId: String
-  ): Future[Option[String]] = {
+  def pickDatabase(pageId: String): Future[Option[String]] = {
     val New = "__new__"
     val dbs = Store.pages.v.filter(_.isDatabase)
     Dialog.choose(
@@ -60,50 +58,28 @@ object Host {
   }
 
   /** 画面を移動します（Router.go） */
-  def navigate(
-    path: String
-  ): Unit = Nav.go(path)
+  def navigate(path: String): Unit = Nav.go(path)
 
   /** 画面内の確認ダイアログ */
-  def confirm(
-    message: String,
-    okLabel: String = "OK",
-    danger: Boolean = false
-  ): Future[Boolean] =
+  def confirm(message: String, okLabel: String = "OK", danger: Boolean = false): Future[Boolean] =
     Dialog.confirm(message, okLabel, danger)
 
-  private def toJs(
-    j: io.circe.Json
-  ): js.Any = js.JSON.parse(j.noSpaces)
+  private def toJs(j: io.circe.Json): js.Any = js.JSON.parse(j.noSpaces)
 
-  private def str(
-    o: js.Dynamic,
-    key: String,
-    default: String
-  ): String =
+  private def str(o: js.Dynamic, key: String, default: String): String =
     if (js.isUndefined(o) || o == null) default
     else o.selectDynamic(key).asInstanceOf[js.UndefOr[String]].filter(_ != null).getOrElse(default)
 
-  private def bool(
-    o: js.Dynamic,
-    key: String
-  ): Boolean =
+  private def bool(o: js.Dynamic, key: String): Boolean =
     !js.isUndefined(o) && o != null && o.selectDynamic(key).asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
 
   def exposeToJs(): Unit = {
     val h = js.Dynamic.literal(
       navigate = (path: String) => Nav.go(path),
       replace = (path: String) => Nav.replace(path),
-      confirm = (
-        message: String,
-        opts: js.Dynamic
-      ) =>
+      confirm = (message: String, opts: js.Dynamic) =>
         Dialog.confirm(message, str(opts, "okLabel", "OK"), bool(opts, "danger")).toJSPromise,
-      prompt = (
-        message: String,
-        value: String,
-        opts: js.Dynamic
-      ) =>
+      prompt = (message: String, value: String, opts: js.Dynamic) =>
         Dialog.prompt(
           message,
           Option(value).getOrElse(""),
@@ -112,10 +88,7 @@ object Host {
           bool(opts, "multiline")
         )
           .map(_.orNull).toJSPromise,
-      choose = (
-        message: String,
-        options: js.Array[js.Dynamic]
-      ) =>
+      choose = (message: String, options: js.Array[js.Dynamic]) =>
         Dialog.choose(
           message,
           options.toList.map(o => Choice(str(o, "label", ""), str(o, "value", ""), Option(str(o, "detail", null))))
@@ -131,11 +104,7 @@ object Host {
         val w = Store.pages.addWatcher(_ => f())
         (() => w.abort()): js.Function0[Unit]
       },
-      mountView = (
-        name: String,
-        el: dom.Element,
-        params: js.Dictionary[js.Any]
-      ) =>
+      mountView = (name: String, el: dom.Element, params: js.Dictionary[js.Any]) =>
         (Embeds.open(name, el, Option(params).getOrElse(js.Dictionary())): js.Function0[Unit]),
       pickDatabase = (pageId: String) => pickDatabase(pageId).map(_.orNull).toJSPromise,
       pickPage = () =>

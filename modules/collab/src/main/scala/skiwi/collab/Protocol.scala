@@ -27,59 +27,42 @@ object Protocol {
   val SyncUpdate = 2
 
   /** フレームを組み立てる */
-  private[collab] def write(
-    f: YWriter => Unit
-  ): ByteVector = {
+  private[collab] def write(f: YWriter => Unit): ByteVector = {
     val w = YWriter()
     f(w)
     ByteVector.view(w.result)
   }
 
   /** 長さ付きのバイト列（lib0 の writeVarUint8Array） */
-  private[collab] def writeVarBytes(
-    w: YWriter,
-    b: ByteVector
-  ): Unit = {
+  private[collab] def writeVarBytes(w: YWriter, b: ByteVector): Unit = {
     w.varUint(b.size)
     w.bytes(b.toArray)
   }
 
   /** 読めなければ None（途中で終わる・長すぎる・UTF-8 として正しくないなど） */
-  private def read[A](
-    b: ByteVector
-  )(
-    f: YReader => A
-  ): Option[A] =
+  private def read[A](b: ByteVector)(f: YReader => A): Option[A] =
     scala.util.Try(f(YReader(b.toArray))).toOption
 
   /** 文字列（UTF-8 として正しくなければ失敗にする） */
-  private def strictString(
-    r: YReader
-  ): String =
+  private def strictString(r: YReader): String =
     StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(r.varBytes())).toString
 
   /** 空のupdate(構造体0個、削除セット0個)を持つstep2。クライアントに「同期完了」を伝えるマーカー。 */
   val syncDoneMarker: ByteVector = syncStep2(ByteVector(0, 0))
 
-  def syncStep2(
-    payload: ByteVector
-  ): ByteVector = write { w => w.varUint(MsgSync); w.varUint(SyncStep2); writeVarBytes(w, payload) }
-  def syncUpdate(
-    payload: ByteVector
-  ): ByteVector = write { w => w.varUint(MsgSync); w.varUint(SyncUpdate); writeVarBytes(w, payload) }
+  def syncStep2(payload: ByteVector): ByteVector = write { w =>
+    w.varUint(MsgSync); w.varUint(SyncStep2); writeVarBytes(w, payload)
+  }
+  def syncUpdate(payload: ByteVector): ByteVector = write { w =>
+    w.varUint(MsgSync); w.varUint(SyncUpdate); writeVarBytes(w, payload)
+  }
 
-  def compactRequest(
-    token: String
-  ): ByteVector = write { w => w.varUint(MsgCompactReq); w.string(token) }
+  def compactRequest(token: String): ByteVector = write { w => w.varUint(MsgCompactReq); w.string(token) }
 
-  def role(
-    r: String
-  ): ByteVector = write { w => w.varUint(MsgRole); w.string(r) }
+  def role(r: String): ByteVector = write { w => w.varUint(MsgRole); w.string(r) }
 
   /** awareness フレームに含まれるクライアント（ID → (clock, 消えたか)）。中身の状態は解釈しない。 */
-  def awarenessClients(
-    frame: ByteVector
-  ): List[(Long, Long, Boolean)] =
+  def awarenessClients(frame: ByteVector): List[(Long, Long, Boolean)] =
     read(frame) { r =>
       r.varUint()
       val update = YReader(r.varBytes())
@@ -102,11 +85,7 @@ object Protocol {
    * awareness の状態の user（カーソル・在席に出す名前）を、接続を認証したユーザーのものに書き換える.
    * クライアントが名乗った名前をそのまま中継すると、閲覧だけの人でも他人の名前を名乗れるため. 読めなければ None（中継しない）
    */
-  def awarenessAsUser(
-    frame: ByteVector,
-    userId: String,
-    name: String
-  ): Option[ByteVector] =
+  def awarenessAsUser(frame: ByteVector, userId: String, name: String): Option[ByteVector] =
     read(frame) { r =>
       r.varUint()
       val update = YReader(r.varBytes())
@@ -116,11 +95,7 @@ object Protocol {
       val body = write { w =>
         w.varUint(entries.size.toLong)
         entries.foreach {
-          (
-            client,
-            clock,
-            state
-          ) =>
+          (client, clock, state) =>
             w.varUint(client); w.varUint(clock)
             w.string(if state == "null" then state else asUser(state, userId, name))
         }
@@ -128,11 +103,7 @@ object Protocol {
       write { w => w.varUint(MsgAwareness); writeVarBytes(w, body) }
     }
 
-  private def asUser(
-    state: String,
-    userId: String,
-    name: String
-  ): String =
+  private def asUser(state: String, userId: String, name: String): String =
     io.circe.parser.parse(state).toOption.flatMap(_.asObject) match {
       case None => "null" // JSON のオブジェクトでなければ消えたものとして扱う
       case Some(o) =>
@@ -142,17 +113,10 @@ object Protocol {
     }
 
   /** 接続が切れたクライアントの awareness を消すフレーム（clock を1つ進めて状態 null） */
-  def awarenessRemoval(
-    clients: Map[Long, Long]
-  ): ByteVector = {
+  def awarenessRemoval(clients: Map[Long, Long]): ByteVector = {
     val body = write { w =>
       w.varUint(clients.size.toLong)
-      clients.foreach(
-        (
-          id,
-          clock
-        ) => { w.varUint(id); w.varUint(clock + 1); w.string("null") }
-      )
+      clients.foreach((id, clock) => { w.varUint(id); w.varUint(clock + 1); w.string("null") })
     }
     write { w => w.varUint(MsgAwareness); writeVarBytes(w, body) }
   }
@@ -170,9 +134,7 @@ object Protocol {
     case Malformed
   }
 
-  def parse(
-    frame: ByteVector
-  ): Inbound = {
+  def parse(frame: ByteVector): Inbound = {
     import Inbound.*
     read(frame) { r =>
       r.varUint() match {

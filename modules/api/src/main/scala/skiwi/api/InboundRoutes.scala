@@ -14,25 +14,19 @@ import java.time.{Instant, LocalDate}
 import java.util.UUID
 
 /** url: 作成・作り直しのときだけ返す（トークンを含む） */
-final case class InboundHookDto(
-  id: UUID,
-  name: String,
-  mode: String,
-  targetPageId: UUID,
-  targetTitle: Option[String],
-  enabled: Boolean,
-  createdBy: Option[String],
-  createdAt: Instant,
-  lastAt: Option[Instant],
-  useCount: Int,
-  url: Option[String] = None) derives Encoder.AsObject
-final case class CreateInboundReq(
-  name: String,
-  targetPageId: UUID,
-  mode: String) derives Decoder
-final case class UpdateInboundReq(
-  name: Option[String],
-  enabled: Option[Boolean]) derives Decoder
+final case class InboundHookDto(id: UUID,
+                                name: String,
+                                mode: String,
+                                targetPageId: UUID,
+                                targetTitle: Option[String],
+                                enabled: Boolean,
+                                createdBy: Option[String],
+                                createdAt: Instant,
+                                lastAt: Option[Instant],
+                                useCount: Int,
+                                url: Option[String] = None) derives Encoder.AsObject
+final case class CreateInboundReq(name: String, targetPageId: UUID, mode: String) derives Decoder
+final case class UpdateInboundReq(name: Option[String], enabled: Option[Boolean]) derives Decoder
 
 /**
  * 受信用の Webhook。URL（/api/hooks/{トークン}）に JSON を POST すると、作成した人の権限で次を行う:
@@ -41,20 +35,19 @@ final case class UpdateInboundReq(
  *  - comment: コメントを付ける { text }
  * text は本文（改行で段落に分ける）。Slack 形式の { "text": "…" } もそのまま受け付ける。
  */
-final class InboundRoutes(
-  protected val store: Store,
-  inbound: InboundStore,
-  dbs: DatabaseStore,
-  docs: DocStore,
-  comments: CommentStore,
-  ops: OpsStore,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  publicUrl: String,
-  mentions: Option[Mentions] = None,
-  webhooks: Option[WebhookService] = None,
-  automations: Option[Automations] = None,
-  rate: Ref[IO, Map[UUID, List[Long]]]) extends PageRouteSupport {
+final class InboundRoutes(protected val store: Store,
+                          inbound: InboundStore,
+                          dbs: DatabaseStore,
+                          docs: DocStore,
+                          comments: CommentStore,
+                          ops: OpsStore,
+                          protected val sessions: SessionAuth,
+                          audit: Audit,
+                          publicUrl: String,
+                          mentions: Option[Mentions] = None,
+                          webhooks: Option[WebhookService] = None,
+                          automations: Option[Automations] = None,
+                          rate: Ref[IO, Map[UUID, List[Long]]]) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     // ------------------------------------------------------------ 受信（認証なし。URLのトークンで判断）
@@ -68,10 +61,7 @@ final class InboundRoutes(
     case req @ DELETE -> Root / "api" / "inbound-hooks" / UUIDVar(id) => deleteInboundHook(req, id)
   }
 
-  private def postHook(
-    req: Request[IO],
-    token: String
-  ): IO[Response[IO]] =
+  private def postHook(req: Request[IO], token: String): IO[Response[IO]] =
     if token.length > 100 then err(ErrorCode.ItemNotFound)
     else
       inbound.byToken(Crypto.sha256(token)).flatMap {
@@ -100,10 +90,7 @@ final class InboundRoutes(
           }
       }
 
-  private def getWorkspaceInboundHooks(
-    req: Request[IO],
-    wsId: UUID
-  ): IO[Response[IO]] = {
+  private def getWorkspaceInboundHooks(req: Request[IO], wsId: UUID): IO[Response[IO]] = {
     // 受け取り先のページを閲覧できるものだけ
     withWsMember(req, wsId)(s =>
       inbound.list(wsId).flatMap(hs =>
@@ -114,10 +101,7 @@ final class InboundRoutes(
     )
   }
 
-  private def postWorkspaceInboundHooks(
-    req: Request[IO],
-    wsId: UUID
-  ): IO[Response[IO]] =
+  private def postWorkspaceInboundHooks(req: Request[IO], wsId: UUID): IO[Response[IO]] =
     withWsMember(req, wsId) { s =>
       body[CreateInboundReq](req) {
         case b if !Modes(b.mode) => err(ErrorCode.InboundModeInvalid)
@@ -145,15 +129,9 @@ final class InboundRoutes(
       }
     }
 
-  private def patchInboundHook(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def patchInboundHook(req: Request[IO], id: UUID): IO[Response[IO]] =
     withHook(req, id) {
-      (
-        s,
-        h
-      ) =>
+      (s, h) =>
         body[UpdateInboundReq](req) {
           case b if b.name.exists(validName(_).isEmpty) => err(ErrorCode.NameInvalid)
           case b =>
@@ -170,40 +148,25 @@ final class InboundRoutes(
         }
     }
 
-  private def postInboundHookRotate(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postInboundHookRotate(req: Request[IO], id: UUID): IO[Response[IO]] =
     withHook(req, id) {
-      (
-        s,
-        h
-      ) =>
+      (s, h) =>
         val t = newToken
         inbound.rotate(id, Crypto.sha256(t)) *>
           audit.log(s, "inbound_hook.rotate", "page", h.targetPageId, Json.obj("name" -> h.name.asJson)) *>
           inbound.get(id).flatMap(nh => Ok(dto(nh.get, Some(t))))
     }
 
-  private def deleteInboundHook(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteInboundHook(req: Request[IO], id: UUID): IO[Response[IO]] =
     withHook(req, id) {
-      (
-        s,
-        h
-      ) =>
+      (s, h) =>
         inbound.delete(id) *>
           audit.log(s, "inbound_hook.delete", "page", h.targetPageId, Json.obj("name" -> h.name.asJson)) *>
           NoContent()
     }
 
   private val base = publicUrl.stripSuffix("/")
-  private def dto(
-    h: InboundHook,
-    token: Option[String] = None
-  ) =
+  private def dto(h: InboundHook, token: Option[String] = None) =
     InboundHookDto(
       h.id,
       h.name,
@@ -221,12 +184,7 @@ final class InboundRoutes(
   private val MaxBody = 65536L
   private val PerMinute = 60
 
-  private def withWsMember(
-    req: Request[IO],
-    wsId: UUID
-  )(
-    f: AuthSession => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  private def withWsMember(req: Request[IO], wsId: UUID)(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
     authed(req) { s =>
       store.workspaceRole(wsId, s).flatMap {
         case None => store.workspaceVisible(
@@ -238,12 +196,7 @@ final class InboundRoutes(
     }
 
   /** 設定の変更: 受け取り先のページの編集権限 */
-  private def withHook(
-    req: Request[IO],
-    id: UUID
-  )(
-    f: (AuthSession, InboundHook) => IO[Response[IO]]
-  ) =
+  private def withHook(req: Request[IO], id: UUID)(f: (AuthSession, InboundHook) => IO[Response[IO]]) =
     authed(req) { s =>
       inbound.get(id).flatMap {
         case None => err(ErrorCode.InboundWebhookNotFound)
@@ -258,29 +211,19 @@ final class InboundRoutes(
 
   private def newToken = Crypto.randomToken(24)
 
-  private def allow(
-    id: UUID
-  ): IO[Boolean] = perMinute(rate, id, PerMinute)
+  private def allow(id: UUID): IO[Boolean] = perMinute(rate, id, PerMinute)
 
   // ---------------------------------------------------------------- 値の変換（列名・選択肢の名前も受け付ける）
-  private def convert(
-    props: Json,
-    values: JsonObject
-  ): IO[Either[String, JsonObject]] = {
+  private def convert(props: Json, values: JsonObject): IO[Either[String, JsonObject]] = {
     val ps = props.asArray.getOrElse(Vector.empty).flatMap(_.asObject)
     values.toList.traverse {
-      (
-        k,
-        v
-      ) =>
+      (k, v) =>
         ps.find(p => p("id").flatMap(_.asString).contains(k) || p("name").flatMap(_.asString).contains(k)) match {
           case None => IO.pure(Left(s"不明な列です: $k"))
           case Some(p) =>
             val id = p("id").flatMap(_.asString).get
             val opts = p("options").flatMap(_.asArray).getOrElse(Vector.empty).flatMap(_.asObject)
-            def opt(
-              x: String
-            ) = opts.find(o =>
+            def opt(x: String) = opts.find(o =>
               o("id").flatMap(_.asString).contains(x) || o("name").flatMap(_.asString).contains(x)
             ).flatMap(_("id"))
             def strs = v.asArray.map(
@@ -325,12 +268,7 @@ final class InboundRoutes(
     }.map(_.sequence.map(JsonObject.fromIterable))
   }
 
-  private def receive(
-    h: InboundHook,
-    s: AuthSession,
-    target: Page,
-    body: JsonObject
-  ): IO[Response[IO]] = {
+  private def receive(h: InboundHook, s: AuthSession, target: Page, body: JsonObject): IO[Response[IO]] = {
     val title = body("title").flatMap(_.asString).map(_.trim.take(500)).getOrElse("")
     val text = body("text").orElse(body("body")).orElse(body("markdown")).flatMap(_.asString).getOrElse("")
     val values = body("values").flatMap(_.asObject).getOrElse(JsonObject.empty)

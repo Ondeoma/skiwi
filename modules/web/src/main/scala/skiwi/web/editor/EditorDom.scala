@@ -11,20 +11,15 @@ import scala.util.Try
 object EditorDom {
 
   /** エディタの上の状態（接続・同期・閲覧のみ・アップロード中）. state: connecting / connected / disconnected */
-  def drawStatus(
-    el: dom.HTMLElement,
-    revoked: Boolean,
-    state: String,
-    synced: Boolean,
-    canEdit: Boolean,
-    uploading: Int
-  ): Unit = {
+  def drawStatus(el: dom.HTMLElement,
+                 revoked: Boolean,
+                 state: String,
+                 synced: Boolean,
+                 canEdit: Boolean,
+                 uploading: Int): Unit = {
     el.className = s"status ${if (revoked) "disconnected" else state}"
     el.replaceChildren()
-    def span(
-      text: String,
-      testid: Option[String] = None
-    ): Unit = {
+    def span(text: String, testid: Option[String] = None): Unit = {
       val s = dom.document.createElement("span")
       s.textContent = text
       testid.foreach(s.setAttribute("data-testid", _))
@@ -45,12 +40,10 @@ object EditorDom {
    * メニューなどの外をクリック（mousedown）したら閉じる. escape を渡すと Esc キーでも呼ぶ.
    * defer: 開いたクリック自体で閉じないよう、次のタスクで登録する. 戻り値で解除する
    */
-  def onDismiss(
-    inside: dom.Node => Boolean,
-    close: () => Unit,
-    escape: Option[() => Unit],
-    defer: Boolean
-  ): () => Unit = {
+  def onDismiss(inside: dom.Node => Boolean,
+                close: () => Unit,
+                escape: Option[() => Unit],
+                defer: Boolean): () => Unit = {
     val onDoc: js.Function1[dom.MouseEvent, Unit] = e => if (!inside(e.target.asInstanceOf[dom.Node])) close()
     val onKey: js.Function1[dom.KeyboardEvent, Unit] = e => if (e.key == "Escape") escape.foreach(_())
     var alive = true
@@ -65,12 +58,7 @@ object EditorDom {
   }
 
   /** クリップボードへコピーし、ボタンの文字を1.5秒「コピーしました」にする. label: ふだんの文字（戻すときに使う） */
-  def copyWithFlash(
-    btn: dom.HTMLElement,
-    text: String,
-    label: String,
-    done: String = "コピーしました"
-  ): Future[Unit] =
+  def copyWithFlash(btn: dom.HTMLElement, text: String, label: String, done: String = "コピーしました"): Future[Unit] =
     dom.window.navigator.clipboard.writeText(text).toFuture.map { _ =>
       btn.textContent = done
       dom.window.setTimeout(() => btn.textContent = label, 1500)
@@ -78,10 +66,7 @@ object EditorDom {
     }.recover { case _ => () }
 
   /** ファイルを選んでもらう（取り消したら空） */
-  def pickFiles(
-    accept: String,
-    multiple: Boolean
-  ): Future[List[dom.File]] = {
+  def pickFiles(accept: String, multiple: Boolean): Future[List[dom.File]] = {
     val p = scala.concurrent.Promise[List[dom.File]]()
     val input = dom.document.createElement("input").asInstanceOf[dom.HTMLInputElement]
     input.`type` = "file"
@@ -102,20 +87,14 @@ object EditorDom {
    */
   def installFileDropGuard(): Unit = {
     val Accepts = ".ProseMirror[contenteditable=\"true\"], .excalidraw"
-    def hasFiles(
-      e: dom.DragEvent
-    ): Boolean =
+    def hasFiles(e: dom.DragEvent): Boolean =
       e.dataTransfer != null && js.Array.from(e.dataTransfer.types.asInstanceOf[js.Iterable[String]]).contains("Files")
-    def accepts(
-      t: dom.EventTarget
-    ): Boolean = t match {
+    def accepts(t: dom.EventTarget): Boolean = t match {
       case el: dom.Element => el.closest(Accepts) != null
       case _ => false
     }
     var depth = 0
-    def set(
-      on: Boolean
-    ): Unit = dom.document.body.classList.toggle("dragging-files", on)
+    def set(on: Boolean): Unit = dom.document.body.classList.toggle("dragging-files", on)
     dom.window.addEventListener("dragenter", (e: dom.DragEvent) => if (hasFiles(e)) { depth += 1; set(true) })
     dom.window.addEventListener(
       "dragleave",
@@ -143,9 +122,7 @@ object EditorDom {
    * ⌘A / Ctrl+A を、入力欄やエディタの外（表示モードなど）で押したとき、ページ全体ではなく本文（el の中）だけを選ぶ.
    * ダイアログを開いているときは何もしない. 戻り値で解除
    */
-  def selectArticleOnModA(
-    el: () => dom.HTMLElement
-  ): () => Unit = {
+  def selectArticleOnModA(el: () => dom.HTMLElement): () => Unit = {
     val onKey: js.Function1[dom.KeyboardEvent, Unit] = e =>
       if (
         (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase == "a" && !e.defaultPrevented &&
@@ -165,15 +142,8 @@ object EditorDom {
   def isDark: Boolean = dom.document.documentElement.classList.contains("dark")
 
   /** 明暗が変わったら f を呼ぶ. 戻り値で解除 */
-  def onThemeChange(
-    f: Boolean => Unit
-  ): () => Unit = {
-    val mo = new dom.MutationObserver(
-      (
-        _,
-        _
-      ) => f(isDark)
-    )
+  def onThemeChange(f: Boolean => Unit): () => Unit = {
+    val mo = new dom.MutationObserver((_, _) => f(isDark))
     mo.observe(
       dom.document.documentElement,
       new dom.MutationObserverInit { attributes = true; attributeFilter = js.Array("class") }

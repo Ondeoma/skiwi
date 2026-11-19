@@ -20,9 +20,7 @@ class DevLoginSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set("dev-admins"), cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    app: Boolean => HttpApp[IO])
+  final case class Env(store: Store, app: Boolean => HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -44,17 +42,11 @@ class DevLoginSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def devLogin(
-    body: Json,
-    dev: Boolean = true
-  ): IO[Response[IO]] =
+  private def devLogin(body: Json, dev: Boolean = true): IO[Response[IO]] =
     env.app(dev).run(Request[IO](Method.POST, uri"/auth/dev-login").withEntity(body))
 
   /** ログインして /api/me を返す */
-  private def loginMe(
-    name: String,
-    admin: Boolean
-  ): IO[Json] =
+  private def loginMe(name: String, admin: Boolean): IO[Json] =
     for {
       r <- devLogin(Json.obj("name" -> name.asJson, "admin" -> admin.asJson, "returnTo" -> "/w/abc".asJson))
       _ = assertEquals(r.status, Status.Ok)

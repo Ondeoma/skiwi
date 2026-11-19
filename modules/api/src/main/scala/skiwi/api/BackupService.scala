@@ -20,33 +20,27 @@ import scala.concurrent.duration.*
  * そのまま「取り込む」で戻せる。加えて skiwi-backup.json にページの親子・本文（JSON）・ラベル・データベースの定義と値を入れる。
  * すべてのページ（権限を絞ったページも）を含むので、扱えるのは管理者だけ。
  */
-final class BackupService(
-  store: Store,
-  docs: DocStore,
-  attachments: AttachmentStore,
-  dbs: DatabaseStore,
-  backups: BackupStore,
-  blobs: Option[BlobStore],
-  publicUrl: String,
-  tz: String = "Asia/Tokyo") {
+final class BackupService(store: Store,
+                          docs: DocStore,
+                          attachments: AttachmentStore,
+                          dbs: DatabaseStore,
+                          backups: BackupStore,
+                          blobs: Option[BlobStore],
+                          publicUrl: String,
+                          tz: String = "Asia/Tokyo") {
   private val base = publicUrl.stripSuffix("/")
 
   /** すべてのページを読むための管理者の権限 */
   private val system = AuthSession(User(new UUID(0, 0), "system", None, "バックアップ"), Nil, isAdmin = true)
 
-  private def safeName(
-    s: String
-  ) = {
+  private def safeName(s: String) = {
     val x = s.replaceAll("""[\\/:*?"<>|\u0000-\u001f]""", "_").trim.take(80)
     // 「.」「..」だけの名前は、展開したときに ZIP の外へ書き出されうる（zip slip）
     if x.isEmpty then "無題" else if x.forall(_ == '.') then x.replace('.', '_') else x
   }
 
   /** 1回分を作って保存する。戻り値: (保存先のキー, 大きさ, ページ数, 添付の数) */
-  def build(
-    wsId: UUID,
-    id: UUID
-  ): IO[(String, Long, Int, Int)] =
+  def build(wsId: UUID, id: UUID): IO[(String, Long, Int, Int)] =
     blobs match {
       case None => IO.raiseError(new IllegalStateException("オブジェクトストレージ（S3）が設定されていません"))
       case Some(bs) =>
@@ -72,25 +66,20 @@ final class BackupService(
         } yield (key, size, pages.size, result)
     }
 
-  private def writeZip(
-    ws: Workspace,
-    pages: List[Page],
-    labels: Map[UUID, List[String]],
-    dbIds: Set[UUID],
-    atts: List[skiwi.db.Attachment],
-    bs: BlobStore,
-    tmp: java.nio.file.Path
-  ): IO[Int] = {
+  private def writeZip(ws: Workspace,
+                       pages: List[Page],
+                       labels: Map[UUID, List[String]],
+                       dbIds: Set[UUID],
+                       atts: List[skiwi.db.Attachment],
+                       bs: BlobStore,
+                       tmp: java.nio.file.Path): IO[Int] = {
     // ページ → ファイルのパス（同じ階層の同じ名前には (2) を付ける）
     val kids = pages.groupBy(_.parentId)
     val ids = pages.map(_.id).toSet
     val roots = pages.filter(p => p.parentId.forall(pid => !ids(pid)))
     val pathOf = scala.collection.mutable.LinkedHashMap.empty[UUID, String]
     val usedIn = scala.collection.mutable.HashMap.empty[String, scala.collection.mutable.Set[String]] // フォルダ → 使ったファイル名
-    def assign(
-      p: Page,
-      dir: String
-    ): Unit = {
+    def assign(p: Page, dir: String): Unit = {
       val used = usedIn.getOrElseUpdate(dir, scala.collection.mutable.Set.empty)
       var name = safeName(p.title); var n = 2
       while used(s"$name.md") do { name = s"${safeName(p.title)} ($n)"; n += 1 }
@@ -102,10 +91,7 @@ final class BackupService(
     }
     roots.sortBy(_.position).foreach(assign(_, ""))
     val attPath = atts.map(a => a.id -> s"attachments/${a.id.toString.take(8)}-${safeName(a.filename)}").toMap
-    def relative(
-      from: String,
-      to: String
-    ): String = {
+    def relative(from: String, to: String): String = {
       val f = from.split('/').dropRight(1).toList
       val t = to.split('/').toList
       val common = f.zip(t).takeWhile(_ == _).size
@@ -122,20 +108,12 @@ final class BackupService(
       ),
       metaFile
     ).tupled.use {
-      (
-        zip,
-        metaPath
-      ) =>
-        def entry(
-          name: String,
-          bytes: Array[Byte]
-        ): IO[Unit] = IO.blocking { zip.putNextEntry(new ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
+      (zip, metaPath) =>
+        def entry(name: String, bytes: Array[Byte]): IO[Unit] =
+          IO.blocking { zip.putNextEntry(new ZipEntry(name)); zip.write(bytes); zip.closeEntry() }
 
         /** 中身をストリームのまま書く（添付ファイルをメモリに読み込まない） */
-        def streamEntry(
-          name: String,
-          body: fs2.Stream[IO, Byte]
-        ): IO[Unit] =
+        def streamEntry(name: String, body: fs2.Stream[IO, Byte]): IO[Unit] =
           IO.blocking(zip.putNextEntry(new ZipEntry(name))) *>
             body.chunks.evalMap(c => IO.blocking(zip.write(c.toArray))).compile.drain *> IO.blocking(zip.closeEntry())
         Resource.fromAutoCloseable(IO.blocking(java.nio.file.Files.newBufferedWriter(
@@ -143,19 +121,14 @@ final class BackupService(
           java.nio.charset.StandardCharsets.UTF_8
         ))).use { meta =>
           var first = true
-          def addMeta(
-            j: Json
-          ): IO[Unit] = IO.blocking { meta.write(if first then "" else ","); first = false; meta.write(j.noSpaces) }
+          def addMeta(j: Json): IO[Unit] =
+            IO.blocking { meta.write(if first then "" else ","); first = false; meta.write(j.noSpaces) }
           for {
             // 本文・データベースの定義・項目の値は 200 ページずつまとめて読む
             _ <- pages.grouped(200).toList.traverse_ { group =>
               val gids = group.map(_.id)
               (docs.currentContents(gids), dbs.getMany(gids.filter(dbIds)), dbs.valuesMany(gids)).flatMapN {
-                (
-                  contents,
-                  dbDefs,
-                  values
-                ) =>
+                (contents, dbDefs, values) =>
                   group.traverse_ { p =>
                     val path = pathOf(p.id)
                     val up = "../" * (path.count(_ == '/'))
@@ -215,12 +188,7 @@ final class BackupService(
                           )
                         )
                       )) *>
-                        entry(path, md.getBytes("UTF-8")) *> boardFiles.toList.traverse_(
-                          (
-                            n,
-                            b
-                          ) => entry(n, b)
-                        )
+                        entry(path, md.getBytes("UTF-8")) *> boardFiles.toList.traverse_((n, b) => entry(n, b))
                     }
                   }
               }
@@ -261,11 +229,7 @@ final class BackupService(
   }
 
   /** 実行して記録し、古いものを消す */
-  def run(
-    wsId: UUID,
-    id: UUID,
-    keep: Option[Int]
-  ): IO[Unit] =
+  def run(wsId: UUID, id: UUID, keep: Option[Int]): IO[Unit] =
     sbirds.observe.Telemetry.span("backup.build", "workspace.id" -> wsId.toString)(build(wsId, id)).attempt.flatMap {
       case Right((key, size, pages, n)) =>
         backups.finish(id, key, size, pages, n) *>

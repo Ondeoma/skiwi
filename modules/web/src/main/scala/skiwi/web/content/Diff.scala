@@ -18,10 +18,7 @@ object Diff {
   }
 
   /** 最長共通部分列による差分（a → b） */
-  private def lcs[T](
-    a: IndexedSeq[T],
-    b: IndexedSeq[T]
-  ): Vector[Op[T]] = {
+  private def lcs[T](a: IndexedSeq[T], b: IndexedSeq[T]): Vector[Op[T]] = {
     // 前後の一致を先に取り除く（大きな文書でも表を小さくする）
     var start = 0
     while (start < a.length && start < b.length && a(start) == b(start)) start += 1
@@ -64,9 +61,7 @@ object Diff {
   }
 
   /** 文字列をコードポイントごとに分ける（JS の [...s] と同じ） */
-  private def codePoints(
-    s: String
-  ): IndexedSeq[String] = {
+  private def codePoints(s: String): IndexedSeq[String] = {
     val out = ArrayBuffer.empty[String]
     var i = 0
     while (i < s.length) {
@@ -78,10 +73,7 @@ object Diff {
   }
 
   /** 文字単位の差分（コードポイント単位） */
-  private def charDiff(
-    a: String,
-    b: String
-  ): List[DiffPiece] = {
+  private def charDiff(a: String, b: String): List[DiffPiece] = {
     val out = ArrayBuffer.empty[DiffPiece]
     lcs(codePoints(a), codePoints(b)).foreach { o =>
       val (kind, text) = o match {
@@ -96,11 +88,7 @@ object Diff {
   }
 
   /** ブロック列の差分. 変更のない部分は前後 context ブロックを残して折りたたむ */
-  def diffBlocks(
-    before: Seq[String],
-    after: Seq[String],
-    context: Int = 2
-  ): List[DiffRow] = {
+  def diffBlocks(before: Seq[String], after: Seq[String], context: Int = 2): List[DiffRow] = {
     val ops = lcs(before.toIndexedSeq, after.toIndexedSeq)
     val rows = ArrayBuffer.empty[DiffRow]
     var k = 0
@@ -143,8 +131,6 @@ object Diff {
   }
 
   /** 変更のあった行の数 */
-  def changeCount(
-    rows: List[DiffRow]
-  ): Int = rows.count(r => r.kind != "same" && r.kind != "fold")
+  def changeCount(rows: List[DiffRow]): Int = rows.count(r => r.kind != "same" && r.kind != "fold")
 
 }

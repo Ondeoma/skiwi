@@ -13,20 +13,14 @@ import sbirds.shared.AppError
 import java.util.Base64
 
 /** JSON として読めなければ null。 */
-def parseOrNull(
-  s: String
-): Json = io.circe.parser.parse(s).getOrElse(Json.Null)
+def parseOrNull(s: String): Json = io.circe.parser.parse(s).getOrElse(Json.Null)
 
 /** Base64 の Yjs 状態（空や読めないものは None）。 */
-def decodeYdoc(
-  b64: String
-): Option[Array[Byte]] =
+def decodeYdoc(b64: String): Option[Array[Byte]] =
   Either.catchNonFatal(Base64.getDecoder.decode(b64)).toOption.filter(_.nonEmpty)
 
 /** 戻り先は同じサイトの相対パスだけ（外部サイトへのリダイレクトに使わせない）。省略は "/"、不正なものは None。 */
-def safeReturnTo(
-  raw: Option[String]
-): Option[String] = raw.map(_.trim).filter(_.nonEmpty) match {
+def safeReturnTo(raw: Option[String]): Option[String] = raw.map(_.trim).filter(_.nonEmpty) match {
   case None => Some("/")
   case Some(p) =>
     Option.when(p.startsWith("/") && !p.startsWith("//") && !p.contains('\\') && !p.exists(_ < ' ') &&
@@ -34,18 +28,13 @@ def safeReturnTo(
 }
 
 /** 接続元のアドレス。ロードバランサー（HAProxy の option forwardfor）が X-Forwarded-For の最後に付けたもの、なければ TCP の接続元 */
-def clientAddress(
-  req: Request[IO]
-): String =
+def clientAddress(req: Request[IO]): String =
   req.headers.get(org.typelevel.ci.CIString("X-Forwarded-For")).flatMap(_.toList.lastOption)
     .flatMap(_.value.split(',').lastOption).map(_.trim).filter(_.nonEmpty)
     .orElse(req.remoteAddr.map(_.toString)).getOrElse("-")
 
 /** 名前（前後の空白を除いて1〜max文字）。正しくなければ None */
-def validName(
-  raw: String,
-  max: Int = 100
-): Option[String] = Some(raw.trim).filter(n => n.nonEmpty && n.length <= max)
+def validName(raw: String, max: Int = 100): Option[String] = Some(raw.trim).filter(n => n.nonEmpty && n.length <= max)
 
 /** ワークスペースの名前の長さの上限 */
 val MaxWorkspaceName = 200
@@ -54,10 +43,7 @@ val MaxWorkspaceName = 200
 val MaxJsonDepth = 256
 
 /** JSON の入れ子が limit 段を超えるか（再帰せずに数える） */
-def jsonDepthOver(
-  root: Json,
-  limit: Int
-): Boolean = {
+def jsonDepthOver(root: Json, limit: Int): Boolean = {
   val stack = scala.collection.mutable.Stack((root, 1))
   var over = false
   while !over && stack.nonEmpty do {
@@ -72,11 +58,7 @@ def jsonDepthOver(
 }
 
 /** 1分あたりの回数をキーごとに制限する。上限内なら記録して true。 */
-def perMinute[K](
-  rate: Ref[IO, Map[K, List[Long]]],
-  key: K,
-  limit: Int
-): IO[Boolean] =
+def perMinute[K](rate: Ref[IO, Map[K, List[Long]]], key: K, limit: Int): IO[Boolean] =
   IO.realTime.map(_.toMillis).flatMap { now =>
     rate.modify { m =>
       val recent = m.getOrElse(key, Nil).filter(_ > now - 60000)
@@ -96,55 +78,34 @@ trait RouteSupport extends Http4sDsl[IO] {
   protected def sessions: SessionAuth
 
   /** エラーの応答（コード付きでログに出る）. detail を省くとコードの既定の文言. */
-  protected def err(
-    code: ErrorCode,
-    detail: String | Null = null
-  ): IO[Response[IO]] = Errors.respond(AppError(code, Option(detail)))
+  protected def err(code: ErrorCode, detail: String | Null = null): IO[Response[IO]] =
+    Errors.respond(AppError(code, Option(detail)))
 
-  protected def fail(
-    e: AppError
-  ): IO[Response[IO]] = Errors.respond(e)
+  protected def fail(e: AppError): IO[Response[IO]] = Errors.respond(e)
 
   /** エラーの応答（既定の文言だけを返し、detail はログにだけ出す. 理由を利用者に見せたくないとき）. */
-  protected def errLogged(
-    code: ErrorCode,
-    detail: String
-  ): IO[Response[IO]] =
+  protected def errLogged(code: ErrorCode, detail: String): IO[Response[IO]] =
     Errors.report(code, detail).as(
       Response[IO](Status.fromInt(code.status).getOrElse(Status.InternalServerError))
         .withEntity(ErrorDto(code.message, Some(code.code)))
     )
 
   /** ログインしていなければ 401。操作したユーザーを、トレース（スパンの属性）とこの中のログに載せる。 */
-  protected def authed(
-    req: Request[IO]
-  )(
-    f: AuthSession => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  protected def authed(req: Request[IO])(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
     sessions.fromRequest(req).flatMap(_.fold(err(ErrorCode.NotLoggedIn))(s =>
       sbirds.observe.Telemetry.withUser(s.user.id.toString, s.user.name)(f(s))
     ))
 
   /** 管理者のみ（それ以外は 403）。 */
-  protected def admin(
-    req: Request[IO]
-  )(
-    f: AuthSession => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  protected def admin(req: Request[IO])(f: AuthSession => IO[Response[IO]]): IO[Response[IO]] =
     authed(req)(s => if s.isAdmin then f(s) else err(ErrorCode.AdminOnly))
 
   /** リクエスト本文を読む（読めなければ 400）。 */
-  protected def body[A: Decoder](
-    req: Request[IO]
-  )(
-    f: A => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  protected def body[A: Decoder](req: Request[IO])(f: A => IO[Response[IO]]): IO[Response[IO]] =
     decodeBody[A](req).flatMap(_.fold(err(ErrorCode.RequestBodyInvalid, _), f))
 
   /** リクエスト本文を読む。読めなければ Left(理由)。大きすぎる本文は BodyTooLarge のまま投げる（全体のエラー処理で 413 になる） */
-  protected def decodeBody[A: Decoder](
-    req: Request[IO]
-  ): IO[Either[String, A]] =
+  protected def decodeBody[A: Decoder](req: Request[IO]): IO[Either[String, A]] =
     req.as[Json].attempt.flatMap {
       case Left(e: Security.BodyTooLarge) => IO.raiseError(e)
       case Left(_) => IO.pure(Left("リクエストの本文が正しくありません"))

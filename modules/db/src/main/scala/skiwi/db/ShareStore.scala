@@ -14,30 +14,25 @@ import java.util.UUID
  * mode: live（編集中の内容をそのまま公開）| pinned（公開した時点の内容。page_share_pub）
  * startsAt: 公開の開始日時（それまではゲストは閲覧できない）。slug: わかりやすいURL名。
  */
-final case class PageShare(
-  pageId: UUID,
-  token: String,
-  includeChildren: Boolean,
-  createdAt: Instant,
-  createdBy: Option[String],
-  expiresAt: Option[Instant],
-  passwordHash: Option[String],
-  hideHeader: Boolean = false,
-  sidebar: String = "auto",
-  mode: String = "live",
-  publishedAt: Option[Instant] = None,
-  publishedBy: Option[String] = None,
-  startsAt: Option[Instant] = None,
-  slug: Option[String] = None,
-  indexable: Boolean = false,
-  description: Option[String] = None,
-  showReleases: Boolean = false) {
-  def expired(
-    now: Instant
-  ): Boolean = expiresAt.exists(!_.isAfter(now))
-  def notStarted(
-    now: Instant
-  ): Boolean = startsAt.exists(_.isAfter(now))
+final case class PageShare(pageId: UUID,
+                           token: String,
+                           includeChildren: Boolean,
+                           createdAt: Instant,
+                           createdBy: Option[String],
+                           expiresAt: Option[Instant],
+                           passwordHash: Option[String],
+                           hideHeader: Boolean = false,
+                           sidebar: String = "auto",
+                           mode: String = "live",
+                           publishedAt: Option[Instant] = None,
+                           publishedBy: Option[String] = None,
+                           startsAt: Option[Instant] = None,
+                           slug: Option[String] = None,
+                           indexable: Boolean = false,
+                           description: Option[String] = None,
+                           showReleases: Boolean = false) {
+  def expired(now: Instant): Boolean = expiresAt.exists(!_.isAfter(now))
+  def notStarted(now: Instant): Boolean = startsAt.exists(_.isAfter(now))
   def pinned: Boolean = mode == "pinned"
 }
 
@@ -64,52 +59,47 @@ object PageShare {
 }
 
 /** 公開リンクの設定の変更。None=変更しない、Some(None)=解除。 */
-final case class ShareUpdate(
-  includeChildren: Option[Boolean] = None,
-  expiresAt: Option[Option[Instant]] = None,
-  passwordHash: Option[Option[String]] = None,
-  hideHeader: Option[Boolean] = None,
-  sidebar: Option[String] = None,
-  mode: Option[String] = None,
-  startsAt: Option[Option[Instant]] = None,
-  slug: Option[Option[String]] = None,
-  indexable: Option[Boolean] = None,
-  description: Option[Option[String]] = None,
-  showReleases: Option[Boolean] = None)
+final case class ShareUpdate(includeChildren: Option[Boolean] = None,
+                             expiresAt: Option[Option[Instant]] = None,
+                             passwordHash: Option[Option[String]] = None,
+                             hideHeader: Option[Boolean] = None,
+                             sidebar: Option[String] = None,
+                             mode: Option[String] = None,
+                             startsAt: Option[Option[Instant]] = None,
+                             slug: Option[Option[String]] = None,
+                             indexable: Option[Boolean] = None,
+                             description: Option[Option[String]] = None,
+                             showReleases: Option[Boolean] = None)
 
 /** 管理画面用: 公開中のページ。 */
-final case class ShareListItem(
-  share: PageShare,
-  title: String,
-  icon: Option[String],
-  workspaceId: UUID,
-  workspaceName: String)
+final case class ShareListItem(share: PageShare,
+                               title: String,
+                               icon: Option[String],
+                               workspaceId: UUID,
+                               workspaceName: String)
 
 /** 公開範囲に含まれるページ（ゲストに見せる最小限の項目）。 */
-final case class SharedPage(
-  id: UUID,
-  parentId: Option[UUID],
-  position: String,
-  title: String,
-  icon: Option[String],
-  updatedAt: Instant,
-  slug: Option[String] = None)
+final case class SharedPage(id: UUID,
+                            parentId: Option[UUID],
+                            position: String,
+                            title: String,
+                            icon: Option[String],
+                            updatedAt: Instant,
+                            slug: Option[String] = None)
 
 /** 公開の履歴の1件 */
-final case class ShareRelease(
-  id: UUID,
-  publishedAt: Instant,
-  publishedBy: Option[String],
-  note: Option[String],
-  pageCount: Int)
-final case class ReleasePage(
-  pageId: UUID,
-  parentId: Option[UUID],
-  position: String,
-  title: String,
-  icon: Option[String],
-  content: Option[String],
-  plainText: String)
+final case class ShareRelease(id: UUID,
+                              publishedAt: Instant,
+                              publishedBy: Option[String],
+                              note: Option[String],
+                              pageCount: Int)
+final case class ReleasePage(pageId: UUID,
+                             parentId: Option[UUID],
+                             position: String,
+                             title: String,
+                             icon: Option[String],
+                             content: Option[String],
+                             plainText: String)
 
 object ShareStore {
 
@@ -117,8 +107,7 @@ object ShareStore {
   val ReleaseKeep = 100
 }
 
-final class ShareStore(
-  xa: Transactor[IO]) extends TxStore(xa) {
+final class ShareStore(xa: Transactor[IO]) extends TxStore(xa) {
 
   private val shareCols =
     fr"""s.page_id, s.token, s.include_children, s.created_at, u.name, s.expires_at, s.password_hash, s.hide_header, s.sidebar,
@@ -127,18 +116,11 @@ final class ShareStore(
     fr"from page_share s left join app_user u on u.id = s.created_by left join app_user pu on pu.id = s.published_by"
   private val cols = shareCols ++ shareFrom
 
-  def get(
-    pageId: UUID
-  ): IO[Option[PageShare]] =
+  def get(pageId: UUID): IO[Option[PageShare]] =
     tx((fr"select" ++ cols ++ fr"where s.page_id = $pageId").query[PageShare].option)
 
   /** 公開する（既に公開中なら設定だけ変える。リンクは変わらない）。 */
-  def upsert(
-    pageId: UUID,
-    token: String,
-    by: UUID,
-    u: ShareUpdate
-  ): IO[Either[String, PageShare]] = {
+  def upsert(pageId: UUID, token: String, by: UUID, u: ShareUpdate): IO[Either[String, PageShare]] = {
     val inc = u.includeChildren.getOrElse(true)
     val sets = List(
       u.includeChildren.map(v => fr"include_children = $v"),
@@ -180,22 +162,16 @@ final class ShareStore(
     ].to[List]
   )
 
-  def delete(
-    pageId: UUID
-  ): IO[Boolean] = tx(sql"delete from page_share where page_id = $pageId".update.run.map(_ > 0))
+  def delete(pageId: UUID): IO[Boolean] = tx(sql"delete from page_share where page_id = $pageId".update.run.map(_ > 0))
 
   /** ワークスペース内で公開中のページ（ツリーの印用）。 */
-  def sharedIn(
-    wsId: UUID
-  ): IO[Set[UUID]] = tx(
+  def sharedIn(wsId: UUID): IO[Set[UUID]] = tx(
     sql"""select s.page_id from page_share s join page p on p.id = s.page_id
           where p.workspace_id = $wsId and p.deleted_at is null""".query[UUID].to[List].map(_.toSet)
   )
 
   /** このページを含む、祖先の公開リンク（子ページも公開する設定のもの）。一番近い祖先を返す。 */
-  def coveringAncestor(
-    pageId: UUID
-  ): IO[Option[(PageShare, String)]] = tx {
+  def coveringAncestor(pageId: UUID): IO[Option[(PageShare, String)]] = tx {
     sql"""with recursive anc as (
             select p.parent_id as id, p.inherit_acl as passes, 1 as depth from page p where p.id = $pageId
             union all
@@ -217,9 +193,7 @@ final class ShareStore(
       }
   }
 
-  private def scopeC(
-    s: PageShare
-  ): ConnectionIO[List[SharedPage]] = {
+  private def scopeC(s: PageShare): ConnectionIO[List[SharedPage]] = {
     val root = s.pageId
     val q =
       if s.includeChildren then
@@ -242,9 +216,7 @@ final class ShareStore(
   }
 
   /** リンク（トークンまたはURL名）が有効なら、公開範囲のページ一覧（先頭が公開したページ）。現在の内容による。 */
-  def resolve(
-    key: String
-  ): IO[Option[(PageShare, List[SharedPage])]] = tx {
+  def resolve(key: String): IO[Option[(PageShare, List[SharedPage])]] = tx {
     (fr"select" ++ cols ++ fr"where s.token = $key or s.slug = ${key.toLowerCase}").query[PageShare].to[List].map(
       _.headOption
     ).flatMap {
@@ -255,16 +227,10 @@ final class ShareStore(
   }
 
   /** 公開範囲（現在の内容）。公開版の作成・未公開の変更の確認用。 */
-  def scope(
-    s: PageShare
-  ): IO[List[SharedPage]] = tx(scopeC(s))
+  def scope(s: PageShare): IO[List[SharedPage]] = tx(scopeC(s))
 
   /** 公開版を作り直す（公開範囲の各ページの、現在の本文を保存する）。公開の履歴（変更点のメモと内容）も残す。 */
-  def publish(
-    pageId: UUID,
-    by: UUID,
-    note: Option[String] = None
-  ): IO[Option[PageShare]] = tx {
+  def publish(pageId: UUID, by: UUID, note: Option[String] = None): IO[Option[PageShare]] = tx {
     (fr"select" ++ cols ++ fr"where s.page_id = $pageId for update of s").query[PageShare].option.flatMap {
       case None => none[PageShare].pure[ConnectionIO]
       case Some(s) =>
@@ -294,19 +260,14 @@ final class ShareStore(
   }
 
   /** 公開の履歴（新しい順） */
-  def releases(
-    sharePageId: UUID
-  ): IO[List[ShareRelease]] = tx(
+  def releases(sharePageId: UUID): IO[List[ShareRelease]] = tx(
     sql"""select r.id, r.published_at, u.name, r.note, r.page_count from page_share_release r
           left join app_user u on u.id = r.published_by where r.share_page_id = $sharePageId
           order by r.published_at desc""".query[ShareRelease].to[List]
   )
 
   /** 公開の履歴の1件の内容（ページごとのタイトル・本文） */
-  def releasePages(
-    sharePageId: UUID,
-    releaseId: UUID
-  ): IO[Option[(ShareRelease, List[ReleasePage])]] = tx {
+  def releasePages(sharePageId: UUID, releaseId: UUID): IO[Option[(ShareRelease, List[ReleasePage])]] = tx {
     sql"""select r.id, r.published_at, u.name, r.note, r.page_count from page_share_release r
           left join app_user u on u.id = r.published_by where r.share_page_id = $sharePageId and r.id = $releaseId"""
       .query[ShareRelease].option.flatMap {
@@ -318,11 +279,7 @@ final class ShareStore(
       }
   }
 
-  def setReleaseNote(
-    sharePageId: UUID,
-    releaseId: UUID,
-    note: Option[String]
-  ): IO[Boolean] = tx(
+  def setReleaseNote(sharePageId: UUID, releaseId: UUID, note: Option[String]): IO[Boolean] = tx(
     sql"update page_share_release set note = $note where id = $releaseId and share_page_id = $sharePageId".update.run.map(
       _ > 0
     )
@@ -330,10 +287,7 @@ final class ShareStore(
 
   /** 公開版のページ（現在の公開範囲にあるものだけ。並びは現在の公開範囲の順）。ページのURL名は現在のもの。 */
   /** 公開版のページの一覧（固定した時点のタイトルなど。本文は guestContents で必要な分だけ読む）。いまの公開範囲 live にあるものだけ */
-  def pubPages(
-    s: PageShare,
-    live: List[SharedPage]
-  ): IO[List[SharedPage]] = tx {
+  def pubPages(s: PageShare, live: List[SharedPage]): IO[List[SharedPage]] = tx {
     sql"""select page_id, parent_id, position, title, icon, updated_at
           from page_share_pub where share_page_id = ${s.pageId}"""
       .query[(UUID, Option[UUID], String, String, Option[String], Instant)].to[List]
@@ -344,10 +298,7 @@ final class ShareStore(
   }
 
   /** 公開版の本文（JSON）。本文のないページは含めない */
-  def pubContents(
-    s: PageShare,
-    ids: List[UUID]
-  ): IO[Map[UUID, String]] = {
+  def pubContents(s: PageShare, ids: List[UUID]): IO[Map[UUID, String]] = {
     val arr = ids.toArray
     if ids.isEmpty then IO.pure(Map.empty)
     else
@@ -359,10 +310,7 @@ final class ShareStore(
   }
 
   /** 公開版の本文の平文 */
-  def pubPlainTexts(
-    s: PageShare,
-    ids: List[UUID]
-  ): IO[Map[UUID, String]] = {
+  def pubPlainTexts(s: PageShare, ids: List[UUID]): IO[Map[UUID, String]] = {
     val arr = ids.toArray
     if ids.isEmpty then IO.pure(Map.empty)
     else
@@ -373,9 +321,7 @@ final class ShareStore(
   }
 
   /** 公開版に未反映の変更があるか（ページの追加・削除、タイトル・アイコン・本文の変更）。 */
-  def hasUnpublished(
-    s: PageShare
-  ): IO[Boolean] =
+  def hasUnpublished(s: PageShare): IO[Boolean] =
     s.publishedAt match {
       case None => IO.pure(true)
       case Some(at) =>
@@ -398,16 +344,11 @@ final class ShareStore(
 
   // ---------------------------------------------------------------- ページのURL名
 
-  def pageSlug(
-    pageId: UUID
-  ): IO[Option[String]] =
+  def pageSlug(pageId: UUID): IO[Option[String]] =
     tx(sql"select guest_slug from page where id = $pageId".query[Option[String]].option.map(_.flatten))
 
   /** Left("slug_taken"): 同じワークスペースで使用中 */
-  def setPageSlug(
-    pageId: UUID,
-    slug: Option[String]
-  ): IO[Either[String, Unit]] =
+  def setPageSlug(pageId: UUID, slug: Option[String]): IO[Either[String, Unit]] =
     tx(sql"update page set guest_slug = $slug where id = $pageId".update.run).as(Right(()))
       .recover { case e: java.sql.SQLException if e.getSQLState == "23505" => Left("slug_taken") }
 }

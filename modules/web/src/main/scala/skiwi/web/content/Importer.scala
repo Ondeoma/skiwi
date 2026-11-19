@@ -20,12 +20,8 @@ object Importer {
   import Dom.*
 
   private val TextExt = "(?i)\\.(md|markdown|txt|html?)$".r
-  private def isText(
-    path: String
-  ) = TextExt.findFirstIn(path).isDefined
-  private def stripTextExt(
-    path: String
-  ) = TextExt.replaceFirstIn(path, "")
+  private def isText(path: String) = TextExt.findFirstIn(path).isDefined
+  private def stripTextExt(path: String) = TextExt.replaceFirstIn(path, "")
 
   private val ImageExt = Map(
     "png" -> "image/png",
@@ -43,26 +39,16 @@ object Importer {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
   /** 進み具合（画面の右下に出す） */
-  private def showProgress(
-    p: Option[Progress]
-  ): Unit = Store.progress := p
+  private def showProgress(p: Option[Progress]): Unit = Store.progress := p
   private[content] def stepProgress(): Unit =
     Store.progress.v.foreach(p => Store.progress := Some(p.copy(done = p.done + 1)))
 
-  private[content] def naturalSort(
-    a: String,
-    b: String
-  ): Int =
+  private[content] def naturalSort(a: String, b: String): Int =
     a.asInstanceOf[js.Dynamic].localeCompare(b, "ja", js.Dynamic.literal(numeric = true)).asInstanceOf[Double].toInt
 
-  private[content] def dirOf(
-    path: String
-  ): String = path.split("/", -1).dropRight(1).mkString("/")
+  private[content] def dirOf(path: String): String = path.split("/", -1).dropRight(1).mkString("/")
 
-  private def resolvePath(
-    base: String,
-    rel: String
-  ): String = {
+  private def resolvePath(base: String, rel: String): String = {
     val parts = mutable.ArrayBuffer.from(if (base.nonEmpty) base.split("/", -1).toList else Nil)
     js.URIUtils.decodeURIComponent(rel.split("[?#]", -1)(0)).split("/", -1).foreach {
       case "" | "." =>
@@ -73,25 +59,13 @@ object Importer {
   }
 
   /** 順に実行する（前の結果を待ってから次へ） */
-  private[content] def sequentially[A](
-    xs: Seq[A]
-  )(
-    f: A => Future[Unit]
-  ): Future[Unit] =
-    xs.foldLeft(Future.successful(()))(
-      (
-        acc,
-        x
-      ) => acc.flatMap(_ => f(x))
-    )
+  private[content] def sequentially[A](xs: Seq[A])(f: A => Future[Unit]): Future[Unit] =
+    xs.foldLeft(Future.successful(()))((acc, x) => acc.flatMap(_ => f(x)))
 
   // ---------------------------------------------------------------- 取り込む文書を整える（Markdown / HTML → エディタ用HTML）
 
   /** 取り込んだ文書を、エディタが解釈できるHTMLに整える. 先頭の h1 はページタイトルとして取り出す */
-  def prepareImport(
-    text: String,
-    filename: String
-  ): Future[(String, String)] = {
+  def prepareImport(text: String, filename: String): Future[(String, String)] = {
     val isHtml = "(?i)\\.html?$".r.findFirstIn(filename).isDefined ||
       "(?i)^\\s*<(!doctype|html)".r.findFirstIn(text).isDefined
     (if (isHtml) Future.successful(text) else Io.markdownToHtml(text)).map { rawHtml =>
@@ -140,9 +114,7 @@ object Importer {
             remove(box)
             if (first(li, ":scope > p").isEmpty) {
               val p = doc.createElement("p")
-              def isList(
-                n: dom.Node
-              ) = n match {
+              def isList(n: dom.Node) = n match {
                 case e: dom.HTMLElement => e.tagName == "UL" || e.tagName == "OL"
                 case _ => false
               }
@@ -166,49 +138,28 @@ object Importer {
   // ---------------------------------------------------------------- ファイルを読む
 
   /** path: ページの親子を決めるパス（Notion の ID を外す・Confluence の階層に並べ直したもの）、orig: ファイルの元のパス（リンク・画像の解決用） */
-  private final case class Entry(
-    path: String,
-    text: String,
-    orig: Option[String] = None) {
+  private final case class Entry(path: String, text: String, orig: Option[String] = None) {
     def source: String = orig.getOrElse(path)
   }
 
-  private final class Node(
-    val name: String,
-    val path: String) {
+  private final class Node(val name: String, val path: String) {
     var entry: Option[Entry] = None
     val children: mutable.LinkedHashMap[String, Node] = mutable.LinkedHashMap.empty
     var page: Option[Page] = None
-    def sortedChildren: List[Node] = children.values.toList.sortWith(
-      (
-        a,
-        b
-      ) => naturalSort(a.name, b.name) < 0
-    )
+    def sortedChildren: List[Node] = children.values.toList.sortWith((a, b) => naturalSort(a.name, b.name) < 0)
   }
 
-  private final case class Bin(
-    data: Uint8Array,
-    mime: String)
+  private final case class Bin(data: Uint8Array, mime: String)
 
-  private final case class Read(
-    texts: List[Entry],
-    images: Map[String, Bin],
-    csvs: List[Entry])
+  private final case class Read(texts: List[Entry], images: Map[String, Bin], csvs: List[Entry])
 
   /** ファイル（複数・ZIP）を読み、本文ファイルと画像に分ける. Word（.docx）は HTML にし、CSV（Notion のデータベース）は別に分ける */
-  private def readFiles(
-    files: List[dom.File]
-  ): Future[Read] = {
+  private def readFiles(files: List[dom.File]): Future[Read] = {
     val texts = mutable.ArrayBuffer.empty[Entry]
     val csvs = mutable.ArrayBuffer.empty[Entry]
     val images = mutable.Map.empty[String, Bin]
     var total = 0
-    def add(
-      path: String,
-      data: Uint8Array,
-      depth: Int
-    ): Future[Unit] =
+    def add(path: String, data: Uint8Array, depth: Int): Future[Unit] =
       if ("(^|/)(__MACOSX|\\.)".r.findFirstIn(path).isDefined) Future.successful(())
       else {
         total += data.length
@@ -218,12 +169,7 @@ object Importer {
           if (ext == "zip" && depth < 2) {
             // Notion の書き出しは ZIP の中に ZIP が入っていることがある
             Io.unzip(data).flatMap(es =>
-              sequentially(es.filterNot(_._1.endsWith("/")))(
-                (
-                  p,
-                  d
-                ) => add(p, d, depth + 1)
-              )
+              sequentially(es.filterNot(_._1.endsWith("/")))((p, d) => add(p, d, depth + 1))
             )
           } else if (isText(path)) { texts += Entry(path, Db.decodeText(data)); Future.successful(()) }
           else if (ext == "csv") { csvs += Entry(path, Db.decodeText(data)); Future.successful(()) }
@@ -251,37 +197,27 @@ object Importer {
   /** Notion の書き出しのファイル名の末尾の ID（「ページ名 0123…cdef.md」） */
   private val NotionId = "(?i) [0-9a-f]{32}(?=$|\\.[a-z]+$)".r
 
-  private def isNotion(
-    texts: List[Entry],
-    csvs: List[Entry]
-  ): Boolean = (texts ++ csvs).count(e => e.path.split("/", -1).exists(s => NotionId.findFirstIn(s).isDefined)) >=
+  private def isNotion(texts: List[Entry], csvs: List[Entry]): Boolean = (texts ++ csvs).count(e =>
+    e.path.split("/", -1).exists(s => NotionId.findFirstIn(s).isDefined)
+  ) >=
     math.max(1.0, (texts.size + csvs.size) / 2.0)
 
-  private def stripNotion(
-    path: String
-  ): String = path.split("/", -1).map(s => NotionId.replaceFirstIn(s, "")).mkString("/")
+  private def stripNotion(path: String): String =
+    path.split("/", -1).map(s => NotionId.replaceFirstIn(s, "")).mkString("/")
 
   private val IndexRe = "(?i)(^|/)index\\.html?$".r
-  private def isIndex(
-    e: Entry
-  ) = IndexRe.findFirstIn(e.path).isDefined
-  private def hasMain(
-    e: Entry
-  ) = e.text.contains("id=\"main-content\"")
+  private def isIndex(e: Entry) = IndexRe.findFirstIn(e.path).isDefined
+  private def hasMain(e: Entry) = e.text.contains("id=\"main-content\"")
 
   /** Confluence の HTML 書き出し（index.html と「ページ名_数字.html」、attachments/） */
-  private def isConfluence(
-    texts: List[Entry]
-  ): Boolean =
+  private def isConfluence(texts: List[Entry]): Boolean =
     texts.exists(e =>
       isIndex(e) && "id=\"(main-content|breadcrumb-section)\"|class=\"pageSection".r.findFirstIn(e.text).isDefined
         || "(?i)Confluence".r.findFirstIn(e.text.take(3000)).isDefined
     ) && texts.exists(hasMain)
 
   /** Confluence のページ: タイトルと本文（#main-content）だけにする */
-  private def cleanConfluence(
-    html: String
-  ): String = {
+  private def cleanConfluence(html: String): String = {
     val doc = parse(html)
     var title = first(doc, "#title-text").map(text).getOrElse(JsLike.trim(doc.title))
     title = "^.*?\\s:\\s".r.replaceFirstIn(title, "") // 「スペース名 : ページ名」
@@ -291,16 +227,10 @@ object Importer {
   }
 
   /** Confluence の index.html の入れ子のリストから、ページの親子（ファイル → 親のファイル）を読む */
-  private def confluenceParents(
-    index: String,
-    base: String
-  ): Map[String, Option[String]] = {
+  private def confluenceParents(index: String, base: String): Map[String, Option[String]] = {
     val doc = parse(index)
     val out = mutable.Map.empty[String, Option[String]]
-    def walkUl(
-      ul: dom.Element,
-      parent: Option[String]
-    ): Unit =
+    def walkUl(ul: dom.Element, parent: Option[String]): Unit =
       children(ul).filter(_.tagName == "LI").foreach { li =>
         val href = first(li, ":scope > a[href]").map(attr(_, "href")).getOrElse("")
         val path =
@@ -313,14 +243,9 @@ object Importer {
   }
 
   /** 取り込むファイルの並びを整える（Notion: ID を外す、Confluence: 親子の階層に並べ直す）. kind: notion / confluence */
-  private def normalize(
-    texts: List[Entry],
-    csvs: List[Entry]
-  ): (List[Entry], List[Entry], Option[String]) =
+  private def normalize(texts: List[Entry], csvs: List[Entry]): (List[Entry], List[Entry], Option[String]) =
     if (isNotion(texts, csvs)) {
-      def fix(
-        e: Entry
-      ) = e.copy(orig = Some(e.path), path = stripNotion(e.path))
+      def fix(e: Entry) = e.copy(orig = Some(e.path), path = stripNotion(e.path))
       // 「X.csv」と「X_all.csv」がある場合は _all（非表示の列も含む）を使う
       val AllRe = "(?i)_all\\.csv$".r
       val allSet =
@@ -337,10 +262,7 @@ object Importer {
       val parents = index.fold(Map.empty[String, Option[String]])(i => confluenceParents(i.text, dirOf(i.path)))
       val pages = texts.filter(e => !index.contains(e) && hasMain(e))
       val nameOf = pages.map(e => e.path -> "(?i)\\.html?$".r.replaceFirstIn(e.path.split("/", -1).last, "")).toMap
-      def virtual(
-        path: String,
-        seen: mutable.Set[String]
-      ): String = {
+      def virtual(path: String, seen: mutable.Set[String]): String = {
         val name = nameOf.getOrElse(path, path)
         parents.get(path).flatten match {
           case Some(parent) if !seen(parent) && nameOf.contains(parent) =>
@@ -357,9 +279,7 @@ object Importer {
     } else (texts, csvs, None)
 
   /** パスから親子関係を作る.「A.md」と「A/」、「A/index.md」（README.md）は同じページとして扱う */
-  private def buildTree(
-    texts: List[Entry]
-  ): Node = {
+  private def buildTree(texts: List[Entry]): Node = {
     val root = new Node("", "")
     texts.foreach { e =>
       val segs = e.path.split("/", -1).toList
@@ -378,24 +298,12 @@ object Importer {
     root
   }
 
-  private def walk(
-    n: Node
-  ): List[Node] = n.children.values.toList.flatMap(c => c :: walk(c))
+  private def walk(n: Node): List[Node] = n.children.values.toList.flatMap(c => c :: walk(c))
 
-  private def findNode(
-    tree: Node,
-    path: String
-  ): Option[Node] =
-    path.split("/", -1).foldLeft(Option(tree))(
-      (
-        cur,
-        s
-      ) => cur.flatMap(_.children.get(s))
-    )
+  private def findNode(tree: Node, path: String): Option[Node] =
+    path.split("/", -1).foldLeft(Option(tree))((cur, s) => cur.flatMap(_.children.get(s)))
 
-  private def isDb(
-    n: Node
-  ) = n.entry.exists(_.path.endsWith(".__db__"))
+  private def isDb(n: Node) = n.entry.exists(_.path.endsWith(".__db__"))
 
   // ---------------------------------------------------------------- 取り込み
 
@@ -403,10 +311,7 @@ object Importer {
    * Markdown / HTML（ConfluenceのHTML書き出しなど）を取り込む. 複数ファイル・ZIP（フォルダ構成をページの親子にする）に対応.
    * parentId を省くとワークスペース直下. 画像は添付ファイルとしてアップロードし、ファイル間のリンクはページへのリンクにする.
    */
-  def importPage(
-    workspaceId: String,
-    parentId: Option[String]
-  ): Future[Unit] =
+  def importPage(workspaceId: String, parentId: Option[String]): Future[Unit] =
     Db.pickFiles(Accept, multiple = true).flatMap { files =>
       if (files.isEmpty) Future.successful(())
       else {
@@ -421,12 +326,10 @@ object Importer {
       }
     }
 
-  private def run(
-    workspaceId: String,
-    parentId: Option[String],
-    files: List[dom.File],
-    created: mutable.ArrayBuffer[(Node, String)]
-  ): Future[Unit] =
+  private def run(workspaceId: String,
+                  parentId: Option[String],
+                  files: List[dom.File],
+                  created: mutable.ArrayBuffer[(Node, String)]): Future[Unit] =
     readFiles(files).flatMap { read =>
       val (texts, csvs, kind) = normalize(read.texts, read.csvs)
       val images = read.images
@@ -441,10 +344,7 @@ object Importer {
 
         // 1) ページを作る（親から順に. 同じ階層は名前順）
         val byPath = mutable.LinkedHashMap.empty[String, Node]
-        def create(
-          node: Node,
-          parent: Option[String]
-        ): Future[Unit] = sequentially(node.sortedChildren) { child =>
+        def create(node: Node, parent: Option[String]): Future[Unit] = sequentially(node.sortedChildren) { child =>
           val prepared = child.entry.filterNot(_ => isDb(child)) match {
             case Some(e) => prepareImport(e.text, e.path.split("/", -1).last).map(Some(_))
             case None => Future.successful(None)
@@ -463,11 +363,8 @@ object Importer {
         create(tree, parentId).flatMap { _ =>
           // 2) 本文を入れる（画像のアップロード、ファイル間リンクの付け替え）
           showProgress(Some(Progress("本文を取り込み中", 0, created.size)))
-          sequentially(created.toList)(
-            (
-              node,
-              html
-            ) => fillContent(workspaceId, node, html, images, byPath).map(_ => stepProgress())
+          sequentially(created.toList)((node, html) =>
+            fillContent(workspaceId, node, html, images, byPath).map(_ => stepProgress())
           )
         }.flatMap { _ =>
           // 3) CSV（Notion のデータベース）: 同じ名前のページをデータベースにし、列と値を入れる
@@ -494,18 +391,14 @@ object Importer {
     }
 
   private val MxRe = "<mx(file|GraphModel)".r
-  private def isMx(
-    s: String
-  ) = MxRe.findFirstIn(s).isDefined
+  private def isMx(s: String) = MxRe.findFirstIn(s).isDefined
 
   /** draw.io の図のブロック（Drawio ノードの parseHTML の形） */
-  private def drawioFigure(
-    doc: dom.Document,
-    src: Option[String],
-    xmlSrc: Option[String],
-    title: String,
-    text: String
-  ): dom.Element = {
+  private def drawioFigure(doc: dom.Document,
+                           src: Option[String],
+                           xmlSrc: Option[String],
+                           title: String,
+                           text: String): dom.Element = {
     val fig = doc.createElement("figure")
     fig.setAttribute("data-drawio", "")
     fig.setAttribute("data-title", title)
@@ -518,38 +411,27 @@ object Importer {
   }
 
   /** リンクだけの段落なら段落ごと、そうでなければリンクを置き換える */
-  private def linkHost(
-    link: dom.Element
-  ): dom.Element = {
+  private def linkHost(link: dom.Element): dom.Element = {
     val p = link.asInstanceOf[js.Dynamic].parentElement.asInstanceOf[dom.Element]
     if (p != null && p.tagName == "P" && text(p) == text(link)) p else link
   }
 
-  private def upload(
-    page: Page,
-    data: Uint8Array,
-    name: String,
-    mime: String
-  ): Future[Attachment] =
+  private def upload(page: Page, data: Uint8Array, name: String, mime: String): Future[Attachment] =
     ContentApi.uploadAttachment(page.id, Bytes.file(data, name, mime))
 
   private val DataUrlRe = "(?i)^data:(image/[\\w.+-]+);base64,(.+)$".r
 
   /** 本文を入れる: 画像のアップロード、ファイル間リンクの付け替え */
-  private def fillContent(
-    workspaceId: String,
-    node: Node,
-    html: String,
-    images: Map[String, Bin],
-    byPath: mutable.LinkedHashMap[String, Node]
-  ): Future[Unit] = {
+  private def fillContent(workspaceId: String,
+                          node: Node,
+                          html: String,
+                          images: Map[String, Bin],
+                          byPath: mutable.LinkedHashMap[String, Node]): Future[Unit] = {
     val page = node.page.get
     val dir = dirOf(node.entry.get.source)
     val doc = parse(html)
 
-    def image(
-      img: dom.Element
-    ): Future[Unit] = {
+    def image(img: dom.Element): Future[Unit] = {
       val src = attr(img, "src")
       DataUrlRe.findFirstMatchIn(src) match {
         case Some(m) =>
@@ -568,12 +450,7 @@ object Importer {
               else {
                 val noPng = "(?i)\\.png$".r
                 List(noPng.replaceFirstIn(imgPath, ""), noPng.replaceFirstIn(imgPath, ".drawio")).filter(_ != imgPath)
-                  .flatMap(p => images.get(p).map(p -> _)).find(
-                    (
-                      _,
-                      f
-                    ) => isMx(Bytes.utf8(f.data.subarray(0, 4000)))
-                  )
+                  .flatMap(p => images.get(p).map(p -> _)).find((_, f) => isMx(Bytes.utf8(f.data.subarray(0, 4000))))
               }
               if (embedded.isDefined || xmlFile.isDefined) {
                 val t0 = "(?i)\\.(drawio|dio)?\\.?png$".r.replaceFirstIn(
@@ -598,9 +475,7 @@ object Importer {
       }
     }
 
-    def link(
-      a: dom.Element
-    ): Future[Unit] = {
+    def link(a: dom.Element): Future[Unit] = {
       val href = attr(a, "href")
       if ("(?i)^[a-z]+:|^/|^#".r.findFirstIn(href).isDefined) Future.successful(())
       else {
@@ -660,18 +535,12 @@ object Importer {
 
   // ---------------------------------------------------------------- Notion のデータベース（CSV）
 
-  private def jsNumber(
-    s: String
-  ): Double = js.Dynamic.global.Number(s).asInstanceOf[Double]
+  private def jsNumber(s: String): Double = js.Dynamic.global.Number(s).asInstanceOf[Double]
 
-  private def stripNum(
-    s: String
-  ) = s.replaceAll("[,¥$%]", "")
+  private def stripNum(s: String) = s.replaceAll("[,¥$%]", "")
 
   /** Notion の日付（「November 7, 2026」「2026/11/07 10:00」「A → B」） */
-  private def notionDate(
-    s: String
-  ): Option[String] = {
+  private def notionDate(s: String): Option[String] = {
     val head = JsLike.trim(s.split("→", -1)(0))
     Db.parseDate(head).orElse {
       val t = js.Date.parse(head)
@@ -682,9 +551,7 @@ object Importer {
   private val Comma = ",\\s*"
 
   /** 列の種類を値から推測する */
-  private def guess(
-    vals: List[String]
-  ): String = {
+  private def guess(vals: List[String]): String = {
     val v = vals.map(JsLike.trim).filter(_.nonEmpty)
     if (v.isEmpty) "text"
     else if (v.forall(x => "(?i)^(yes|no|true|false|はい|いいえ)$".r.findFirstIn(x).isDefined)) "checkbox"
@@ -700,10 +567,7 @@ object Importer {
   }
 
   /** Notion のデータベース（CSV）: 列の種類を値から推測してデータベースにし、子ページ（項目）に値を入れる. ページのない行は項目を作る */
-  private def importCsvDatabase(
-    node: Node,
-    csv: String
-  ): Future[Unit] = {
+  private def importCsvDatabase(node: Node, csv: String): Future[Unit] = {
     val rows = Db.parseCsv(csv)
     if (rows.isEmpty) Future.successful(())
     else {
@@ -711,10 +575,7 @@ object Importer {
       val body = rows.tail
       val titleCol = 0
       val cols: List[Option[DbProp]] = head.zipWithIndex.map {
-        (
-          name,
-          i
-        ) =>
+        (name, i) =>
           if (i == titleCol) None
           else {
             val kind = guess(body.map(_.lift(i).getOrElse("")))
@@ -724,11 +585,8 @@ object Importer {
                   if (kind == "multi_select") r.lift(i).getOrElse("").split(Comma, -1).toList
                   else List(r.lift(i).getOrElse(""))
                 )
-                  .map(JsLike.trim).filter(_.nonEmpty).distinct.zipWithIndex.map(
-                    (
-                      n,
-                      k
-                    ) => DbOption(Db.newId(), n, Db.Colors(k % Db.Colors.size))
+                  .map(JsLike.trim).filter(_.nonEmpty).distinct.zipWithIndex.map((n, k) =>
+                    DbOption(Db.newId(), n, Db.Colors(k % Db.Colors.size))
                   ))
               else None
             Some(DbProp(
@@ -739,9 +597,7 @@ object Importer {
             ))
           }
       }
-      def valuesOf(
-        r: List[String]
-      ): Map[String, Json] = cols.zipWithIndex.flatMap {
+      def valuesOf(r: List[String]): Map[String, Json] = cols.zipWithIndex.flatMap {
         case (None, _) => None
         case (Some(c), i) =>
           val x = JsLike.trim(r.lift(i).getOrElse(""))

@@ -20,10 +20,7 @@ class AgentAccountsSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set("agent-admins"), cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    scim: ScimStore,
-    app: HttpApp[IO])
+  final case class Env(store: Store, scim: ScimStore, app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -52,10 +49,7 @@ class AgentAccountsSpec extends DbSuite {
   private def env = fixture()
 
   /** ログインした人（Cookie のセッション） */
-  private def user(
-    name: String,
-    groups: List[String] = Nil
-  ): IO[(User, String)] = {
+  private def user(name: String, groups: List[String] = Nil): IO[(User, String)] = {
     val cookie = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(
@@ -69,12 +63,10 @@ class AgentAccountsSpec extends DbSuite {
   }
 
   /** auth: Left(Cookie) か Right(API キー) */
-  private def call(
-    auth: Either[String, String],
-    method: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[(Status, Json)] = {
+  private def call(auth: Either[String, String],
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None): IO[(Status, Json)] = {
     val base = Request[IO](method, Uri.unsafeFromString(path))
     val req0 = auth.fold(
       c => base.addCookie("skiwi_session", c),
@@ -84,11 +76,7 @@ class AgentAccountsSpec extends DbSuite {
     env.app.run(req).flatMap(r => r.bodyText.compile.string.map(s => (r.status, parse(s).getOrElse(Json.Null))))
   }
 
-  private def tool(
-    key: String,
-    name: String,
-    args: (String, Json)*
-  ): IO[(Status, Boolean, String)] =
+  private def tool(key: String, name: String, args: (String, Json)*): IO[(Status, Boolean, String)] =
     call(
       Right(key),
       Method.POST,
@@ -100,10 +88,7 @@ class AgentAccountsSpec extends DbSuite {
         "params" -> Json.obj("name" -> name.asJson, "arguments" -> Json.obj(args*))
       ))
     ).map {
-      (
-        st,
-        j
-      ) =>
+      (st, j) =>
         val r = j.hcursor.downField("result")
         (
           st,

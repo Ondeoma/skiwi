@@ -14,12 +14,11 @@ import java.util.UUID
 import scala.concurrent.duration.*
 
 /** 自動化ルールのきっかけになる出来事。data: 種類ごとの情報 */
-final case class AutoEvent(
-  kind: String,
-  workspaceId: UUID,
-  pageId: UUID,
-  actor: String,
-  data: JsonObject = JsonObject.empty)
+final case class AutoEvent(kind: String,
+                           workspaceId: UUID,
+                           pageId: UUID,
+                           actor: String,
+                           data: JsonObject = JsonObject.empty)
 
 /**
  * 自動化ルール（きっかけ → 動作）。
@@ -37,18 +36,15 @@ final case class AutoEvent(
  *   - add_label { label }              ラベルを付ける
  * 動作でページを変えても、ほかのルールは動かさない（連鎖しない）。
  */
-final class Automations(
-  rules: AutomationStore,
-  store: Store,
-  ops: OpsStore,
-  dbs: DatabaseStore,
-  hooks: WebhookStore,
-  tz: String = "Asia/Tokyo") {
+final class Automations(rules: AutomationStore,
+                        store: Store,
+                        ops: OpsStore,
+                        dbs: DatabaseStore,
+                        hooks: WebhookStore,
+                        tz: String = "Asia/Tokyo") {
 
   /** 出来事に合うルールを実行する（失敗してもリクエストは止めない） */
-  def fire(
-    ev: AutoEvent
-  ): IO[Unit] =
+  def fire(ev: AutoEvent): IO[Unit] =
     rules.enabledFor(ev.workspaceId, ev.kind).flatMap(_.traverse_ { r =>
       val t = parseOrNull(r.trigger).hcursor
       val under = t.get[String]("under").toOption.flatMap(uuidOpt)
@@ -58,16 +54,9 @@ final class Automations(
       }
     }).handleErrorWith(e => sbirds.observe.Log.report(ErrorCode.AutomationFailed, e.toString, e))
 
-  private def matches(
-    t: io.circe.ACursor,
-    ev: AutoEvent
-  ): Boolean = {
-    def s(
-      k: String
-    ) = t.get[String](k).toOption.filter(_.nonEmpty)
-    def d(
-      k: String
-    ) = ev.data(k)
+  private def matches(t: io.circe.ACursor, ev: AutoEvent): Boolean = {
+    def s(k: String) = t.get[String](k).toOption.filter(_.nonEmpty)
+    def d(k: String) = ev.data(k)
     ev.kind match {
       case "status_changed" => s("to").forall(to => d("status").flatMap(_.asString).contains(to))
       case "label_added" => s("label").forall(l =>
@@ -87,29 +76,19 @@ final class Automations(
   }
 
   /** 値の比較用の文字（選択肢のID・true/false・文字列・配列ならその中のどれか） */
-  private def valueText(
-    v: Json
-  ): List[String] =
+  private def valueText(v: Json): List[String] =
     v.asString.toList ++ v.asBoolean.map(_.toString).toList ++ v.asNumber.map(_.toString).toList ++
       v.asArray.toList.flatten.flatMap(_.asString)
 
-  private def run(
-    r: AutomationRule,
-    ev: AutoEvent
-  ): IO[Unit] =
+  private def run(r: AutomationRule, ev: AutoEvent): IO[Unit] =
     sbirds.observe.Telemetry.span("automation.run", "automation.event" -> ev.kind)(perform(r, ev)).attempt.flatMap {
       case Right(_) => rules.recordRun(r.id, None)
       case Left(e) => rules.recordRun(r.id, Some(Option(e.getMessage).getOrElse(e.toString).take(300)))
     }
 
-  private def perform(
-    r: AutomationRule,
-    ev: AutoEvent
-  ): IO[Unit] = {
+  private def perform(r: AutomationRule, ev: AutoEvent): IO[Unit] = {
     val a = parseOrNull(r.action).hcursor
-    def s(
-      k: String
-    ) = a.get[String](k).toOption.filter(_.nonEmpty)
+    def s(k: String) = a.get[String](k).toOption.filter(_.nonEmpty)
     store.pageMeta(List(ev.pageId)).flatMap { meta =>
       titleOf(ev.pageId).flatMap { title =>
         val message = render(s("message").getOrElse(defaultMessage(ev)), title, ev, r.name)
@@ -150,17 +129,11 @@ final class Automations(
     }
   }
 
-  private def titleOf(
-    pageId: UUID
-  ): IO[String] =
+  private def titleOf(pageId: UUID): IO[String] =
     store.pageTitle(pageId).map(Titles.display(_))
 
   /** 通知する人 */
-  private def recipients(
-    a: io.circe.ACursor,
-    ev: AutoEvent,
-    owner: Option[UUID]
-  ): IO[Set[UUID]] =
+  private def recipients(a: io.circe.ACursor, ev: AutoEvent, owner: Option[UUID]): IO[Set[UUID]] =
     a.get[String]("to").toOption match {
       case Some("owner") => IO.pure(owner.toSet)
       case Some("watchers") => ops.watchers(ev.pageId)
@@ -175,9 +148,7 @@ final class Automations(
       case _ => IO.pure(Set.empty)
     }
 
-  private def defaultMessage(
-    ev: AutoEvent
-  ): String = ev.kind match {
+  private def defaultMessage(ev: AutoEvent): String = ev.kind match {
     case "status_changed" => "「{title}」の状態が変わりました（{actor}）"
     case "label_added" => "「{title}」にラベルが付きました（{actor}）"
     case "page_created" => "「{title}」が作られました（{actor}）"
@@ -186,12 +157,7 @@ final class Automations(
     case _ => "「{title}」"
   }
 
-  private def render(
-    tpl: String,
-    title: String,
-    ev: AutoEvent,
-    rule: String
-  ): String =
+  private def render(tpl: String, title: String, ev: AutoEvent, rule: String): String =
     tpl.replace("{title}", title).replace("{actor}", ev.actor).replace("{rule}", rule)
       .replace("{date}", ev.data("date").flatMap(_.asString).getOrElse(""))
       .replace("{status}", ev.data("status").flatMap(_.asString).getOrElse(""))
@@ -207,22 +173,14 @@ final class Automations(
             val offset = t.get[Int]("offset").toOption.getOrElse(0)
             val unless = (t.get[String]("unlessProp").toOption, t.get[String]("unlessValue").toOption).tupled
             rules.datedRows(r.workspaceId, db, prop).flatMap(_.flatTraverse {
-              (
-                rowId,
-                _,
-                date,
-                values
-              ) =>
+              (rowId, _, date, values) =>
                 Either.catchNonFatal(LocalDate.parse(date)).toOption match {
                   case None => IO.pure(Nil)
                   case Some(d) =>
                     val due = d.plusDays(offset.toLong)
                     // 当日から3日のうちに確かめられたものだけ（古い日付をまとめて通知しない）
-                    val skip = unless.exists(
-                      (
-                        p,
-                        v
-                      ) => parseOrNull(values).hcursor.downField(p).focus.exists(j => valueText(j).contains(v))
+                    val skip = unless.exists((p, v) =>
+                      parseOrNull(values).hcursor.downField(p).focus.exists(j => valueText(j).contains(v))
                     )
                     if today.isBefore(due) || today.isAfter(due.plusDays(3)) || skip then IO.pure(Nil)
                     else
@@ -246,19 +204,17 @@ final class Automations(
 
 // ---------------------------------------------------------------- 設定のAPI
 
-final case class AutomationDto(
-  id: UUID,
-  name: String,
-  enabled: Boolean,
-  trigger: Json,
-  action: Json,
-  createdBy: Option[String],
-  createdAt: Instant,
-  lastRunAt: Option[Instant],
-  lastError: Option[String],
-  runCount: Int) derives Encoder.AsObject
-final case class SaveAutomationReq(
-  name: Option[String],
-  enabled: Option[Boolean],
-  trigger: Option[Json],
-  action: Option[Json]) derives Decoder
+final case class AutomationDto(id: UUID,
+                               name: String,
+                               enabled: Boolean,
+                               trigger: Json,
+                               action: Json,
+                               createdBy: Option[String],
+                               createdAt: Instant,
+                               lastRunAt: Option[Instant],
+                               lastError: Option[String],
+                               runCount: Int) derives Encoder.AsObject
+final case class SaveAutomationReq(name: Option[String],
+                                   enabled: Option[Boolean],
+                                   trigger: Option[Json],
+                                   action: Option[Json]) derives Decoder

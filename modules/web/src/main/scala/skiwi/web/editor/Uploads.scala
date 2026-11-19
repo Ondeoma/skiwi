@@ -15,15 +15,10 @@ object Uploads {
   private val Unnamed = "(?i)^image\\.(png|jpe?g|gif|webp)$".r
 
   /** 貼り付けた画像に名前がない（スクリーンショットなど）ときは、日時から名前を付ける */
-  def named(
-    files: List[dom.File]
-  ): List[dom.File] = {
+  def named(files: List[dom.File]): List[dom.File] = {
     val stamp = new js.Date().toISOString().take(19).replaceAll("[-:]", "").replace('T', '-')
     files.zipWithIndex.map {
-      (
-        f,
-        i
-      ) =>
+      (f, i) =>
         if (f.name.nonEmpty && !Unnamed.matches(f.name)) f
         else {
           val ext = f.`type`.split('/').lift(1).filter(_.nonEmpty).getOrElse("png").replace("jpeg", "jpg")
@@ -37,9 +32,7 @@ object Uploads {
   }
 
   /** draw.io の図のファイル（図を埋め込んだ PNG・図の XML）なら、図の中の文字 */
-  private def drawioText(
-    f: dom.File
-  ): Future[Option[String]] = {
+  private def drawioText(f: dom.File): Future[Option[String]] = {
     val xml: Future[Option[String]] =
       if (Drawio.isPng(f.name)) Bytes.read(f).flatMap(Drawio.xmlFromPng)
       else if (Drawio.isXml(f.name))
@@ -52,10 +45,7 @@ object Uploads {
   }
 
   /** アップロードした添付を本文に入れる形に（画像は画像、それ以外はファイルのカード. draw.io の図は図のブロック） */
-  def nodeOf(
-    a: Attachment,
-    drawio: Option[String]
-  ): js.Any = drawio match {
+  def nodeOf(a: Attachment, drawio: Option[String]): js.Any = drawio match {
     case Some(text) =>
       val title = "(?i)\\.(drawio|dio)(\\.png)?$".r.replaceFirstIn(a.filename, "")
       if (Drawio.isPng(a.filename))
@@ -77,9 +67,7 @@ object Uploads {
         )
   }
 
-  private def message(
-    e: Throwable
-  ): String = e match {
+  private def message(e: Throwable): String = e match {
     case a: ApiError => a.message
     case other => Bytes.message(other)
   }
@@ -88,10 +76,7 @@ object Uploads {
    * 複数のファイルを同時にアップロードし、選んだ順のノードにする.
    * 戻り値: { nodes: 入れるノード, failed: 失敗したファイルの知らせ（すべて成功なら null） }
    */
-  def uploadAll(
-    pageId: String,
-    files: List[dom.File]
-  ): Future[js.Dynamic] = {
+  def uploadAll(pageId: String, files: List[dom.File]): Future[js.Dynamic] = {
     val fs = named(files)
     Future.sequence(fs.map(drawioText)).flatMap { drawio =>
       Future.sequence(fs.map(f => ContentApi.uploadAttachment(pageId, f).transform(Success(_)))).map { results =>
@@ -106,9 +91,7 @@ object Uploads {
   }
 
   /** 添付の JS の形（エディタの uploadFile などに返す） */
-  def toJs(
-    a: Attachment
-  ): js.Any =
+  def toJs(a: Attachment): js.Any =
     js.Dynamic.literal(id = a.id, url = a.url, filename = a.filename, contentType = a.contentType, size = a.size)
 
 }

@@ -14,22 +14,15 @@ import scala.annotation.tailrec
  */
 object Acl {
 
-  private def best(
-    entries: List[AclEntry],
-    who: Set[Principal]
-  ): Option[Role] =
+  private def best(entries: List[AclEntry], who: Set[Principal]): Option[Role] =
     entries.collect { case AclEntry(p, r) if who.contains(p) => r }.maxOption
 
   /** chain は対象ページ(先頭)から根(末尾)の順。 */
-  def resolve(
-    chain: List[AclNode],
-    workspaceAcl: List[AclEntry],
-    workspaceDefault: Option[Role],
-    who: Set[Principal]
-  ): Option[Role] = {
-    @tailrec def go(
-      rest: List[AclNode]
-    ): Option[Role] = rest match {
+  def resolve(chain: List[AclNode],
+              workspaceAcl: List[AclEntry],
+              workspaceDefault: Option[Role],
+              who: Set[Principal]): Option[Role] = {
+    @tailrec def go(rest: List[AclNode]): Option[Role] = rest match {
       case Nil => best(workspaceAcl, who).orElse(workspaceDefault)
       case n :: tail =>
         best(n.entries, who) match {
@@ -51,20 +44,13 @@ object Acl {
   }
 
   /** resolve と同じ規則で、権限とその根拠（一致したエントリ）を返す。 */
-  def explain(
-    chain: List[AclNode],
-    workspaceAcl: List[AclEntry],
-    workspaceDefault: Option[Role],
-    who: Set[Principal]
-  ): Option[(Role, Source)] = {
-    def bestEntry(
-      entries: List[AclEntry]
-    ): Option[AclEntry] =
+  def explain(chain: List[AclNode],
+              workspaceAcl: List[AclEntry],
+              workspaceDefault: Option[Role],
+              who: Set[Principal]): Option[(Role, Source)] = {
+    def bestEntry(entries: List[AclEntry]): Option[AclEntry] =
       entries.filter(e => who.contains(e.principal)).maxByOption(_.role)(summon[Ordering[Role]])
-    @tailrec def go(
-      rest: List[AclNode],
-      depth: Int
-    ): Option[(Role, Source)] = rest match {
+    @tailrec def go(rest: List[AclNode], depth: Int): Option[(Role, Source)] = rest match {
       case Nil =>
         bestEntry(workspaceAcl).map(e => e.role -> Source.WorkspaceEntry(e.principal))
           .orElse(workspaceDefault.map(_ -> Source.WorkspaceDefault))
@@ -78,24 +64,16 @@ object Acl {
   }
 
   /** ワークスペース全ページの権限を一括解決する。閲覧できないページは結果に含めない。 */
-  def resolveAll(
-    pages: List[Page],
-    nodes: Map[UUID, AclNode],
-    workspaceAcl: List[AclEntry],
-    workspaceDefault: Option[Role],
-    who: Set[Principal]
-  ): Map[UUID, Role] = {
+  def resolveAll(pages: List[Page],
+                 nodes: Map[UUID, AclNode],
+                 workspaceAcl: List[AclEntry],
+                 workspaceDefault: Option[Role],
+                 who: Set[Principal]): Map[UUID, Role] = {
     val byId = pages.map(p => p.id -> p).toMap
     val empty = AclNode(inherit = true, Nil)
 
-    def chainOf(
-      p: Page
-    ): List[AclNode] = {
-      @tailrec def up(
-        cur: Option[Page],
-        acc: List[AclNode],
-        seen: Set[UUID]
-      ): List[AclNode] =
+    def chainOf(p: Page): List[AclNode] = {
+      @tailrec def up(cur: Option[Page], acc: List[AclNode], seen: Set[UUID]): List[AclNode] =
         cur match {
           case Some(pg) if !seen(pg.id) =>
             up(pg.parentId.flatMap(byId.get), nodes.getOrElse(pg.id, empty) :: acc, seen + pg.id)

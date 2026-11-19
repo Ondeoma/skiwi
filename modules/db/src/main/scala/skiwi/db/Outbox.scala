@@ -13,16 +13,12 @@ private[db] object Outbox {
    * 送信はロックを保持したトランザクション内で行う（件数が少ない前提。送信待ちの間ロックされるのは該当行のみ）。
    * 再試行は指数バックオフ（最大1時間）で、maxAttempts 回失敗したら諦める。
    */
-  def process[A](
-    xa: Transactor[IO],
-    table: String,
-    claim: ConnectionIO[List[A]],
-    id: A => Long,
-    attempts: A => Int,
-    maxAttempts: Int
-  )(
-    f: A => IO[OutboxResult]
-  ): IO[Int] = {
+  def process[A](xa: Transactor[IO],
+                 table: String,
+                 claim: ConnectionIO[List[A]],
+                 id: A => Long,
+                 attempts: A => Int,
+                 maxAttempts: Int)(f: A => IO[OutboxResult]): IO[Int] = {
     val upd = Fragment.const(s"update $table set")
     WeakAsync.liftK[IO, ConnectionIO].use { lift =>
       claim.flatMap { items =>

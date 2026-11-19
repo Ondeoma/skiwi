@@ -12,23 +12,20 @@ import scala.collection.mutable
 final class YState private () {
 
   /** 構造体のかけら（Yjs と同じく、必要に応じて分割する）。 */
-  final class Piece(
-    var id: YId,
-    var length: Int,
-    var origin: Option[YId],
-    val rightOrigin: Option[YId],
-    val parentRef: Option[YParent],
-    val parentSub: Option[String],
-    var content: YContent,
-    val gc: Boolean) {
+  final class Piece(var id: YId,
+                    var length: Int,
+                    var origin: Option[YId],
+                    val rightOrigin: Option[YId],
+                    val parentRef: Option[YParent],
+                    val parentSub: Option[String],
+                    var content: YContent,
+                    val gc: Boolean) {
     var left: Piece = null
     var right: Piece = null
     var integrated = false
     var deleted: Boolean = gc || content.isInstanceOf[YContent.Deleted]
     def lastId: YId = id + (length - 1)
-    def contains(
-      i: YId
-    ) = i.client == id.client && i.clock >= id.clock && i.clock < id.clock + length
+    def contains(i: YId) = i.client == id.client && i.clock >= id.clock && i.clock < id.clock + length
     override def toString = s"Piece($id,$length,${content.toString.take(30)},deleted=$deleted)"
   }
 
@@ -39,10 +36,7 @@ final class YState private () {
   def clientIds: Set[Long] = clients.keySet.toSet
 
   /** ps の中で、clock より後ろで終わる最初のかけらの位置（二分探索）。 */
-  private def firstEndingAfter(
-    ps: mutable.ArrayBuffer[Piece],
-    clock: Long
-  ): Int = {
+  private def firstEndingAfter(ps: mutable.ArrayBuffer[Piece], clock: Long): Int = {
     var lo = 0; var hi = ps.size
     while lo < hi do {
       val mid = (lo + hi) >>> 1
@@ -52,23 +46,16 @@ final class YState private () {
   }
 
   /** id を含むかけらの位置。 */
-  private def indexOf(
-    i: YId
-  ): Option[Int] =
+  private def indexOf(i: YId): Option[Int] =
     clients.get(i.client).flatMap { ps =>
       val k = firstEndingAfter(ps, i.clock)
       Option.when(k < ps.size && ps(k).contains(i))(k)
     }
 
-  def find(
-    i: YId
-  ): Option[Piece] = indexOf(i).map(clients(i.client)(_))
+  def find(i: YId): Option[Piece] = indexOf(i).map(clients(i.client)(_))
 
   /** かけら p を off の位置で分け、右側を返す（Yjs の splitItem）。並び・親ごとの索引もつなぎ直す。 */
-  private def split(
-    p: Piece,
-    off: Int
-  ): Piece = {
+  private def split(p: Piece, off: Int): Piece = {
     val (a, b) = if p.gc then (p.content, p.content) else p.content.splitAt(off)
     val r = Piece(p.id + off, p.length - off, Some(p.id + (off - 1)), p.rightOrigin, p.parentRef, p.parentSub, b, p.gc)
     r.deleted = p.deleted
@@ -90,23 +77,18 @@ final class YState private () {
   }
 
   /** id で始まるかけら（途中なら分ける）。 */
-  private def cleanStart(
-    i: YId
-  ): Option[Piece] = find(i).map(p => if p.id.clock == i.clock then p else split(p, (i.clock - p.id.clock).toInt))
+  private def cleanStart(i: YId): Option[Piece] =
+    find(i).map(p => if p.id.clock == i.clock then p else split(p, (i.clock - p.id.clock).toInt))
 
   /** id で終わるかけら（途中なら分ける）。 */
-  private def cleanEnd(
-    i: YId
-  ): Option[Piece] =
+  private def cleanEnd(i: YId): Option[Piece] =
     find(i).map { p =>
       val off = (i.clock - p.id.clock).toInt
       if off == p.length - 1 then p else { split(p, off + 1); p }
     }
 
   /** 構造体を加える。すでにある範囲（別の update で受け取ったもの）は加えない。 */
-  private def add(
-    s: YStruct
-  ): Unit = {
+  private def add(s: YStruct): Unit = {
     val (start, end) = (s.id.clock, s.id.clock + s.length)
     val ps = clients.getOrElseUpdate(s.id.client, mutable.ArrayBuffer.empty)
     // まだない範囲（重なるかけらの間の隙間）を求める
@@ -120,10 +102,7 @@ final class YState private () {
     }
     if cur < end then gaps += ((cur, end))
     gaps.foreach {
-      (
-        a,
-        b
-      ) =>
+      (a, b) =>
         val off = (a - start).toInt
         val len = (b - a).toInt
         val piece = s match {
@@ -150,20 +129,12 @@ final class YState private () {
   }
 
   /** 削除の集合を当てる（範囲の端でかけらを分ける）。 */
-  private def applyDeletes(
-    ds: DeleteSet
-  ): Unit =
+  private def applyDeletes(ds: DeleteSet): Unit =
     ds.foreach {
-      (
-        client,
-        ranges
-      ) =>
+      (client, ranges) =>
         clients.get(client).foreach { ps =>
           ranges.foreach {
-            (
-              clock,
-              len
-            ) =>
+            (clock, len) =>
               val end = clock + len
               var k = firstEndingAfter(ps, clock)
               while k < ps.size && ps(k).id.clock < end do {
@@ -186,9 +157,7 @@ final class YState private () {
     case Gone // ガベージコレクト済み（またはつながらない）
   }
 
-  private def keyOf(
-    p: Parent
-  ): Option[(YParent, Option[String])] = p match {
+  private def keyOf(p: Parent): Option[(YParent, Option[String])] = p match {
     case Parent.Known(pp, sub) => Some((pp, sub))
     case Parent.Gone => None
   }
@@ -199,9 +168,7 @@ final class YState private () {
    * Yjs の Item.getMissing と同じ規則で、かけらの親を決める。
    * origin の鎖は長くなりうる（細工した update では数万）ので、再帰せずにたどる。循環していれば Gone。
    */
-  private def parentOf(
-    p0: Piece
-  ): Parent = {
+  private def parentOf(p0: Piece): Parent = {
     val chain = mutable.ArrayBuffer.empty[Piece]
     val seen = mutable.Set.empty[YId]
     var cur: Option[Piece] = Some(p0)
@@ -236,9 +203,7 @@ final class YState private () {
 
   /** 親（と属性名）ごとの子の索引。最初に使うときに一度だけ作り、分割したかけらは split で足す。 */
   private var groups: Option[mutable.Map[(YParent, Option[String]), mutable.ArrayBuffer[Piece]]] = None
-  private def group(
-    key: (YParent, Option[String])
-  ): mutable.ArrayBuffer[Piece] = {
+  private def group(key: (YParent, Option[String])): mutable.ArrayBuffer[Piece] = {
     val g = groups.getOrElse {
       val m = mutable.Map.empty[(YParent, Option[String]), mutable.ArrayBuffer[Piece]]
       clients.values.flatten.toVector.foreach(p =>
@@ -255,18 +220,13 @@ final class YState private () {
   private val ordered = mutable.Map.empty[(YParent, Option[String]), Vector[Piece]]
 
   /** 親 parent の子の並び（sub は属性名。属性なら最後のものが今の値）。削除済みのものも含む。 */
-  def children(
-    parent: YParent,
-    sub: Option[String] = None
-  ): Vector[Piece] = {
+  def children(parent: YParent, sub: Option[String] = None): Vector[Piece] = {
     val key = (parent, sub)
     ordered.getOrElseUpdate(
       key, {
         var start: Piece = null
 
-        def integrate(
-          p: Piece
-        ): Unit = {
+        def integrate(p: Piece): Unit = {
           var left: Piece = p.origin.flatMap(cleanEnd).orNull
           val right: Piece = p.rightOrigin.flatMap(cleanStart).orNull
           if (left == null && (right == null || right.left != null)) || (left != null && left.right != right) then {
@@ -296,9 +256,7 @@ final class YState private () {
         }
 
         // origin・rightOrigin のかけらが並びに入ったものから順に入れる（YATA は依存の順を守れば入れる順によらず同じ並びになる）
-        def ready(
-          i: Option[YId]
-        ) = i.forall(x => find(x).exists(_.integrated))
+        def ready(i: Option[YId]) = i.forall(x => find(x).exists(_.integrated))
         var pending = group(key).filterNot(_.integrated).sortBy(p => (p.id.client, p.id.clock))
         var progress = true
         while pending.nonEmpty && progress do {
@@ -333,9 +291,7 @@ final class YState private () {
   }
 
   /** 要素の今の属性（属性名ごとの並びの最後が今の値。削除されていれば値なし）。 */
-  private def attributes(
-    el: Piece
-  ): JsonObject =
+  private def attributes(el: Piece): JsonObject =
     JsonObject.fromIterable(attrNames.getOrElse(el.id, Vector.empty).flatMap { k =>
       children(YParent.Of(el.id), Some(k)).lastOption.filterNot(_.deleted).flatMap(_.content match {
         case YContent.AnyC(vs) => vs.lastOption
@@ -344,21 +300,15 @@ final class YState private () {
     })
 
   /** XmlText の中身を、マーク付きの文字のノードにする（書式の項目で今の属性を切り替える）。 */
-  private def textNodes(
-    t: Piece
-  ): Vector[Json] = {
+  private def textNodes(t: Piece): Vector[Json] = {
     val out = Vector.newBuilder[Json]
     val attrs = mutable.LinkedHashMap.empty[String, Json]
     val buf = StringBuilder()
     def flush(): Unit =
       if buf.nonEmpty then {
-        val marks = attrs.toVector.map(
-          (
-            k,
-            v
-          ) =>
-            if v.asObject.exists(_.nonEmpty) then Json.obj("type" -> Json.fromString(k), "attrs" -> v)
-            else Json.obj("type" -> Json.fromString(k))
+        val marks = attrs.toVector.map((k, v) =>
+          if v.asObject.exists(_.nonEmpty) then Json.obj("type" -> Json.fromString(k), "attrs" -> v)
+          else Json.obj("type" -> Json.fromString(k))
         )
         out +=
           (if marks.isEmpty then Json.obj("type" -> Json.fromString("text"), "text" -> Json.fromString(buf.toString))
@@ -387,10 +337,7 @@ final class YState private () {
   /** 要素の入れ子の上限（ふつうの本文はせいぜい数十段。細工した update でスタックを使い切らせない） */
   private val MaxElementDepth = 200
 
-  private def element(
-    el: Piece,
-    depth: Int = 0
-  ): Option[Json] = el.content match {
+  private def element(el: Piece, depth: Int = 0): Option[Json] = el.content match {
     case YContent.Type(YContent.YXmlElement, Some(name)) if depth <= MaxElementDepth =>
       val content = children(YParent.Of(el.id)).filterNot(_.deleted).flatMap { c =>
         c.content match {
@@ -406,18 +353,14 @@ final class YState private () {
   }
 
   /** ルートの XmlFragment の、削除されていない最上位の要素とその JSON。 */
-  def blocks(
-    root: String
-  ): Vector[(Piece, Json)] =
+  def blocks(root: String): Vector[(Piece, Json)] =
     children(YParent.Root(root)).filterNot(_.deleted).flatMap(p => element(p).map(p -> _))
 }
 
 object YState {
 
   /** いくつかの update（スナップショットと更新ログ）から状態を作る。 */
-  def apply(
-    updates: Seq[Array[Byte]]
-  ): YState = {
+  def apply(updates: Seq[Array[Byte]]): YState = {
     val st = new YState()
     val decoded = updates.map(YCodec.decode)
     decoded.foreach(_.structs.foreach(st.add))

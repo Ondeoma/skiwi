@@ -12,45 +12,30 @@ import skiwi.db.Store
 import java.util.UUID
 
 /** level: workspace | page。title は閲覧できるページのときだけ。own=そのページ自身 */
-final case class CssLayerDto(
-  level: String,
-  pageId: Option[UUID],
-  title: Option[String],
-  css: String,
-  inherit: Boolean,
-  own: Boolean) derives Encoder.AsObject
-final case class PageStylesDto(
-  layers: List[CssLayerDto],
-  css: Option[String],
-  inherit: Boolean) derives Encoder.AsObject
-final case class SetPageCssReq(
-  css: Option[String],
-  inherit: Boolean) derives Decoder
-final case class WorkspaceCssDto(
-  css: Option[String]) derives Encoder.AsObject, Decoder
-final case class GuestHtmlLayerDto(
-  level: String,
-  title: Option[String],
-  top: Option[String],
-  bottom: Option[String]) derives Encoder.AsObject
-final case class PageGuestHtmlDto(
-  top: Option[String],
-  bottom: Option[String],
-  inherit: Boolean,
-  layers: List[GuestHtmlLayerDto] = Nil) derives Encoder.AsObject
-final case class SetGuestHtmlReq(
-  top: Option[String],
-  bottom: Option[String],
-  inherit: Option[Boolean]) derives Decoder
+final case class CssLayerDto(level: String,
+                             pageId: Option[UUID],
+                             title: Option[String],
+                             css: String,
+                             inherit: Boolean,
+                             own: Boolean) derives Encoder.AsObject
+final case class PageStylesDto(layers: List[CssLayerDto], css: Option[String], inherit: Boolean)
+  derives Encoder.AsObject
+final case class SetPageCssReq(css: Option[String], inherit: Boolean) derives Decoder
+final case class WorkspaceCssDto(css: Option[String]) derives Encoder.AsObject, Decoder
+final case class GuestHtmlLayerDto(level: String, title: Option[String], top: Option[String], bottom: Option[String])
+  derives Encoder.AsObject
+final case class PageGuestHtmlDto(top: Option[String],
+                                  bottom: Option[String],
+                                  inherit: Boolean,
+                                  layers: List[GuestHtmlLayerDto] = Nil) derives Encoder.AsObject
+final case class SetGuestHtmlReq(top: Option[String], bottom: Option[String], inherit: Option[Boolean]) derives Decoder
 
 /**
  * カスタムCSS（ワークスペース・ページ）。設定は編集者のみ、取得は閲覧できる人。
  * 表示エリアの外に効かないよう、範囲の限定と危険な記述（外部URL・@import・position: fixed）の除去は表示側で行う。
  */
-final class CssRoutes(
-  protected val store: Store,
-  protected val sessions: SessionAuth,
-  audit: Audit) extends PageRouteSupport {
+final class CssRoutes(protected val store: Store, protected val sessions: SessionAuth, audit: Audit)
+  extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
@@ -65,20 +50,11 @@ final class CssRoutes(
     case req @ PUT -> Root / "api" / "workspaces" / UUIDVar(id) / "css" => putWorkspaceCss(req, id)
   }
 
-  private def getPageGuestHtml(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageGuestHtml(req: Request[IO], id: UUID): IO[Response[IO]] =
     withEditor(req, id) {
-      (
-        s,
-        _
-      ) =>
+      (s, _) =>
         (store.pageGuestHtml(id), store.guestHtmlLayers(id).map(_.filterNot(_.depth.contains(0)))).flatMapN {
-          (
-            own,
-            ls
-          ) =>
+          (own, ls) =>
             titles(Some(s), ls.flatMap(_.pageId)).flatMap { visible =>
               val outer = ls.map(l =>
                 GuestHtmlLayerDto(
@@ -94,15 +70,9 @@ final class CssRoutes(
         }
     }
 
-  private def putPageGuestHtml(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putPageGuestHtml(req: Request[IO], id: UUID): IO[Response[IO]] =
     withEditor(req, id) {
-      (
-        s,
-        p
-      ) =>
+      (s, p) =>
         body[SetGuestHtmlReq](req) {
           case b if tooLong(b) => err(ErrorCode.CustomHtmlTooLong, s"HTML は${MaxHtml}文字までです")
           case b =>
@@ -121,28 +91,14 @@ final class CssRoutes(
         }
     }
 
-  private def getWorkspaceGuestHtml(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
-    withWs(req, id, Role.Edit)(
-      (
-        _,
-        _,
-        _
-      ) => store.workspaceGuestHtml(id).flatMap(h => Ok(PageGuestHtmlDto(h.flatMap(_._1), h.flatMap(_._2), true)))
+  private def getWorkspaceGuestHtml(req: Request[IO], id: UUID): IO[Response[IO]] =
+    withWs(req, id, Role.Edit)((_, _, _) =>
+      store.workspaceGuestHtml(id).flatMap(h => Ok(PageGuestHtmlDto(h.flatMap(_._1), h.flatMap(_._2), true)))
     )
 
-  private def putWorkspaceGuestHtml(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putWorkspaceGuestHtml(req: Request[IO], id: UUID): IO[Response[IO]] =
     withWs(req, id, Role.Edit) {
-      (
-        s,
-        w,
-        _
-      ) =>
+      (s, w, _) =>
         body[SetGuestHtmlReq](req) {
           case b if tooLong(b) => err(ErrorCode.CustomHtmlTooLong, s"HTML は${MaxHtml}文字までです")
           case b =>
@@ -151,33 +107,17 @@ final class CssRoutes(
         }
     }
 
-  private def getPageStyles(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageStyles(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.View) {
-      (
-        s,
-        _,
-        _
-      ) =>
-        (layers(Some(s), id), store.pageCss(id)).flatMapN(
-          (
-            ls,
-            own
-          ) => Ok(PageStylesDto(ls, own.flatMap(_._1), own.forall(_._2)))
+      (s, _, _) =>
+        (layers(Some(s), id), store.pageCss(id)).flatMapN((ls, own) =>
+          Ok(PageStylesDto(ls, own.flatMap(_._1), own.forall(_._2)))
         )
     }
 
-  private def putPageCss(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putPageCss(req: Request[IO], id: UUID): IO[Response[IO]] =
     withEditor(req, id) {
-      (
-        s,
-        p
-      ) =>
+      (s, p) =>
         body[SetPageCssReq](req) {
           case b if b.css.exists(_.length > MaxLength) => err(ErrorCode.CustomCssTooLong, s"CSS は${MaxLength}文字までです")
           case b =>
@@ -197,22 +137,12 @@ final class CssRoutes(
         }
     }
 
-  private def getWorkspaceCss(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getWorkspaceCss(req: Request[IO], id: UUID): IO[Response[IO]] =
     withVisibleWs(req, id)(_ => store.workspaceCss(id).flatMap(c => Ok(WorkspaceCssDto(c))))
 
-  private def putWorkspaceCss(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putWorkspaceCss(req: Request[IO], id: UUID): IO[Response[IO]] =
     withWs(req, id, Role.Edit) {
-      (
-        s,
-        w,
-        _
-      ) =>
+      (s, w, _) =>
         body[WorkspaceCssDto](req) {
           case b if b.css.exists(_.length > MaxLength) => err(ErrorCode.CustomCssTooLong, s"CSS は${MaxLength}文字までです")
           case b =>
@@ -230,15 +160,10 @@ final class CssRoutes(
 
   val MaxLength = 20000
 
-  private def clean(
-    css: Option[String]
-  ) = css.map(_.trim).filter(_.nonEmpty)
+  private def clean(css: Option[String]) = css.map(_.trim).filter(_.nonEmpty)
 
   /** 適用するCSSの層（祖先のタイトルは閲覧できるときだけ） */
-  def layers(
-    s: Option[AuthSession],
-    pageId: UUID
-  ): IO[List[CssLayerDto]] =
+  def layers(s: Option[AuthSession], pageId: UUID): IO[List[CssLayerDto]] =
     store.cssLayers(pageId).flatMap { ls =>
       titles(s, ls.filterNot(_.depth.contains(0)).flatMap(_.pageId)).map { visible =>
         ls.map { l =>
@@ -253,15 +178,10 @@ final class CssRoutes(
     }
 
   /** 閲覧できる祖先のタイトル（ログインしていなければなし） */
-  private def titles(
-    s: Option[AuthSession],
-    ids: List[UUID]
-  ): IO[Map[UUID, String]] =
+  private def titles(s: Option[AuthSession], ids: List[UUID]): IO[Map[UUID, String]] =
     s.fold(IO.pure(Map.empty[UUID, String]))(ss => store.pagesAccess(ids, ss).map(_.view.mapValues(_._1.title).toMap))
 
   val MaxHtml = 50000
-  private def tooLong(
-    b: SetGuestHtmlReq
-  ) = b.top.exists(_.length > MaxHtml) || b.bottom.exists(_.length > MaxHtml)
+  private def tooLong(b: SetGuestHtmlReq) = b.top.exists(_.length > MaxHtml) || b.bottom.exists(_.length > MaxHtml)
 
 }

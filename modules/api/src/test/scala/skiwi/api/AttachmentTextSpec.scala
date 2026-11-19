@@ -27,9 +27,7 @@ class AttachmentTextSpec extends DbSuite {
 
   // ------------------------------------------------------------ ファイルを作る
 
-  private def zip(
-    entries: (String, String)*
-  ): Array[Byte] = {
+  private def zip(entries: (String, String)*): Array[Byte] = {
     val bo = new ByteArrayOutputStream()
     val z = new ZipOutputStream(bo)
     for (n, body) <- entries do {
@@ -62,9 +60,7 @@ class AttachmentTextSpec extends DbSuite {
     "ppt/slides/slide10.xml" -> s"""<p:sld xmlns:p="x" $A><a:p><a:r><a:t>十枚目</a:t></a:r></a:p></p:sld>""",
     "ppt/slides/slide1.xml" -> s"""<p:sld xmlns:p="x" $A><a:p><a:r><a:t>一枚目の題名</a:t></a:r></a:p></p:sld>""",
   )
-  private def pdf(
-    text: String
-  ): Array[Byte] = {
+  private def pdf(text: String): Array[Byte] = {
     val doc = new PDDocument()
     try {
       val page = new PDPage()
@@ -82,11 +78,7 @@ class AttachmentTextSpec extends DbSuite {
     } finally doc.close()
   }
 
-  private def extract(
-    name: String,
-    ctype: String,
-    bytes: Array[Byte]
-  ): String = {
+  private def extract(name: String, ctype: String, bytes: Array[Byte]): String = {
     val f = Files.createTempFile("t", ".bin")
     try {
       Files.write(f, bytes)
@@ -139,12 +131,11 @@ class AttachmentTextSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set.empty, cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    attachments: AttachmentStore,
-    indexer: AttachmentIndexer,
-    app: HttpApp[IO])
+  final case class Env(store: Store,
+                       docs: DocStore,
+                       attachments: AttachmentStore,
+                       indexer: AttachmentIndexer,
+                       app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -171,9 +162,7 @@ class AttachmentTextSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -181,13 +170,7 @@ class AttachmentTextSpec extends DbSuite {
     } yield (AuthSession(u, Nil, false), token)
   }
 
-  private def upload(
-    token: String,
-    pageId: UUID,
-    name: String,
-    ctype: String,
-    body: Array[Byte]
-  ): IO[UUID] =
+  private def upload(token: String, pageId: UUID, name: String, ctype: String, body: Array[Byte]): IO[UUID] =
     Multiparts.forSync[IO].flatMap { mps =>
       val part = Part.fileData[IO](
         "file",
@@ -203,12 +186,7 @@ class AttachmentTextSpec extends DbSuite {
     }
 
   /** 本文を保存する（添付ファイルを貼ったページ・はがしたページ） */
-  private def setBody(
-    pageId: UUID,
-    by: UUID,
-    text: String,
-    attachmentIds: List[UUID]
-  ): IO[Unit] = {
+  private def setBody(pageId: UUID, by: UUID, text: String, attachmentIds: List[UUID]): IO[Unit] = {
     val files = attachmentIds.map(id =>
       s"""{"type":"fileBlock","attrs":{"id":"$id","url":"/api/attachments/$id"}}"""
     ).mkString(",")
@@ -226,11 +204,7 @@ class AttachmentTextSpec extends DbSuite {
     ).void
   }
 
-  private def search(
-    token: String,
-    ws: UUID,
-    q: String
-  ): IO[List[Json]] =
+  private def search(token: String, ws: UUID, q: String): IO[List[Json]] =
     env.app.run(Request[IO](
       Method.GET,
       Uri.unsafeFromString(s"/api/search?workspaceId=$ws&q=" + java.net.URLEncoder.encode(q, "UTF-8"))

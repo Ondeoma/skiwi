@@ -31,9 +31,7 @@ object Theme {
 
   private def reflect(): Unit = dom.document.documentElement.classList.toggle("dark", isDark)
 
-  def set(
-    v: String
-  ): Unit = {
+  def set(v: String): Unit = {
     mode := v
     if (v == "system") Prefs.remove(Key) else Prefs.set(Key, v)
     reflect()

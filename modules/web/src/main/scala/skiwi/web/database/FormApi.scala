@@ -11,39 +11,22 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 /** フォームの API */
 object FormApi {
 
-  def list(
-    dbId: String
-  ): Future[List[DbFormDef]] = Api.get[List[DbFormDef]](s"/api/pages/$dbId/forms")
+  def list(dbId: String): Future[List[DbFormDef]] = Api.get[List[DbFormDef]](s"/api/pages/$dbId/forms")
 
-  def create(
-    dbId: String,
-    b: SaveForm
-  ): Future[DbFormDef] = Api.post[DbFormDef](s"/api/pages/$dbId/forms", b.asJson)
+  def create(dbId: String, b: SaveForm): Future[DbFormDef] = Api.post[DbFormDef](s"/api/pages/$dbId/forms", b.asJson)
 
-  def update(
-    id: String,
-    b: SaveForm
-  ): Future[DbFormDef] = Api.put[DbFormDef](s"/api/forms/$id", b.asJson)
+  def update(id: String, b: SaveForm): Future[DbFormDef] = Api.put[DbFormDef](s"/api/forms/$id", b.asJson)
 
-  def remove(
-    id: String
-  ): Future[Unit] = Api.del(s"/api/forms/$id")
+  def remove(id: String): Future[Unit] = Api.del(s"/api/forms/$id")
 
-  private def publicUrl(
-    token: String
-  ) = s"/api/forms/public/${Api.enc(token)}"
+  private def publicUrl(token: String) = s"/api/forms/public/${Api.enc(token)}"
 
   /** 回答画面のフォーム（ログイン不要） */
-  def publicGet(
-    token: String
-  ): Future[PublicForm] =
+  def publicGet(token: String): Future[PublicForm] =
     Api.request(dom.HttpMethod.GET, publicUrl(token), redirectOn401 = false).map(Api.as[PublicForm])
       .recoverWith { case _ => Future.failed(new Exception("このフォームは見つからないか、受付を終了しています。")) }
 
-  def publicSubmit(
-    token: String,
-    values: Map[String, Json]
-  ): Future[Unit] =
+  def publicSubmit(token: String, values: Map[String, Json]): Future[Unit] =
     Api.request(
       dom.HttpMethod.POST,
       publicUrl(token),

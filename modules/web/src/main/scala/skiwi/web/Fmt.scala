@@ -7,9 +7,7 @@ import scala.scalajs.js
 object Fmt {
 
   /** 日時の表示（2026/11/13 10:48） */
-  def date(
-    t: Timestamp
-  ): String = {
+  def date(t: Timestamp): String = {
     t.toDate.asInstanceOf[js.Dynamic]
       .toLocaleString(
         "ja-JP",

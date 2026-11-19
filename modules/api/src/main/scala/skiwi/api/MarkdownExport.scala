@@ -9,32 +9,17 @@ import io.circe.{Json, JsonObject}
  * 画面の skiwi.web.content.Markdown（modules/web）と同じ規則にしている。片方を変えたらもう片方も直すこと。
  * url: 画像・添付・ページへのリンクのURLを書き換える。whiteboard: ホワイトボードの書き方。
  */
-final class MarkdownExport(
-  url: String => String,
-  whiteboard: JsonObject => String) {
+final class MarkdownExport(url: String => String, whiteboard: JsonObject => String) {
 
-  private def attrs(
-    n: JsonObject
-  ): JsonObject = n("attrs").flatMap(_.asObject).getOrElse(JsonObject.empty)
-  private def str(
-    o: JsonObject,
-    k: String
-  ): String =
+  private def attrs(n: JsonObject): JsonObject = n("attrs").flatMap(_.asObject).getOrElse(JsonObject.empty)
+  private def str(o: JsonObject, k: String): String =
     o(k).fold("")(v => v.asString.orElse(v.asNumber.map(_.toString)).orElse(v.asBoolean.map(_.toString)).getOrElse(""))
-  private def kids(
-    n: JsonObject
-  ): List[JsonObject] = n("content").flatMap(_.asArray).toList.flatten.flatMap(_.asObject)
-  private def tpe(
-    n: JsonObject
-  ) = str(n, "type")
+  private def kids(n: JsonObject): List[JsonObject] = n("content").flatMap(_.asArray).toList.flatten.flatMap(_.asObject)
+  private def tpe(n: JsonObject) = str(n, "type")
 
-  private def escape(
-    s: String
-  ) = s.replaceAll("""([\\`*_\[\]#|<>])""", """\\$1""")
+  private def escape(s: String) = s.replaceAll("""([\\`*_\[\]#|<>])""", """\\$1""")
 
-  private def inl(
-    ns: List[JsonObject]
-  ): String = ns.map { n =>
+  private def inl(ns: List[JsonObject]): String = ns.map { n =>
     tpe(n) match {
       case "text" =>
         val marks = n("marks").flatMap(_.asArray).toList.flatten.flatMap(_.asObject)
@@ -61,23 +46,11 @@ final class MarkdownExport(
     }
   }.mkString
 
-  private def indent(
-    s: String,
-    pad: String
-  ) =
-    s.split("\n", -1).zipWithIndex.map(
-      (
-        l,
-        i
-      ) => if i == 0 || l.isEmpty then l else pad + l
-    ).mkString("\n")
+  private def indent(s: String, pad: String) =
+    s.split("\n", -1).zipWithIndex.map((l, i) => if i == 0 || l.isEmpty then l else pad + l).mkString("\n")
 
-  def block(
-    n: JsonObject
-  ): String = {
-    def children(
-      sep: String = "\n\n"
-    ) = kids(n).map(block).filter(_.nonEmpty).mkString(sep)
+  def block(n: JsonObject): String = {
+    def children(sep: String = "\n\n") = kids(n).map(block).filter(_.nonEmpty).mkString(sep)
     val a = attrs(n)
     tpe(n) match {
       case "doc" => children()
@@ -108,12 +81,7 @@ final class MarkdownExport(
       case "bulletList" => kids(n).map(li => "- " + indent(listBody(li), "  ")).mkString("\n")
       case "orderedList" =>
         val start = Option(str(a, "start")).flatMap(_.toIntOption).getOrElse(1)
-        kids(n).zipWithIndex.map(
-          (
-            li,
-            i
-          ) => s"${start + i}. " + indent(listBody(li), "   ")
-        ).mkString("\n")
+        kids(n).zipWithIndex.map((li, i) => s"${start + i}. " + indent(listBody(li), "   ")).mkString("\n")
       case "taskList" =>
         kids(n).map(li =>
           s"- [${if attrs(li)("checked").flatMap(_.asBoolean).contains(true) then "x" else " "}] " +
@@ -121,11 +89,8 @@ final class MarkdownExport(
         ).mkString("\n")
       case "panel" =>
         val icon = Option(str(a, "icon")).filter(_.nonEmpty).getOrElse("ℹ️")
-        children().split("\n", -1).zipWithIndex.map(
-          (
-            l,
-            i
-          ) => (if i == 0 then s"> $icon $l" else s"> $l").replaceAll("\\s+$", "")
+        children().split("\n", -1).zipWithIndex.map((l, i) =>
+          (if i == 0 then s"> $icon $l" else s"> $l").replaceAll("\\s+$", "")
         ).mkString("\n")
       case "details" =>
         kids(n) match {
@@ -143,26 +108,17 @@ final class MarkdownExport(
         if rows.isEmpty then ""
         else {
           val w = rows.map(_.size).max
-          def line(
-            r: List[String]
-          ) = "| " + (0 until w).map(i => r.lift(i).getOrElse("")).mkString(" | ") + " |"
+          def line(r: List[String]) = "| " + (0 until w).map(i => r.lift(i).getOrElse("")).mkString(" | ") + " |"
           (line(rows.head) :: ("|" + " --- |" * w) :: rows.tail.map(line)).mkString("\n")
         }
       case _ => if n("content").isDefined then children() else inl(List(n))
     }
   }
 
-  private def listBody(
-    li: JsonObject
-  ): String = kids(li).map(block).mkString("\n")
+  private def listBody(li: JsonObject): String = kids(li).map(block).mkString("\n")
 
   /** 本文だけ（タイトルなし）。 */
-  def body(
-    doc: Json
-  ): String = doc.asObject.fold("")(block).replaceAll("\n{3,}", "\n\n").trim
+  def body(doc: Json): String = doc.asObject.fold("")(block).replaceAll("\n{3,}", "\n\n").trim
 
-  def page(
-    doc: Json,
-    title: String
-  ): String = s"# ${Titles.display(title)}\n\n${body(doc)}\n"
+  def page(doc: Json, title: String): String = s"# ${Titles.display(title)}\n\n${body(doc)}\n"
 }

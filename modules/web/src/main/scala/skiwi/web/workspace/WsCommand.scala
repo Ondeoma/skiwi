@@ -10,14 +10,10 @@ object WsCommand {
 
   val Event = "skiwi:command"
 
-  def send(
-    cmd: String
-  ): Unit =
+  def send(cmd: String): Unit =
     dom.window.dispatchEvent(new dom.CustomEvent(Event, new dom.CustomEventInit { detail = cmd }))
 
-  def name(
-    e: dom.Event
-  ): String = e.asInstanceOf[dom.CustomEvent].detail match {
+  def name(e: dom.Event): String = e.asInstanceOf[dom.CustomEvent].detail match {
     case s: String => s
     case _ => ""
   }

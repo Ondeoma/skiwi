@@ -12,31 +12,27 @@ import scala.concurrent.duration.*
 import skiwi.core.ErrorCode
 
 /** URL のカード表示に使う情報（ページのタイトル・説明・画像・サイト名・アイコン） */
-final case class UnfurlDto(
-  url: String,
-  title: Option[String],
-  description: Option[String],
-  image: Option[String],
-  siteName: Option[String],
-  icon: Option[String]) derives Encoder.AsObject
+final case class UnfurlDto(url: String,
+                           title: Option[String],
+                           description: Option[String],
+                           image: Option[String],
+                           siteName: Option[String],
+                           icon: Option[String]) derives Encoder.AsObject
 
 /**
  * リンクの展開: URL のページを取りに行き、OGP などからタイトル・説明・画像を読む（ログインユーザーのみ）。
  * http: NetGuard.client（UNFURL_ALLOW_PRIVATE でなければ、社内のアドレスには接続しない）。
  * 結果は1時間覚えておく。
  */
-final class UnfurlRoutes(
-  protected val sessions: SessionAuth,
-  http: Client[IO],
-  cache: Ref[IO, Map[String, (Long, UnfurlDto)]]) extends RouteSupport {
+final class UnfurlRoutes(protected val sessions: SessionAuth,
+                         http: Client[IO],
+                         cache: Ref[IO, Map[String, (Long, UnfurlDto)]]) extends RouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "api" / "unfurl" => getUnfurl(req)
   }
 
-  private def getUnfurl(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getUnfurl(req: Request[IO]): IO[Response[IO]] =
     authed(req) { _ =>
       req.uri.query.params.get("url").map(_.trim).filter(_.length <= 2000).flatMap(x =>
         scala.util.Try(URI.create(x)).toOption
@@ -69,10 +65,7 @@ final class UnfurlRoutes(
     case Nothing
   }
 
-  private def fetch(
-    u: URI,
-    hops: Int = 0
-  ): IO[Option[(URI, String)]] = {
+  private def fetch(u: URI, hops: Int = 0): IO[Option[(URI, String)]] = {
     val scheme = Option(u.getScheme).map(_.toLowerCase)
     Uri.fromString(u.toString).toOption.filter(_ =>
       scheme.exists(Set("http", "https")) && Option(u.getHost).exists(_.nonEmpty)
@@ -102,30 +95,20 @@ final class UnfurlRoutes(
     }
   }
 
-  private def charset(
-    ct: String
-  ) =
+  private def charset(ct: String) =
     """charset=([\w-]+)""".r.findFirstMatchIn(ct.toLowerCase).flatMap(m =>
       scala.util.Try(java.nio.charset.Charset.forName(m.group(1))).toOption
     )
       .getOrElse(java.nio.charset.StandardCharsets.UTF_8)
 
-  private def unescape(
-    s: String
-  ) =
+  private def unescape(s: String) =
     Html.unescape(s).replaceAll("&#(\\d+);", "").trim
 
   /** <meta property|name="key" content="…"> */
-  private def meta(
-    html: String,
-    keys: String*
-  ): Option[String] = {
+  private def meta(html: String, keys: String*): Option[String] = {
     // 属性の正規表現を長い（壊れた）タグに使わない
     val tags = Html.tags(html, Set("meta")).filter(_.length <= 4000)
-    def attr(
-      tag: String,
-      a: String
-    ) = s"""(?i)\\b$a\\s*=\\s*(?:"([^"]*)"|'([^']*)')""".r.findFirstMatchIn(tag).map(m =>
+    def attr(tag: String, a: String) = s"""(?i)\\b$a\\s*=\\s*(?:"([^"]*)"|'([^']*)')""".r.findFirstMatchIn(tag).map(m =>
       Option(m.group(1)).getOrElse(m.group(2))
     )
     keys.iterator.flatMap(k =>
@@ -136,10 +119,7 @@ final class UnfurlRoutes(
     ).map(unescape).find(_.nonEmpty)
   }
 
-  private def parseHtml(
-    u: URI,
-    html: String
-  ): UnfurlDto = {
+  private def parseHtml(u: URI, html: String): UnfurlDto = {
     val head = html.take(200000)
     val title = meta(head, "og:title", "twitter:title").orElse(Html.firstElementText(head, "title").map(t =>
       unescape(t.replaceAll("\\s+", " "))

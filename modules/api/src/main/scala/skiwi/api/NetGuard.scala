@@ -13,16 +13,12 @@ import scala.concurrent.duration.*
 object NetGuard {
 
   /** 外部（インターネット）のアドレスか */
-  def isPublic(
-    a: InetAddress
-  ): Boolean =
+  def isPublic(a: InetAddress): Boolean =
     !(a.isLoopbackAddress || a.isSiteLocalAddress || a.isLinkLocalAddress || a.isAnyLocalAddress ||
       a.isMulticastAddress || reserved(a))
 
   /** Java の判定に含まれない、社内・特殊用途の範囲 */
-  private def reserved(
-    a: InetAddress
-  ): Boolean = {
+  private def reserved(a: InetAddress): Boolean = {
     val b = a.getAddress.map(_ & 0xff)
     a match {
       case _: Inet4Address =>
@@ -41,29 +37,23 @@ object NetGuard {
   }
 
   /** 社内のアドレスへの接続を断った */
-  final case class Blocked(
-    host: String) extends Exception(s"社内のアドレスには接続できません: $host")
+  final case class Blocked(host: String) extends Exception(s"社内のアドレスには接続できません: $host")
 
   /**
    * 外へ接続する HTTP クライアント（リダイレクトはたどらない）。allowPrivate=false なら、接続のたびにホスト名を引いて
    * すべてのアドレスが外部のものであることを確かめ、確かめたアドレスにそのまま接続する
    * （確かめてから接続するまでの間に名前の向き先を変えられても、社内へはつながない。TLS の検証と SNI は元のホスト名で行う）
    */
-  def client(
-    allowPrivate: Boolean
-  ): Resource[IO, Client[IO]] = {
+  def client(allowPrivate: Boolean): Resource[IO, Client[IO]] = {
     given org.typelevel.log4cats.LoggerFactory[IO] = org.typelevel.log4cats.noop.NoOpFactory[IO]
-    def build(
-      using Network[IO]
-    ) = EmberClientBuilder.default[IO].withTimeout(15.seconds).withIdleConnectionTime(30.seconds).build
+    def build(using Network[IO]) =
+      EmberClientBuilder.default[IO].withTimeout(15.seconds).withIdleConnectionTime(30.seconds).build
     if allowPrivate then build(using Network[IO])
     else build(using fs2.io.net.GuardedNetwork(Network[IO], h => publicAddress(h.toString)))
   }
 
   /** ホスト名を引き、すべてのアドレスが外部のものならその1つ目（そうでなければ Blocked） */
-  private def publicAddress(
-    host: String
-  ): IO[IpAddress] =
+  private def publicAddress(host: String): IO[IpAddress] =
     IO.blocking(InetAddress.getAllByName(host.stripPrefix("[").stripSuffix("]")).toList).flatMap { addrs =>
       if addrs.nonEmpty && addrs.forall(isPublic) then IO.pure(IpAddress.fromInetAddress(addrs.head))
       else IO.raiseError(Blocked(host))

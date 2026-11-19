@@ -7,18 +7,10 @@ class AclSpec extends munit.FunSuite {
   private val alice = Principal(PrincipalType.User, UUID.randomUUID())
   private val staff = Principal(PrincipalType.Group, UUID.randomUUID())
   private val who = Set(alice, staff)
-  private def node(
-    inherit: Boolean,
-    es: (Principal, Role)*
-  ) =
+  private def node(inherit: Boolean, es: (Principal, Role)*) =
     AclNode(
       inherit,
-      es.toList.map(
-        (
-          p,
-          r
-        ) => AclEntry(p, r)
-      )
+      es.toList.map((p, r) => AclEntry(p, r))
     )
 
   test("workspace default applies when no entries") {
@@ -58,10 +50,7 @@ class AclSpec extends munit.FunSuite {
 
   test("resolveAll builds chains from the page tree") {
     val now = Instant.now()
-    def page(
-      id: UUID,
-      parent: Option[UUID]
-    ) = Page(id, UUID.randomUUID(), parent, "a", "t", None, now, now)
+    def page(id: UUID, parent: Option[UUID]) = Page(id, UUID.randomUUID(), parent, "a", "t", None, now, now)
     val root, child, grand, secret = UUID.randomUUID()
     val pages = List(page(root, None), page(child, Some(root)), page(grand, Some(child)), page(secret, Some(root)))
     val nodes = Map(

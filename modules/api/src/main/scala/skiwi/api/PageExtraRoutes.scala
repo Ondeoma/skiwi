@@ -12,55 +12,42 @@ import skiwi.db.{DocStore, NotificationRow, OpsStore, Store}
 import java.time.Instant
 import java.util.UUID
 
-final case class LabelsDto(
-  labels: List[String]) derives Encoder.AsObject, Decoder
-final case class RecentDto(
-  page: PageDto,
-  workspaceName: String,
-  at: Instant) derives Encoder.AsObject
+final case class LabelsDto(labels: List[String]) derives Encoder.AsObject, Decoder
+final case class RecentDto(page: PageDto, workspaceName: String, at: Instant) derives Encoder.AsObject
 
-final case class NotificationsDto(
-  unread: Int,
-  items: List[NotificationDto]) derives Encoder.AsObject
-final case class MarkReadReq(
-  ids: Option[List[Long]]) derives Decoder
-final case class FavoritePageDto(
-  page: PageDto,
-  workspaceName: String) derives Encoder.AsObject
-final case class TaskDto(
-  pageId: UUID,
-  workspaceId: UUID,
-  workspaceName: String,
-  pageTitle: String,
-  pageIcon: Option[String],
-  seq: Int,
-  text: String,
-  checked: Boolean,
-  due: Option[java.time.LocalDate]) derives Encoder.AsObject
+final case class NotificationsDto(unread: Int, items: List[NotificationDto]) derives Encoder.AsObject
+final case class MarkReadReq(ids: Option[List[Long]]) derives Decoder
+final case class FavoritePageDto(page: PageDto, workspaceName: String) derives Encoder.AsObject
+final case class TaskDto(pageId: UUID,
+                         workspaceId: UUID,
+                         workspaceName: String,
+                         pageTitle: String,
+                         pageIcon: Option[String],
+                         seq: Int,
+                         text: String,
+                         checked: Boolean,
+                         due: Option[java.time.LocalDate]) derives Encoder.AsObject
 
 /** reason: missing（ページが存在しない）| deleted（ゴミ箱）| no_access（閲覧できない）。閲覧できない先のタイトルは出さない */
 /** incoming: 本文からのリンク数（ほかのページから）。lastEditedAt: 本文・タイトルの最終更新 */
-final case class PageHealthDto(
-  page: PageDto,
-  incoming: Long,
-  lastEditedAt: Instant,
-  lastEditor: Option[String],
-  children: Long) derives Encoder.AsObject
-final case class BrokenLinkDto(
-  sourceId: UUID,
-  sourceTitle: String,
-  targetId: UUID,
-  targetTitle: Option[String],
-  reason: String) derives Encoder.AsObject
+final case class PageHealthDto(page: PageDto,
+                               incoming: Long,
+                               lastEditedAt: Instant,
+                               lastEditor: Option[String],
+                               children: Long) derives Encoder.AsObject
+final case class BrokenLinkDto(sourceId: UUID,
+                               sourceTitle: String,
+                               targetId: UUID,
+                               targetTitle: Option[String],
+                               reason: String) derives Encoder.AsObject
 
 /** ページまわりの補助機能: ラベル、被リンク、最近見た/編集したページ、画面内の通知。 */
-final class PageExtraRoutes(
-  protected val store: Store,
-  docs: DocStore,
-  ops: OpsStore,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  automations: Option[Automations] = None) extends PageRouteSupport {
+final class PageExtraRoutes(protected val store: Store,
+                            docs: DocStore,
+                            ops: OpsStore,
+                            protected val sessions: SessionAuth,
+                            audit: Audit,
+                            automations: Option[Automations] = None) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
@@ -80,28 +67,12 @@ final class PageExtraRoutes(
     case req @ POST -> Root / "api" / "notifications" / "read" => postNotificationsRead(req)
   }
 
-  private def getPageLabels(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
-    withPage(req, id, Role.View)(
-      (
-        _,
-        _,
-        _
-      ) => store.labels(id).flatMap(ls => Ok(LabelsDto(ls)))
-    )
+  private def getPageLabels(req: Request[IO], id: UUID): IO[Response[IO]] =
+    withPage(req, id, Role.View)((_, _, _) => store.labels(id).flatMap(ls => Ok(LabelsDto(ls))))
 
-  private def putPageLabels(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putPageLabels(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        p,
-        _
-      ) =>
+      (s, p, _) =>
         body[LabelsDto](req) { b =>
           val ls = Labels.normalize(b.labels)
           store.labels(id).flatMap { before =>
@@ -131,34 +102,18 @@ final class PageExtraRoutes(
         }
     }
 
-  private def getPageBacklinks(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageBacklinks(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.View) {
-      (
-        s,
-        _,
-        _
-      ) =>
+      (s, _, _) =>
         docs.backlinks(id).flatMap(ids => store.visiblePages(ids.take(200), s)).flatMap(ps => Ok(ps.map(PageDto.of)))
     }
 
-  private def postPageVisit(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
-    withPage(req, id, Role.View)(
-      (
-        s,
-        _,
-        _
-      ) => ops.recordVisit(s.user.id, id) *> sbirds.observe.Metrics.count("skiwi.pages.viewed") *> NoContent()
+  private def postPageVisit(req: Request[IO], id: UUID): IO[Response[IO]] =
+    withPage(req, id, Role.View)((s, _, _) =>
+      ops.recordVisit(s.user.id, id) *> sbirds.observe.Metrics.count("skiwi.pages.viewed") *> NoContent()
     )
 
-  private def getRecent(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getRecent(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       val kind = req.uri.query.params.get("kind").filter(_ == "edited").getOrElse("visited")
       val limit = req.uri.query.params.get("limit").flatMap(_.toIntOption).map(_.max(1).min(50)).getOrElse(20)
@@ -166,55 +121,29 @@ final class PageExtraRoutes(
         rows <- ops.recentPages(s.user.id, kind, limit)
         ps <- visibleWithWs(s, rows.map(_._1))
         at = rows.toMap
-        resp <- Ok(ps.map(
-          (
-            p,
-            n
-          ) => RecentDto(p, n, at(p.id))
-        ))
+        resp <- Ok(ps.map((p, n) => RecentDto(p, n, at(p.id))))
       } yield resp
     }
 
-  private def getFavoritesPages(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getFavoritesPages(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       for {
         ps <- ops.favoritePages(s.user.id).flatMap(visibleWithWs(s, _))
-        resp <- Ok(ps.map(
-          (
-            p,
-            n
-          ) => FavoritePageDto(p, n)
-        ))
+        resp <- Ok(ps.map((p, n) => FavoritePageDto(p, n)))
       } yield resp
     }
 
-  private def putPageFavorite(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putPageFavorite(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.View) {
-      (
-        s,
-        _,
-        _
-      ) =>
+      (s, _, _) =>
         body[FavoriteDto](req) { b =>
           ops.setPageFavorite(s.user.id, id, b.favorite) *> Ok(b)
         }
     }
 
-  private def postPageImport(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postPageImport(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        p,
-        _
-      ) =>
+      (s, p, _) =>
         body[DocStateReq](req) {
           case b if b.content.isObject =>
             decodeYdoc(b.ydoc) match {
@@ -233,9 +162,7 @@ final class PageExtraRoutes(
         }
     }
 
-  private def getTasks(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getTasks(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       val done = req.uri.query.params.get("done").contains("true")
       for {
@@ -258,10 +185,7 @@ final class PageExtraRoutes(
       } yield resp
     }
 
-  private def getWorkspaceBrokenLinks(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getWorkspaceBrokenLinks(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       store.listPages(id, s).flatMap { visible =>
         if visible.isEmpty then
@@ -276,10 +200,7 @@ final class PageExtraRoutes(
               store.pagesAccess(mine.filter(r => r.targetExists && !r.targetDeleted).map(_.targetId), s),
               store.pagesAccessAny(mine.filter(_.targetDeleted).map(_.targetId), s)
             ).flatMapN {
-              (
-                canSee,
-                deleted
-              ) =>
+              (canSee, deleted) =>
                 Ok(mine.flatMap { r =>
                   if !r.targetExists then Some(BrokenLinkDto(r.sourceId, r.sourceTitle, r.targetId, None, "missing"))
                   else if r.targetDeleted then
@@ -300,10 +221,7 @@ final class PageExtraRoutes(
       }
     }
 
-  private def getWorkspaceHealth(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getWorkspaceHealth(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       store.listPages(id, s).flatMap { visible =>
         if visible.isEmpty then
@@ -312,33 +230,24 @@ final class PageExtraRoutes(
           )
         else
           (store.pageHealth(id), store.pageMeta(visible.map(_._1.id))).flatMapN {
-            (
-              rows,
-              meta
-            ) =>
+            (rows, meta) =>
               val byId = rows.map(r => r.pageId -> r).toMap
-              Ok(visible.flatMap(
-                (
-                  p,
-                  r
-                ) =>
-                  byId.get(p.id).map(h =>
-                    PageHealthDto(
-                      PageDto.of(p, r).withMeta(meta.get(p.id)),
-                      h.incoming,
-                      h.lastEditedAt,
-                      h.lastEditor,
-                      h.children
-                    )
+              Ok(visible.flatMap((p, r) =>
+                byId.get(p.id).map(h =>
+                  PageHealthDto(
+                    PageDto.of(p, r).withMeta(meta.get(p.id)),
+                    h.incoming,
+                    h.lastEditedAt,
+                    h.lastEditor,
+                    h.children
                   )
+                )
               ))
           }
       }
     }
 
-  private def getNotifications(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getNotifications(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       for {
         rows <- ops.notifications(s.user.id, 50)
@@ -351,9 +260,7 @@ final class PageExtraRoutes(
       } yield resp
     }
 
-  private def postNotificationsRead(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postNotificationsRead(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       body[MarkReadReq](req) { b =>
         ops.markNotificationsRead(s.user.id, b.ids) *>
@@ -361,31 +268,13 @@ final class PageExtraRoutes(
       }
     }
 
-  private def wsNames(
-    s: AuthSession
-  ): IO[Map[UUID, String]] = store.listWorkspaces(s).map(_.map(
-    (
-      w,
-      _
-    ) => w.id -> w.name
-  ).toMap)
+  private def wsNames(s: AuthSession): IO[Map[UUID, String]] =
+    store.listWorkspaces(s).map(_.map((w, _) => w.id -> w.name).toMap)
 
   /** 見えるページ（順序は保つ）と、そのワークスペース名。 */
-  private def visibleWithWs(
-    s: AuthSession,
-    ids: List[UUID]
-  ): IO[List[(PageDto, String)]] =
-    (store.visiblePages(ids, s), wsNames(s)).parMapN(
-      (
-        ps,
-        ws
-      ) =>
-        ps.flatMap(
-          (
-            p,
-            r
-          ) => ws.get(p.workspaceId).map(PageDto.of(p, r) -> _)
-        )
+  private def visibleWithWs(s: AuthSession, ids: List[UUID]): IO[List[(PageDto, String)]] =
+    (store.visiblePages(ids, s), wsNames(s)).parMapN((ps, ws) =>
+      ps.flatMap((p, r) => ws.get(p.workspaceId).map(PageDto.of(p, r) -> _))
     )
 
 }

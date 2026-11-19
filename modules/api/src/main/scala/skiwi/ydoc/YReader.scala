@@ -6,8 +6,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets.UTF_8
 
 /** lib0 の符号化の読み書き（Yjs の update v1 に必要な分）。 */
-final class YReader(
-  bytes: Array[Byte]) {
+final class YReader(bytes: Array[Byte]) {
   private var pos = 0
 
   /** 読んだ位置 */
@@ -44,9 +43,7 @@ final class YReader(
     }
     sign * num
   }
-  def bytes(
-    n: Int
-  ): Array[Byte] = {
+  def bytes(n: Int): Array[Byte] = {
     if n < 0 || pos + n > bytes.length then throw IllegalArgumentException("unexpected end of update")
     val out = java.util.Arrays.copyOfRange(bytes, pos, pos + n)
     pos += n
@@ -64,9 +61,7 @@ final class YReader(
    * lib0 の readAny。Uint8Array・undefined・bigint は扱わない値として null にする。
    * 入れ子は MaxAnyDepth 段まで（細工した update でスタックを使い切らせない）。
    */
-  def any(
-    depth: Int = 0
-  ): Json = {
+  def any(depth: Int = 0): Json = {
     if depth > YReader.MaxAnyDepth then throw IllegalArgumentException("any value is nested too deeply")
     (127 - u8()) match {
       case 0 => Json.Null // undefined

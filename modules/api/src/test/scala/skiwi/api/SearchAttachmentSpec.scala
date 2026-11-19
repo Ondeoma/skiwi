@@ -22,11 +22,7 @@ class SearchAttachmentSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set.empty, cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    blobs: InMemoryBlobStore,
-    app: HttpApp[IO])
+  final case class Env(store: Store, docs: DocStore, blobs: InMemoryBlobStore, app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -49,9 +45,7 @@ class SearchAttachmentSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -59,30 +53,17 @@ class SearchAttachmentSpec extends DbSuite {
     } yield (AuthSession(u, Nil, false), token)
   }
 
-  private def get(
-    token: String,
-    path: String
-  ): IO[Response[IO]] =
+  private def get(token: String, path: String): IO[Response[IO]] =
     env.app.run(Request[IO](Method.GET, Uri.unsafeFromString(path)).addCookie("skiwi_session", token))
 
-  private def searchTitles(
-    token: String,
-    q: String,
-    ws: UUID
-  ): IO[List[(String, Option[String])]] =
+  private def searchTitles(token: String, q: String, ws: UUID): IO[List[(String, Option[String])]] =
     get(token, s"/api/search?workspaceId=$ws&q=" + java.net.URLEncoder.encode(q, "UTF-8"))
       .flatMap(_.as[Json])
       .map(_.asArray.get.toList.map(j =>
         (j.hcursor.downField("page").get[String]("title").toOption.get, j.hcursor.get[String]("snippet").toOption)
       ))
 
-  private def upload(
-    token: String,
-    pageId: UUID,
-    name: String,
-    ctype: String,
-    body: Array[Byte]
-  ): IO[Response[IO]] =
+  private def upload(token: String, pageId: UUID, name: String, ctype: String, body: Array[Byte]): IO[Response[IO]] =
     Multiparts.forSync[IO].flatMap { mps =>
       val part = Part.fileData[IO](
         "file",
@@ -174,20 +155,14 @@ class SearchAttachmentSpec extends DbSuite {
     }
   }
 
-  private def searchAll(
-    token: String,
-    q: String
-  ): IO[List[(String, Boolean)]] =
+  private def searchAll(token: String, q: String): IO[List[(String, Boolean)]] =
     get(token, "/api/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))
       .flatMap(_.as[Json])
       .map(_.asArray.get.toList.map(j =>
         (j.hcursor.downField("page").get[String]("title").toOption.get, j.hcursor.get[Boolean]("fuzzy").toOption.get)
       ))
 
-  private def searchWorkspaces(
-    token: String,
-    q: String
-  ): IO[List[(String, Boolean)]] =
+  private def searchWorkspaces(token: String, q: String): IO[List[(String, Boolean)]] =
     get(token, "/api/search/workspaces?q=" + java.net.URLEncoder.encode(q, "UTF-8"))
       .flatMap(_.as[Json])
       .map(_.asArray.get.toList.map(j =>

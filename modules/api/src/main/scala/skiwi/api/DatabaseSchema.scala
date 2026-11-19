@@ -35,22 +35,12 @@ object DatabaseSchema {
   private val Id = "^[A-Za-z0-9_-]{1,24}$".r
 
   /** target: 関連先のデータベース（relation） */
-  final case class Prop(
-    id: String,
-    name: String,
-    tpe: String,
-    options: Set[String],
-    target: Option[UUID] = None)
+  final case class Prop(id: String, name: String, tpe: String, options: Set[String], target: Option[UUID] = None)
 
-  private def str(
-    o: JsonObject,
-    k: String
-  ) = o(k).flatMap(_.asString)
+  private def str(o: JsonObject, k: String) = o(k).flatMap(_.asString)
 
   /** 列の定義を確かめる。Right: 列の一覧 */
-  def props(
-    j: Json
-  ): Either[String, List[Prop]] =
+  def props(j: Json): Either[String, List[Prop]] =
     j.asArray.toRight("props は配列にしてください").flatMap { arr =>
       if arr.size > 50 then Left("列が多すぎます（50列まで）")
       else
@@ -70,12 +60,9 @@ object DatabaseSchema {
                   else
                     opts.toList.traverse(x =>
                       x.asObject.flatMap(oo => (str(oo, "id"), str(oo, "name")).tupled)
-                        .filter(
-                          (
-                            i,
-                            n
-                          ) => Id.matches(i) && n.trim.nonEmpty && n.length <= 100
-                        ).map(_._1).toRight("選択肢が正しくありません")
+                        .filter((i, n) => Id.matches(i) && n.trim.nonEmpty && n.length <= 100).map(
+                          _._1
+                        ).toRight("選択肢が正しくありません")
                     )
                       .map(ids => Prop(id, name, t, ids.toSet, target))
                 }
@@ -85,30 +72,19 @@ object DatabaseSchema {
         }.flatMap(ps => if ps.map(_.id).distinct.size != ps.size then Left("列の ID が重複しています") else Right(ps))
     }
 
-  def views(
-    j: Json
-  ): Either[String, Unit] =
+  def views(j: Json): Either[String, Unit] =
     j.asArray.toRight("views は配列にしてください").flatMap { arr =>
       if arr.size > 20 then Left("ビューが多すぎます（20個まで）")
       else if j.noSpaces.length > 100000 then Left("ビューの設定が大きすぎます")
       else
         arr.toList.traverse_ { v =>
           v.asObject.flatMap(o => (str(o, "id"), str(o, "name"), str(o, "type")).tupled)
-            .filter(
-              (
-                id,
-                n,
-                t
-              ) => Id.matches(id) && n.length <= 100 && ViewTypes(t)
-            ).toRight("ビューが正しくありません").void
+            .filter((id, n, t) => Id.matches(id) && n.length <= 100 && ViewTypes(t)).toRight("ビューが正しくありません").void
         }
     }
 
   /** 値を確かめて正規化する（null は「消す」）。 */
-  def value(
-    p: Prop,
-    v: Json
-  ): Either[String, Json] =
+  def value(p: Prop, v: Json): Either[String, Json] =
     if v.isNull then Right(Json.Null)
     else
       p.tpe match {
@@ -136,15 +112,9 @@ object DatabaseSchema {
         case _ => Left("不明な種類です")
       }
 
-  def patch(
-    ps: List[Prop],
-    values: JsonObject
-  ): Either[String, JsonObject] =
+  def patch(ps: List[Prop], values: JsonObject): Either[String, JsonObject] =
     values.toList.traverse {
-      (
-        k,
-        v
-      ) =>
+      (k, v) =>
         ps.find(_.id == k).toRight(s"不明な列です: $k").flatMap(p => value(p, v)).map(k -> _)
     }.map(JsonObject.fromIterable)
 }

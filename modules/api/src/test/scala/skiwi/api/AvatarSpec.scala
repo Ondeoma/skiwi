@@ -17,9 +17,7 @@ import java.util.UUID
 /** ユーザーのアイコン: 設定・配信・削除、種類と大きさの検査、/api/me の avatarUrl。TEST_DATABASE_URL が必要。 */
 class AvatarSpec extends DbSuite {
 
-  final case class Env(
-    store: Store,
-    app: HttpApp[IO])
+  final case class Env(store: Store, app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -40,9 +38,7 @@ class AvatarSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String
-  ): IO[(User, String)] = {
+  private def user(name: String): IO[(User, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -50,22 +46,18 @@ class AvatarSpec extends DbSuite {
     } yield (u, token)
   }
 
-  private def call(
-    token: Option[String],
-    method: Method,
-    path: String,
-    ct: Option[String] = None,
-    body: Array[Byte] = Array.empty
-  ): IO[Response[IO]] = {
+  private def call(token: Option[String],
+                   method: Method,
+                   path: String,
+                   ct: Option[String] = None,
+                   body: Array[Byte] = Array.empty): IO[Response[IO]] = {
     var req = Request[IO](method, Uri.unsafeFromString(path)).withEntity(body)
     ct.foreach(t => req = req.withContentType(`Content-Type`.parse(t).toOption.get))
     token.foreach(t => req = req.addCookie("skiwi_session", t))
     env.app.run(req)
   }
 
-  private def jsonOf(
-    r: Response[IO]
-  ): IO[Json] = r.bodyText.compile.string.map(io.circe.parser.parse(_).toOption.get)
+  private def jsonOf(r: Response[IO]): IO[Json] = r.bodyText.compile.string.map(io.circe.parser.parse(_).toOption.get)
 
   private val png = Array[Byte](0x89.toByte, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4)
 

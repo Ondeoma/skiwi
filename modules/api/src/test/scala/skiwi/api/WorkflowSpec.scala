@@ -24,13 +24,12 @@ class WorkflowSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set.empty, cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    ops: OpsStore,
-    hooks: WebhookStore,
-    svc: WebhookService,
-    app: HttpApp[IO])
+  final case class Env(store: Store,
+                       docs: DocStore,
+                       ops: OpsStore,
+                       hooks: WebhookStore,
+                       svc: WebhookService,
+                       app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -79,9 +78,7 @@ class WorkflowSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -89,12 +86,10 @@ class WorkflowSpec extends DbSuite {
     } yield (AuthSession(u, Nil, false), token)
   }
 
-  private def call(
-    token: Option[String],
-    method: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[(Status, Json)] = {
+  private def call(token: Option[String],
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None): IO[(Status, Json)] = {
     var req = Request[IO](method, Uri.unsafeFromString(path))
     token.foreach(t => req = req.addCookie("skiwi_session", t))
     body.foreach(b => req = req.withEntity(b))
@@ -103,18 +98,11 @@ class WorkflowSpec extends DbSuite {
     )
   }
 
-  private def page(
-    ws: UUID,
-    title: String,
-    parent: Option[UUID],
-    by: UUID
-  ) =
+  private def page(ws: UUID, title: String, parent: Option[UUID], by: UUID) =
     env.store.createPage(ws, parent, Placement.Last, title, None, by).map(_.toOption.get)
 
-  private def kinds(
-    u: UUID,
-    pageId: UUID
-  ) = env.ops.notifications(u, 50).map(_.filter(_.pageId.contains(pageId)).map(_.kind))
+  private def kinds(u: UUID, pageId: UUID) =
+    env.ops.notifications(u, 50).map(_.filter(_.pageId.contains(pageId)).map(_.kind))
 
   test("watch: subtree watch covers child pages, and edits/comments can be chosen separately") {
     run {

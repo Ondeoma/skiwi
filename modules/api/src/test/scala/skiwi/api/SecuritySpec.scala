@@ -28,16 +28,9 @@ class SecuritySpec extends CatsEffectSuite {
     )
   )
 
-  private def post(
-    headers: (String, String)*
-  )(
-    cookie: Boolean = true
-  ) = {
-    val r = Request[IO](Method.POST, uri"/api/x").withEntity("{}").putHeaders(headers.map(
-      (
-        k,
-        v
-      ) => Header.Raw(org.typelevel.ci.CIString(k), v)
+  private def post(headers: (String, String)*)(cookie: Boolean = true) = {
+    val r = Request[IO](Method.POST, uri"/api/x").withEntity("{}").putHeaders(headers.map((k, v) =>
+      Header.Raw(org.typelevel.ci.CIString(k), v)
     )*)
     app.run(if cookie then r.addCookie("skiwi_session", "t") else r)
   }
@@ -68,10 +61,7 @@ class SecuritySpec extends CatsEffectSuite {
   }
 
   test("開発用のログイン（DEV_LOGIN）のときは、画面の開発サーバー（localhost）からの POST も受ける") {
-    def run(
-      dev: Boolean,
-      origin: String
-    ) =
+    def run(dev: Boolean, origin: String) =
       Security.csrf("http://localhost:8080", "skiwi_session", dev)(echo).orNotFound
         .run(Request[IO](Method.POST, uri"/api/x").withEntity("{}").addCookie("skiwi_session", "t")
           .putHeaders(

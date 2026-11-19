@@ -11,9 +11,7 @@ import skiwi.ydoc.YEdit
 object YDocBuilder {
 
   /** paragraphs: 段落の文字（空の段落も可）。戻り値: (Yjs update, ProseMirror JSON, 平文) */
-  def paragraphs(
-    paragraphs: List[String]
-  ): (Array[Byte], Json, String) = {
+  def paragraphs(paragraphs: List[String]): (Array[Byte], Json, String) = {
     val ps = if paragraphs.isEmpty then List("") else paragraphs
     val blocks = ps.map { p =>
       if p.isEmpty then Json.obj("type" -> "paragraph".asJson)
@@ -28,9 +26,7 @@ object YDocBuilder {
   }
 
   /** 本文の文字を段落に分ける（改行ごと。制御文字は除く。最大500段落・各5000文字） */
-  def split(
-    text: String
-  ): List[String] =
+  def split(text: String): List[String] =
     text.replace("\r\n", "\n").split("\n", -1).toList
       .map(_.filterNot(c => c.isControl && c != '\t').take(5000))
       .dropWhile(_.trim.isEmpty).reverse.dropWhile(_.trim.isEmpty).reverse

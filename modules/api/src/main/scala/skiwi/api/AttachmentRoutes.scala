@@ -19,22 +19,17 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.{HexFormat, UUID}
 
-final case class AttachmentDto(
-  id: UUID,
-  url: String,
-  filename: String,
-  contentType: String,
-  size: Long) derives Encoder.AsObject
+final case class AttachmentDto(id: UUID, url: String, filename: String, contentType: String, size: Long)
+  derives Encoder.AsObject
 
 /** 添付ファイルのアップロード(要Edit)とダウンロード(要View)。実体はS3互換ストレージ。 */
-final class AttachmentRoutes(
-  protected val store: Store,
-  attachments: AttachmentStore,
-  blobs: Option[BlobStore],
-  protected val sessions: SessionAuth,
-  maxBytes: Long = 100L * 1024 * 1024,
-  audit: Option[Audit] = None,
-  indexer: Option[AttachmentIndexer] = None) extends PageRouteSupport {
+final class AttachmentRoutes(protected val store: Store,
+                             attachments: AttachmentStore,
+                             blobs: Option[BlobStore],
+                             protected val sessions: SessionAuth,
+                             maxBytes: Long = 100L * 1024 * 1024,
+                             audit: Option[Audit] = None,
+                             indexer: Option[AttachmentIndexer] = None) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
@@ -42,16 +37,9 @@ final class AttachmentRoutes(
     case req @ GET -> Root / "api" / "attachments" / UUIDVar(id) => getAttachment(req, id)
   }
 
-  private def postPageAttachments(
-    req: Request[IO],
-    pageId: UUID
-  ): IO[Response[IO]] =
+  private def postPageAttachments(req: Request[IO], pageId: UUID): IO[Response[IO]] =
     withPage(req, pageId, Role.Edit) {
-      (
-        s,
-        _,
-        _
-      ) =>
+      (s, _, _) =>
         blobs match {
           case None => err(ErrorCode.AttachmentStorageNotConfigured)
           case Some(blobStore) =>
@@ -149,20 +137,11 @@ final class AttachmentRoutes(
         }
     }
 
-  private def getAttachment(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getAttachment(req: Request[IO], id: UUID): IO[Response[IO]] =
     attachments.get(id).flatMap {
       case None => err(ErrorCode.AttachmentNotFound)
       case Some(a) =>
-        withPage(req, a.pageId, Role.View)(
-          (
-            _,
-            _,
-            _
-          ) => serve(a)
-        )
+        withPage(req, a.pageId, Role.View)((_, _, _) => serve(a))
     }
 
   private case object TooLarge extends Exception("ファイルが大きすぎます")
@@ -182,9 +161,7 @@ final class AttachmentRoutes(
     "text/plain"
   )
 
-  private def sanitizeName(
-    raw: Option[String]
-  ): String = {
+  private def sanitizeName(raw: Option[String]): String = {
     val base = raw.getOrElse("file").split("[/\\\\]").lastOption.getOrElse("file").filterNot(_.isControl).trim
     if base.isEmpty then "file" else base.take(200)
   }
@@ -193,27 +170,19 @@ final class AttachmentRoutes(
    * RFC 5987 の filename*=UTF-8''… があれば優先する（http4s/curl等はASCII化したfilenameと併記する）。
    * ブラウザは生のUTF-8で filename="…" を送るので、そちらは part.filename でそのまま読める。
    */
-  private def extendedFilename(
-    part: org.http4s.multipart.Part[IO]
-  ): Option[String] =
+  private def extendedFilename(part: org.http4s.multipart.Part[IO]): Option[String] =
     part.headers.get[org.http4s.headers.`Content-Disposition`]
       .flatMap(_.parameters.get(CIString("filename*"))) // http4sがRFC 5987デコード済みの値を返す
       .filter(_.nonEmpty)
 
-  private def contentDisposition(
-    kind: String,
-    filename: String
-  ): String = {
+  private def contentDisposition(kind: String, filename: String): String = {
     val ascii = filename.map(c => if c < 0x20 || c > 0x7e || c == '"' || c == '\\' then '_' else c)
     val utf8 = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20")
     s"""$kind; filename="$ascii"; filename*=UTF-8''$utf8"""
   }
 
   /** 添付ファイルの中身を返す（権限の確認は呼び出し側で行う）。公開リンク経由の配信でも使う。 */
-  def serve(
-    a: Attachment,
-    cacheControl: String = "private, max-age=3600"
-  ): IO[Response[IO]] =
+  def serve(a: Attachment, cacheControl: String = "private, max-age=3600"): IO[Response[IO]] =
     blobs.flatTraverse(_.get(a.s3Key)).flatMap {
       case None => err(ErrorCode.AttachmentContentNotFound)
       case Some((meta, body)) =>

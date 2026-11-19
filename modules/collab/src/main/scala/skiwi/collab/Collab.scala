@@ -55,30 +55,18 @@ enum Item {
 }
 
 /** ルーム内で配信されるメッセージ。target が指定された場合はそのクライアントのみ、なければ送信者以外の全員。 */
-final case class Out(
-  from: Long,
-  target: Option[Long],
-  frame: ByteVector,
-  item: Option[Item] = None)
+final case class Out(from: Long, target: Option[Long], frame: ByteVector, item: Option[Item] = None)
 
-private final case class Pending(
-  token: String,
-  target: Long)
+private final case class Pending(token: String, target: Long)
 
 /** クライアントへ届けたもの（updateのseq、スナップショットのID）。 */
-private final case class Delivered(
-  seqs: Set[Long],
-  snaps: Set[UUID]) {
-  def add(
-    i: Item
-  ): Delivered = i match {
+private final case class Delivered(seqs: Set[Long], snaps: Set[UUID]) {
+  def add(i: Item): Delivered = i match {
     case Item.Upd(s) => copy(seqs = seqs + s)
     case Item.Snap(id) => copy(snaps = snaps + id)
     case _: Item.CompactReq => this
   }
-  def --(
-    o: Delivered
-  ): Delivered = Delivered(seqs -- o.seqs, snaps -- o.snaps)
+  def --(o: Delivered): Delivered = Delivered(seqs -- o.seqs, snaps -- o.snaps)
 }
 
 private object Delivered {
@@ -132,23 +120,15 @@ final class Collab(
   cluster: Option[ClusterManager] = None,
   wsClient: Option[WSClient[IO]] = None,
   /** 本文に新しくメンションが書かれたとき（ページ、メンションされた人、そのとき編集していた人） */
-  onMentions: (UUID, Set[UUID], Set[UUID]) => IO[Unit] = (
-    _,
-    _,
-    _
-  ) => IO.unit) extends Http4sDsl[IO] {
+  onMentions: (UUID, Set[UUID], Set[UUID]) => IO[Unit] = (_, _, _) => IO.unit) extends Http4sDsl[IO] {
 
-  def routes(
-    wsb: WebSocketBuilder[IO]
-  ): HttpRoutes[IO] = HttpRoutes.of[IO] {
+  def routes(wsb: WebSocketBuilder[IO]): HttpRoutes[IO] = HttpRoutes.of[IO] {
     // 運用確認用（管理者のみ）: このノード、生存ノード、指定ページの担当ノード、このノードで開いているページ数
     case req @ GET -> Root / "api" / "admin" / "cluster" => getAdminCluster(req)
     case req @ GET -> Root / "ws" / "pages" / UUIDVar(pageId) => getWsPage(req, pageId, wsb)
   }
 
-  private def getAdminCluster(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminCluster(req: Request[IO]): IO[Response[IO]] =
     sessions.fromRequest(req).flatMap {
       case Some(s) if s.isAdmin =>
         val page = req.uri.query.params.get("page").flatMap(uuidOpt)
@@ -170,11 +150,7 @@ final class Collab(
       case None => Errors.respond(ErrorCode.NotLoggedIn)
     }
 
-  private def getWsPage(
-    req: Request[IO],
-    pageId: UUID,
-    wsb: WebSocketBuilder[IO]
-  ): IO[Response[IO]] =
+  private def getWsPage(req: Request[IO], pageId: UUID, wsb: WebSocketBuilder[IO]): IO[Response[IO]] =
     if isForwarded(req) then serveLocal(req, pageId, wsb) // 転送元で Origin は確認済み
     else if !originOk(req) then Errors.respond(ErrorCode.CollabOriginNotAllowed)
     else
@@ -192,9 +168,7 @@ final class Collab(
   private val clientIds: Ref[IO, Long] = Ref.unsafe(0L)
   private val conns: Ref[IO, Map[Long, Conn]] = Ref.unsafe(Map.empty)
 
-  private def newRoom(
-    pageId: UUID
-  ): IO[Room] =
+  private def newRoom(pageId: UUID): IO[Room] =
     (
       Topic[IO, Out],
       Semaphore[IO](1),
@@ -206,9 +180,7 @@ final class Collab(
       Ref.of[IO, Set[UUID]](Set.empty)
     ).mapN(new Room(pageId, _, _, _, _, _, _, _, _))
 
-  private def acquire(
-    pageId: UUID
-  ): Resource[IO, Room] =
+  private def acquire(pageId: UUID): Resource[IO, Room] =
     Resource.make {
       newRoom(pageId).flatMap { cand =>
         registry.modify { m =>
@@ -229,9 +201,7 @@ final class Collab(
       }.flatten
     }
 
-  private def localRoom(
-    pageId: UUID
-  ): IO[Option[Room]] = registry.get.map(_.get(pageId).map(_._1))
+  private def localRoom(pageId: UUID): IO[Option[Room]] = registry.get.map(_.get(pageId).map(_._1))
 
   // ---------------------------------------------------------------- 更新・圧縮
 
@@ -239,12 +209,7 @@ final class Collab(
    * update を保存し、このノードで開かれていればルームの全員（送信者を除く）へ送り、ほかのノードへも知らせる。保存した seq を返す。
    * その後、更新の数に応じて圧縮を要求・予約する。
    */
-  private def ingest(
-    room: Option[Room],
-    pageId: UUID,
-    payload: ByteVector,
-    from: Option[Conn]
-  ): IO[Long] =
+  private def ingest(room: Option[Room], pageId: UUID, payload: ByteVector, from: Option[Conn]): IO[Long] =
     room.fold(docs.appendUpdate(pageId, payload.toArray)) { r =>
       r.lock.permit.surround(
         docs.appendUpdate(pageId, payload.toArray).flatTap { seq =>
@@ -263,21 +228,14 @@ final class Collab(
         )
     }
 
-  private def onUpdate(
-    room: Room,
-    c: Conn,
-    payload: ByteVector
-  ): IO[Unit] =
+  private def onUpdate(room: Room, c: Conn, payload: ByteVector): IO[Unit] =
     Telemetry.span("collab.update", "page.id" -> room.pageId.toString)(
       room.versionAuthors.update(_ + c.userId) *> room.recentEditors.update(_ + c.userId) *>
         ingest(Some(room), room.pageId, payload, Some(c)).void
     ) *> Metrics.count("skiwi.collab.updates", "via" -> "client")
 
   /** サーバーで作った update（API・MCP での本文の変更）を、クライアントからの update と同じく保存して配る。保存した seq を返す。 */
-  def injectUpdate(
-    pageId: UUID,
-    update: Array[Byte]
-  ): IO[Long] =
+  def injectUpdate(pageId: UUID, update: Array[Byte]): IO[Long] =
     Telemetry.span(
       "collab.inject",
       "page.id" -> pageId.toString
@@ -285,15 +243,11 @@ final class Collab(
       .flatTap(_ => Metrics.count("skiwi.collab.updates", "via" -> "server"))
 
   /** 最後のupdateから一定時間後に圧縮を要求する（連続更新の間は延期）。 */
-  private def scheduleCompaction(
-    room: Room
-  ): IO[Unit] =
+  private def scheduleCompaction(room: Room): IO[Unit] =
     room.debounce.get.flatMap(_.traverse_(_.cancel)) *>
       (IO.sleep(cfg.compactIdle) *> requestCompaction(room).uncancelable).start.flatMap(f => room.debounce.set(Some(f)))
 
-  private def requestCompaction(
-    room: Room
-  ): IO[Unit] =
+  private def requestCompaction(room: Room): IO[Unit] =
     room.lock.permit.surround {
       room.pending.get.flatMap {
         case Some(_) => IO.unit
@@ -318,14 +272,12 @@ final class Collab(
       }
     }
 
-  private def onCompactResponse(
-    room: Room,
-    c: Conn,
-    token: String,
-    update: ByteVector,
-    json: String,
-    text: String
-  ): IO[Unit] = {
+  private def onCompactResponse(room: Room,
+                                c: Conn,
+                                token: String,
+                                update: ByteVector,
+                                json: String,
+                                text: String): IO[Unit] = {
     // 本文の JSON はここで1回だけ読む（壊れていれば応答ごと無視する）
     val content = _root_.io.circe.parser.parse(json).toOption
     room.pending.modify {
@@ -366,10 +318,7 @@ final class Collab(
   }
 
   /** ウォッチしている人へ更新通知を積む（送信はワーカーがまとめて行う）。 */
-  private def notifyEdited(
-    pageId: UUID,
-    editors: Set[UUID]
-  ): IO[Unit] =
+  private def notifyEdited(pageId: UUID, editors: Set[UUID]): IO[Unit] =
     (ops, editors.nonEmpty) match {
       case (Some(o), true) =>
         Metrics.count("skiwi.pages.updated", "via" -> "collab") *>
@@ -381,35 +330,22 @@ final class Collab(
   // ---------------------------------------------------------------- ノード間
 
   /** 文書の全構成要素をルームの全員へ流し直す（取りこぼしの回復。Yjsなので重複は無害）。 */
-  private def resync(
-    room: Room
-  ): IO[Unit] =
+  private def resync(room: Room): IO[Unit] =
     Telemetry.span("collab.resync", "page.id" -> room.pageId.toString)(docs.load(room.pageId)).flatMap { parts =>
-      parts.snapshots.traverse_(
-        (
-          id,
-          y
-        ) => room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(y)), Some(Item.Snap(id))))
+      parts.snapshots.traverse_((id, y) =>
+        room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(y)), Some(Item.Snap(id))))
       ) *>
-        parts.updates.traverse_(
-          (
-            seq,
-            u
-          ) => room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(u)), Some(Item.Upd(seq))))
+        parts.updates.traverse_((seq, u) =>
+          room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(u)), Some(Item.Upd(seq))))
         )
     }
 
   /** 他ノードで保存されたupdateを、このノードのルームにも配信する。 */
-  private def onRemoteUpdate(
-    payload: String
-  ): IO[Unit] =
+  private def onRemoteUpdate(payload: String): IO[Unit] =
     payload.split('|') match {
       case Array(from, page, seqS) if from != nodeId =>
         (uuidOpt(page), seqS.toLongOption).tupled.traverse_ {
-          (
-            pageId,
-            seq
-          ) =>
+          (pageId, seq) =>
             localRoom(pageId).flatMap(_.traverse_ { room =>
               docs.getUpdate(pageId, seq).flatMap {
                 case Some(u) =>
@@ -423,11 +359,8 @@ final class Collab(
 
   /** バス（LISTEN接続）の接続・再接続時。切断中の通知は失われるので、開いている全ルームを流し直す。 */
   private val onBusConnected: IO[Unit] =
-    registry.get.flatMap(_.values.toList.traverse_(
-      (
-        r,
-        _
-      ) => resync(r).handleErrorWith(e => sbirds.observe.Log.report(ErrorCode.CollabResyncFailed, e.toString, e))
+    registry.get.flatMap(_.values.toList.traverse_((r, _) =>
+      resync(r).handleErrorWith(e => sbirds.observe.Log.report(ErrorCode.CollabResyncFailed, e.toString, e))
     ))
 
   /** ノード間メッセージの購読（Mainで起動する）。 */
@@ -435,10 +368,7 @@ final class Collab(
     case None => IO.never
     case Some(b) =>
       b.subscribe(List(Collab.UpdateChannel, Collab.AccessChannel), onBusConnected) {
-        (
-          ch,
-          payload
-        ) =>
+        (ch, payload) =>
           ch match {
             case Collab.UpdateChannel => onRemoteUpdate(payload)
             case Collab.AccessChannel => if payload != nodeId then revalidate else IO.unit
@@ -463,10 +393,7 @@ final class Collab(
       conns.get.flatMap { cs =>
         // 担当が他ノードのページ（担当ノード, ページ, 接続）
         cs.values.toList.groupBy(_.pageId).toList.traverseFilter {
-          (
-            pageId,
-            list
-          ) =>
+          (pageId, list) =>
             cl.ownerOf(pageId).map(_.filter(_.id != cl.self).map(o => (o, pageId, list)))
         }.flatMap { moves =>
           // 応答の確認は担当ノードごとに1回だけ
@@ -474,11 +401,7 @@ final class Collab(
             cl.reachable(group.head._1).flatMap {
               case true =>
                 group.traverse_ {
-                  (
-                    o,
-                    pageId,
-                    list
-                  ) =>
+                  (o, pageId, list) =>
                     sbirds.observe.Log.println(
                       s"[cluster] page $pageId belongs to ${o.id}; closing ${list.size} local connection(s)"
                     ) *>
@@ -540,10 +463,7 @@ final class Collab(
     })
 
   /** 再検証の結果を接続に反映する。権限を失ったら通知して（少し待ってから）切断する。 */
-  private def applyRole(
-    c: Conn,
-    newRole: Option[Role]
-  ): IO[Unit] =
+  private def applyRole(c: Conn, newRole: Option[Role]): IO[Unit] =
     c.room.tryGet.flatMap {
       case None => IO.unit // まだ部屋に入っていない
       case Some(room) =>
@@ -567,14 +487,12 @@ final class Collab(
 
   // ---------------------------------------------------------------- WebSocket（自ノードで処理）
 
-  private def connection(
-    pageId: UUID,
-    initial: Role,
-    s: AuthSession,
-    reauth: IO[Option[AuthSession]],
-    authKey: String,
-    wsb: WebSocketBuilder[IO]
-  ): IO[Response[IO]] =
+  private def connection(pageId: UUID,
+                         initial: Role,
+                         s: AuthSession,
+                         reauth: IO[Option[AuthSession]],
+                         authKey: String,
+                         wsb: WebSocketBuilder[IO]): IO[Response[IO]] =
     for {
       id <- clientIds.updateAndGet(_ + 1)
       roomD <- Deferred[IO, Room]
@@ -605,18 +523,8 @@ final class Collab(
           // 購読開始後に読み込むため、取りこぼしは起きない（重複はCRDTで冪等）
           _ <- Stream.eval(deliv.set(Delivered(parts.updates.map(_._1).toSet, parts.snapshots.map(_._1).toSet)))
           hello = Wire.role(r0.asString) ::
-            (parts.snapshots.map(
-              (
-                _,
-                y
-              ) => Wire.syncUpdate(ByteVector(y))
-            ) ++
-              parts.updates.map(
-                (
-                  _,
-                  u
-                ) => Wire.syncUpdate(ByteVector(u))
-              ) :+ Wire.syncDoneMarker)
+            (parts.snapshots.map((_, y) => Wire.syncUpdate(ByteVector(y))) ++
+              parts.updates.map((_, u) => Wire.syncUpdate(ByteVector(u))) :+ Wire.syncDoneMarker)
           _ <- Stream.eval(
             // 未圧縮のログや状態断片が多ければ、接続を契機に圧縮を要求する
             if parts.updates.size >= cfg.compactAfterUpdates || parts.snapshots.size > cfg.maxParts then
@@ -637,10 +545,7 @@ final class Collab(
       receive: Pipe[IO, WebSocketFrame, Unit] = _.evalMap {
         case WebSocketFrame.Binary(data, true) =>
           (roomD.get, role.get).tupled.flatMap {
-            (
-              room,
-              r
-            ) =>
+            (room, r) =>
               val canEdit = r == Role.Edit
               Wire.parse(data) match {
                 case Wire.Inbound.Update(p) =>
@@ -675,11 +580,7 @@ final class Collab(
       resp <- wsb.build(send, receive)
     } yield resp
 
-  private def serveLocal(
-    req: Request[IO],
-    pageId: UUID,
-    wsb: WebSocketBuilder[IO]
-  ): IO[Response[IO]] = {
+  private def serveLocal(req: Request[IO], pageId: UUID, wsb: WebSocketBuilder[IO]): IO[Response[IO]] = {
     // 再検証用: リクエストの認証情報だけを保持して後から引き直す
     val authOnly = Request[IO](method = Method.GET, headers = req.headers)
     val authKey = List(CIString("Cookie"), CIString("Authorization")).flatMap(n =>
@@ -708,9 +609,7 @@ final class Collab(
 
   private val ForwardHeader = CIString("X-Skiwi-Forwarded")
 
-  private def isForwarded(
-    req: Request[IO]
-  ): Boolean =
+  private def isForwarded(req: Request[IO]): Boolean =
     cluster.exists { cl =>
       req.headers.get(ForwardHeader).exists(h =>
         MessageDigest.isEqual(
@@ -721,12 +620,10 @@ final class Collab(
     }
 
   /** 担当ノードへWebSocketを中継する。担当ノードが認証を拒否したらその応答を返す。到達できなければ None（自ノードで処理）。 */
-  private def proxy(
-    owner: skiwi.db.ClusterNode,
-    req: Request[IO],
-    pageId: UUID,
-    wsb: WebSocketBuilder[IO]
-  ): IO[Option[Response[IO]]] =
+  private def proxy(owner: skiwi.db.ClusterNode,
+                    req: Request[IO],
+                    pageId: UUID,
+                    wsb: WebSocketBuilder[IO]): IO[Option[Response[IO]]] =
     (cluster, wsClient).tupled match {
       case None => IO.pure(None)
       case Some((cl, client)) =>
@@ -765,9 +662,7 @@ final class Collab(
     }
 
   /** Originヘッダがあればホストの一致を要求する（Cross-Site WebSocket Hijacking対策）。 */
-  private def originOk(
-    req: Request[IO]
-  ): Boolean =
+  private def originOk(req: Request[IO]): Boolean =
     req.headers.get(CIString("Origin")).forall { o =>
       val host = req.headers.get[org.http4s.headers.Host].map(h => h.host + h.port.fold("")(p => s":$p"))
       val originAuthority = o.head.value.replaceFirst("^[a-zA-Z][a-zA-Z0-9+.-]*://", "")
@@ -781,9 +676,7 @@ object Collab {
   val AccessChannel = "skiwi_access"
 
   /** WebSocketのハンドシェイクで相手が返したHTTPステータス（拒否された場合）。 */
-  def handshakeStatus(
-    e: Throwable
-  ): Option[Int] =
+  def handshakeStatus(e: Throwable): Option[Int] =
     Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(10).collectFirst {
       case h: java.net.http.WebSocketHandshakeException => h.getResponse.statusCode()
     }

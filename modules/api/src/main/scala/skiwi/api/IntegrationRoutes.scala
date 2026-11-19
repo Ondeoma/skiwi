@@ -18,46 +18,37 @@ import scala.concurrent.duration.*
 import skiwi.core.ErrorCode
 
 /** 管理画面での連携の設定（client_secret は返さない。設定済みかどうかだけ）。projectKeys は skea だけ */
-final case class IntegrationSettingsDto(
-  url: String,
-  clientId: String,
-  clientSecretSet: Boolean,
-  projectKeys: List[String],
-  redirectUri: String,
-  connections: Int) derives Encoder.AsObject
+final case class IntegrationSettingsDto(url: String,
+                                        clientId: String,
+                                        clientSecretSet: Boolean,
+                                        projectKeys: List[String],
+                                        redirectUri: String,
+                                        connections: Int) derives Encoder.AsObject
 
 /** clientSecret: 空か省略なら今の値のまま */
-final case class SaveIntegrationSettingsReq(
-  url: String,
-  clientId: String,
-  clientSecret: Option[String],
-  projectKeys: Option[List[String]]) derives Decoder
+final case class SaveIntegrationSettingsReq(url: String,
+                                            clientId: String,
+                                            clientSecret: Option[String],
+                                            projectKeys: Option[List[String]]) derives Decoder
 
 /** ログイン中のユーザーから見た連携の状態 */
-final case class IntegrationStatusDto(
-  enabled: Boolean,
-  url: Option[String],
-  projectKeys: List[String],
-  connected: Boolean) derives Encoder.AsObject
-final case class LookupReq(
-  keys: List[String]) derives Decoder
+final case class IntegrationStatusDto(enabled: Boolean,
+                                      url: Option[String],
+                                      projectKeys: List[String],
+                                      connected: Boolean) derives Encoder.AsObject
+final case class LookupReq(keys: List[String]) derives Decoder
 
 /** items: サービスごとの形（skea はタスク、skawau はファイル、smohua はフォーム）。見つからない・見られないものは入らない */
-final case class LookupDto(
-  connected: Boolean,
-  items: List[Json]) derives Encoder.AsObject
+final case class LookupDto(connected: Boolean, items: List[Json]) derives Encoder.AsObject
 
 /** 項目1つの詳しい中身（smohua のフォームの集計・回答）。data は相手の応答のまま。連携していない・連携が切れたときは connected=false で data は null */
-final case class DetailDto(
-  connected: Boolean,
-  data: Json) derives Encoder.AsObject
+final case class DetailDto(connected: Boolean, data: Json) derives Encoder.AsObject
 
 /** 復号済みの連携の設定 */
-final case class IntegrationSettings(
-  url: String,
-  clientId: String,
-  clientSecret: Option[String],
-  projectKeys: List[String])
+final case class IntegrationSettings(url: String,
+                                     clientId: String,
+                                     clientSecret: Option[String],
+                                     projectKeys: List[String])
 
 object IntegrationRoutes {
 
@@ -71,11 +62,7 @@ object IntegrationRoutes {
   val ProjectKey = "^[A-Z][A-Z0-9_]{0,19}$".r
 
   /** 戻り先に結果の目印（?skea=connected など）を付ける */
-  def withFlag(
-    path: String,
-    name: String,
-    v: String
-  ): String = {
+  def withFlag(path: String, name: String, v: String): String = {
     val (p, hash) = path.indexOf('#') match {
       case -1 => (path, "")
       case i => (path.take(i), path.drop(i))
@@ -89,15 +76,14 @@ object IntegrationRoutes {
  * 発行された読み取り専用のトークンを暗号化して保存する。本文中の項目（タスク・ファイル・フォームの回答）は、本人のトークンで相手から読む。
  * 秘密の値は box（APP_SECRET の鍵）で暗号化して保存する。パスは /api/integrations/{サービス名}/…。
  */
-final class IntegrationRoutes(
-  services: List[LinkedService],
-  st: IntegrationStore,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  http: Client[IO],
-  publicUrl: String,
-  box: SecretBox,
-  cache: IntegrationRoutes.Cache) extends RouteSupport {
+final class IntegrationRoutes(services: List[LinkedService],
+                              st: IntegrationStore,
+                              protected val sessions: SessionAuth,
+                              audit: Audit,
+                              http: Client[IO],
+                              publicUrl: String,
+                              box: SecretBox,
+                              cache: IntegrationRoutes.Cache) extends RouteSupport {
 
   import IntegrationRoutes.*
 
@@ -116,16 +102,10 @@ final class IntegrationRoutes(
       getIntegrationItem(req, svc, key, kind)
   }
 
-  private def getAdminIntegration(
-    req: Request[IO],
-    svc: LinkedService
-  ): IO[Response[IO]] =
+  private def getAdminIntegration(req: Request[IO], svc: LinkedService): IO[Response[IO]] =
     admin(req)(_ => load(svc, box).flatMap(settingsDto(svc, _)).flatMap(Ok(_)))
 
-  private def putAdminIntegration(
-    req: Request[IO],
-    svc: LinkedService
-  ): IO[Response[IO]] =
+  private def putAdminIntegration(req: Request[IO], svc: LinkedService): IO[Response[IO]] =
     admin(req) { s =>
       locally {
         val b = box
@@ -134,9 +114,7 @@ final class IntegrationRoutes(
             case Left(msg) => err(ErrorCode.InvalidInput, msg)
             case Right(v) =>
               val keys = v.projectKeys.getOrElse(Nil)
-              def k(
-                name: String
-              ) = s"${svc.name}.$name"
+              def k(name: String) = s"${svc.name}.$name"
               for {
                 old <- load(svc, b)
                 // 接続先かクライアントが変わったら、これまでのトークンは使えないので全員の連携を外す
@@ -172,10 +150,7 @@ final class IntegrationRoutes(
       }
     }
 
-  private def getIntegration(
-    req: Request[IO],
-    svc: LinkedService
-  ): IO[Response[IO]] =
+  private def getIntegration(req: Request[IO], svc: LinkedService): IO[Response[IO]] =
     authed(req) { s =>
       active(svc).flatMap {
         case None => Ok(IntegrationStatusDto(enabled = false, None, Nil, connected = false))
@@ -185,10 +160,7 @@ final class IntegrationRoutes(
       }
     }
 
-  private def getIntegrationConnect(
-    req: Request[IO],
-    svc: LinkedService
-  ): IO[Response[IO]] =
+  private def getIntegrationConnect(req: Request[IO], svc: LinkedService): IO[Response[IO]] =
     authed(req) { s =>
       locally {
         active(svc).flatMap {
@@ -213,15 +185,9 @@ final class IntegrationRoutes(
       }
     }
 
-  private def getIntegrationCallback(
-    req: Request[IO],
-    svc: LinkedService
-  ): IO[Response[IO]] = {
+  private def getIntegrationCallback(req: Request[IO], svc: LinkedService): IO[Response[IO]] = {
     val p = req.uri.query.params
-    def back(
-      to: String,
-      v: String
-    ) = redirect(withFlag(to, svc.name, v))
+    def back(to: String, v: String) = redirect(withFlag(to, svc.name, v))
     sessions.fromRequest(req).flatMap {
       case None => back("/", "error")
       case Some(s) =>
@@ -260,18 +226,12 @@ final class IntegrationRoutes(
     }
   }
 
-  private def deleteIntegrationConnection(
-    req: Request[IO],
-    svc: LinkedService
-  ): IO[Response[IO]] =
+  private def deleteIntegrationConnection(req: Request[IO], svc: LinkedService): IO[Response[IO]] =
     authed(req) { s =>
       locally {
         val b = box
         (token(svc, b, s.user.id), active(svc)).flatMapN {
-          (
-            tok,
-            cfg
-          ) =>
+          (tok, cfg) =>
             // 相手側の失効は失敗しても続ける（相手の API キーの画面からも失効できる）
             val revoke = (tok, cfg).mapN { case (t, (_, c)) =>
               http.run(oauthPost(c, "/oauth/revoke", UrlForm("token" -> t))).use(r =>
@@ -288,10 +248,7 @@ final class IntegrationRoutes(
       }
     }
 
-  private def postIntegrationLookup(
-    req: Request[IO],
-    svc: LinkedService
-  ): IO[Response[IO]] =
+  private def postIntegrationLookup(req: Request[IO], svc: LinkedService): IO[Response[IO]] =
     authed(req) { s =>
       locally {
         body[LookupReq](req) {
@@ -310,12 +267,7 @@ final class IntegrationRoutes(
       }
     }
 
-  private def getIntegrationItem(
-    req: Request[IO],
-    svc: LinkedService,
-    key: String,
-    kind: String
-  ): IO[Response[IO]] =
+  private def getIntegrationItem(req: Request[IO], svc: LinkedService, key: String, kind: String): IO[Response[IO]] =
     authed(req) { s =>
       locally {
         val notConnected = Ok(DetailDto(connected = false, Json.Null))
@@ -350,30 +302,16 @@ final class IntegrationRoutes(
 
   private object Svc {
     private val byName = services.map(s => s.name -> s).toMap
-    def unapply(
-      s: String
-    ): Option[LinkedService] = byName.get(s)
+    def unapply(s: String): Option[LinkedService] = byName.get(s)
   }
 
-  def redirectUri(
-    svc: LinkedService
-  ) = s"$publicUrl/api/integrations/${svc.name}/callback"
+  def redirectUri(svc: LinkedService) = s"$publicUrl/api/integrations/${svc.name}/callback"
 
-  private def secretCtx(
-    svc: LinkedService
-  ) = s"${svc.name}.client_secret"
-  private def tokenCtx(
-    svc: LinkedService,
-    uid: UUID
-  ) = s"${svc.name}.token:$uid"
+  private def secretCtx(svc: LinkedService) = s"${svc.name}.client_secret"
+  private def tokenCtx(svc: LinkedService, uid: UUID) = s"${svc.name}.token:$uid"
 
-  private def load(
-    svc: LinkedService,
-    b: SecretBox
-  ): IO[IntegrationSettings] = st.settings(svc.name + ".").map { m =>
-    def get(
-      k: String
-    ) = m.get(s"${svc.name}.$k")
+  private def load(svc: LinkedService, b: SecretBox): IO[IntegrationSettings] = st.settings(svc.name + ".").map { m =>
+    def get(k: String) = m.get(s"${svc.name}.$k")
     IntegrationSettings(
       get("url").getOrElse(""),
       get("client_id").getOrElse(""),
@@ -383,60 +321,34 @@ final class IntegrationRoutes(
   }
 
   /** 設定が揃っていれば (鍵, 設定) */
-  private def active(
-    svc: LinkedService
-  ): IO[Option[(SecretBox, IntegrationSettings)]] =
+  private def active(svc: LinkedService): IO[Option[(SecretBox, IntegrationSettings)]] =
     load(svc, box).map(s => Option.when(svc.complete(s))((box, s)))
 
   /** 本人のトークン（復号できなければ None） */
-  private def token(
-    svc: LinkedService,
-    b: SecretBox,
-    uid: UUID
-  ): IO[Option[String]] =
+  private def token(svc: LinkedService, b: SecretBox, uid: UUID): IO[Option[String]] =
     st.token(svc.name, uid).map(_.flatMap(b.decrypt(_, tokenCtx(svc, uid))))
 
-  private def redirect(
-    to: String
-  ): IO[Response[IO]] =
+  private def redirect(to: String): IO[Response[IO]] =
     Response[IO](Status.Found).putHeaders(Location(Uri.unsafeFromString(to))).pure[IO]
 
-  private def endpoint(
-    s: IntegrationSettings,
-    path: String
-  ) = Uri.unsafeFromString(s.url + path)
+  private def endpoint(s: IntegrationSettings, path: String) = Uri.unsafeFromString(s.url + path)
 
   /** client_secret を使う相手の OAuth エンドポイントへの POST（HTTP Basic のクライアント認証） */
-  private def oauthPost(
-    s: IntegrationSettings,
-    path: String,
-    form: UrlForm
-  ) =
+  private def oauthPost(s: IntegrationSettings, path: String, form: UrlForm) =
     Request[IO](Method.POST, endpoint(s, path)).withEntity(form)
       .putHeaders(
         Authorization(BasicCredentials(s.clientId, s.clientSecret.getOrElse(""))),
         Accept(MediaType.application.json)
       )
 
-  private def dropCache(
-    svc: LinkedService,
-    uid: UUID
-  ) = cache.update(_.filterNot(e => e._1._1 == svc.name && e._1._2 == uid))
+  private def dropCache(svc: LinkedService, uid: UUID) =
+    cache.update(_.filterNot(e => e._1._1 == svc.name && e._1._2 == uid))
 
-  private def warn(
-    svc: LinkedService,
-    what: String
-  )(
-    e: Any
-  ) = sbirds.observe.Log.report(ErrorCode.IntegrationRequestFailed, s"${svc.name} $what: $e")
+  private def warn(svc: LinkedService, what: String)(e: Any) =
+    sbirds.observe.Log.report(ErrorCode.IntegrationRequestFailed, s"${svc.name} $what: $e")
 
   /** 認可コードをアクセストークンに替える */
-  private def exchange(
-    svc: LinkedService,
-    s: IntegrationSettings,
-    code: String,
-    verifier: String
-  ): IO[Option[String]] =
+  private def exchange(svc: LinkedService, s: IntegrationSettings, code: String, verifier: String): IO[Option[String]] =
     http.run(oauthPost(
       s,
       "/oauth/token",
@@ -459,12 +371,7 @@ final class IntegrationRoutes(
     case Failed
   }
 
-  private def lookup(
-    svc: LinkedService,
-    s: IntegrationSettings,
-    tok: String,
-    keys: List[String]
-  ): IO[Lookup] = {
+  private def lookup(svc: LinkedService, s: IntegrationSettings, tok: String, keys: List[String]): IO[Lookup] = {
     val req =
       Request[IO](Method.POST, endpoint(s, svc.lookupPath)).withEntity(Json.obj(svc.requestField -> keys.asJson))
         .putHeaders(Authorization(Credentials.Token(AuthScheme.Bearer, tok)), Accept(MediaType.application.json))
@@ -476,19 +383,14 @@ final class IntegrationRoutes(
     }.timeout(10.seconds).handleErrorWith(e => warn(svc, "lookup")(e).as(Lookup.Failed))
   }
 
-  private def settingsDto(
-    svc: LinkedService,
-    s: IntegrationSettings
-  ): IO[IntegrationSettingsDto] =
+  private def settingsDto(svc: LinkedService, s: IntegrationSettings): IO[IntegrationSettingsDto] =
     st.countTokens(svc.name).map(n =>
       IntegrationSettingsDto(s.url, s.clientId, s.clientSecret.exists(_.nonEmpty), s.projectKeys, redirectUri(svc), n)
     )
 
   /** 入力を確かめて整える（エラーは画面に出す文） */
-  private def validate(
-    svc: LinkedService,
-    b: SaveIntegrationSettingsReq
-  ): Either[String, SaveIntegrationSettingsReq] = {
+  private def validate(svc: LinkedService,
+                       b: SaveIntegrationSettingsReq): Either[String, SaveIntegrationSettingsReq] = {
     val url = b.url.trim.stripSuffix("/")
     val keys = if svc.usesProjectKeys then
       b.projectKeys.getOrElse(Nil).map(_.trim.toUpperCase).filter(_.nonEmpty).distinct
@@ -514,20 +416,17 @@ final class IntegrationRoutes(
   }
 
   /** キャッシュにないものだけ相手に問い合わせる。401 なら連携が切れたとして接続を消す */
-  private def items(
-    svc: LinkedService,
-    uid: UUID,
-    cfg: IntegrationSettings,
-    tok: String,
-    keys: List[String]
-  ): IO[Response[IO]] =
+  private def items(svc: LinkedService,
+                    uid: UUID,
+                    cfg: IntegrationSettings,
+                    tok: String,
+                    keys: List[String]): IO[Response[IO]] =
     IO.realTime.map(_.toMillis).flatMap { now =>
       cache.get.flatMap { m =>
         val hits = keys.flatMap(k => m.get((svc.name, uid, k)).filter(_._1 > now).map(k -> _._2)).toMap
         val misses = keys.filterNot(hits.contains)
-        def reply(
-          found: Map[String, Option[Json]]
-        ) = Ok(LookupDto(connected = true, keys.flatMap(k => found.get(k).flatten)))
+        def reply(found: Map[String, Option[Json]]) =
+          Ok(LookupDto(connected = true, keys.flatMap(k => found.get(k).flatten)))
         if misses.isEmpty then reply(hits)
         else
           lookup(svc, cfg, tok, misses).flatMap {
@@ -540,12 +439,8 @@ final class IntegrationRoutes(
               val exp = now + CacheMillis
               cache.update { c =>
                 val live = if c.size + fresh.size > MaxCache then c.filter(_._2._1 > now) else c
-                (if live.size + fresh.size > MaxCache then Map.empty else live) ++ fresh.map(
-                  (
-                    k,
-                    v
-                  ) => (svc.name, uid, k) -> (exp, v)
-                )
+                (if live.size + fresh.size > MaxCache then Map.empty else live) ++
+                  fresh.map((k, v) => (svc.name, uid, k) -> (exp, v))
               } *> reply(hits ++ fresh)
           }
       }

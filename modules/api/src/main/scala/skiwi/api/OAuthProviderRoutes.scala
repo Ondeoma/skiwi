@@ -16,40 +16,30 @@ import java.util.{Base64, UUID}
 import skiwi.core.ErrorCode
 
 /** 管理画面でのクライアント（skea）の登録（client_secret は返さない。設定済みかどうかだけ） */
-final case class OAuthClientDto(
-  clientId: String,
-  clientSecretSet: Boolean,
-  redirectUri: String,
-  name: String,
-  connections: Int) derives Encoder.AsObject
+final case class OAuthClientDto(clientId: String,
+                                clientSecretSet: Boolean,
+                                redirectUri: String,
+                                name: String,
+                                connections: Int) derives Encoder.AsObject
 
 /** clientSecret: 空か省略なら今の値のまま（新しく登録するときは必須） */
-final case class SaveOAuthClientReq(
-  clientId: String,
-  clientSecret: Option[String],
-  redirectUri: String,
-  name: String) derives Decoder
-final case class PageLookupDto(
-  id: UUID,
-  workspaceId: UUID,
-  title: String,
-  icon: Option[String]) derives Encoder.AsObject
+final case class SaveOAuthClientReq(clientId: String, clientSecret: Option[String], redirectUri: String, name: String)
+  derives Decoder
+final case class PageLookupDto(id: UUID, workspaceId: UUID, title: String, icon: Option[String])
+  derives Encoder.AsObject
 
 /**
  * 登録済みのクライアント（client_secret は SHA-256 のハッシュだけ持つ）.
  * scopes が空なら、管理画面で登録したクライアント（skea）で、ページの一括参照だけのトークンを発行する.
  * 環境変数 OAUTH_CLIENTS のクライアント（skakapo など）は、scopes（read・write）の中で求められたスコープの普通のトークンを発行する
  */
-final case class OAuthClient(
-  id: String,
-  secretHash: String,
-  redirectUri: String,
-  name: String,
-  scopes: List[String] = Nil) {
+final case class OAuthClient(id: String,
+                             secretHash: String,
+                             redirectUri: String,
+                             name: String,
+                             scopes: List[String] = Nil) {
   def full: Boolean = scopes.nonEmpty
-  def secretMatches(
-    secret: String
-  ): Boolean =
+  def secretMatches(secret: String): Boolean =
     java.security.MessageDigest.isEqual(Base64.getDecoder.decode(secretHash), Crypto.sha256(secret))
 }
 
@@ -67,15 +57,10 @@ object OAuthProviderRoutes {
     val name = "oauth_client.name"
   }
 
-  def hashSecret(
-    secret: String
-  ): String = Base64.getEncoder.encodeToString(Crypto.sha256(secret))
+  def hashSecret(secret: String): String = Base64.getEncoder.encodeToString(Crypto.sha256(secret))
 
   /** 入力を確かめて整える（エラーは画面に出す文）。hasSecret: すでに client_secret が登録されているか */
-  def validate(
-    b: SaveOAuthClientReq,
-    hasSecret: Boolean
-  ): Either[String, SaveOAuthClientReq] = {
+  def validate(b: SaveOAuthClientReq, hasSecret: Boolean): Either[String, SaveOAuthClientReq] = {
     val id = b.clientId.trim
     val redirect = b.redirectUri.trim
     val name = b.name.trim
@@ -97,14 +82,13 @@ object OAuthProviderRoutes {
  * skea が各ユーザーの権限でページのタイトルを読めるようにする。発行するトークンはそのユーザーの読み取り専用の API トークン
  * （「<表示名> 連携」。期限なし。API トークンの画面から失効できる）。クライアントは管理者が1つ登録する（integration_setting）。
  */
-final class OAuthProviderRoutes(
-  st: IntegrationStore,
-  ops: OpsStore,
-  store: Store,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  cookieSecure: Boolean,
-  extraClients: List[OAuthClient] = Nil) extends RouteSupport {
+final class OAuthProviderRoutes(st: IntegrationStore,
+                                ops: OpsStore,
+                                store: Store,
+                                protected val sessions: SessionAuth,
+                                audit: Audit,
+                                cookieSecure: Boolean,
+                                extraClients: List[OAuthClient] = Nil) extends RouteSupport {
 
   import OAuthProviderRoutes.*
 
@@ -122,14 +106,10 @@ final class OAuthProviderRoutes(
     case req @ POST -> Root / "api" / "pages" / "lookup" => postPagesLookup(req)
   }
 
-  private def getAdminIntegrationsSkeaClient(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getAdminIntegrationsSkeaClient(req: Request[IO]): IO[Response[IO]] =
     admin(req)(_ => client.flatMap(clientDto).flatMap(Ok(_)))
 
-  private def putAdminIntegrationsSkeaClient(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def putAdminIntegrationsSkeaClient(req: Request[IO]): IO[Response[IO]] =
     admin(req) { s =>
       body[SaveOAuthClientReq](req) { raw =>
         client.flatMap { old =>
@@ -160,9 +140,7 @@ final class OAuthProviderRoutes(
       }
     }
 
-  private def deleteAdminIntegrationsSkeaClient(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def deleteAdminIntegrationsSkeaClient(req: Request[IO]): IO[Response[IO]] =
     admin(req) { s =>
       client.flatMap {
         case None => NoContent()
@@ -183,9 +161,7 @@ final class OAuthProviderRoutes(
       }
     }
 
-  private def getOauthAuthorize(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getOauthAuthorize(req: Request[IO]): IO[Response[IO]] =
     validateAuthorize(queryParam(req, _)).flatMap {
       case Left(r) => r
       case Right((c, _, _)) =>
@@ -236,9 +212,7 @@ final class OAuthProviderRoutes(
         }
     }
 
-  private def postOauthAuthorize(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postOauthAuthorize(req: Request[IO]): IO[Response[IO]] =
     req.as[UrlForm].attempt.flatMap {
       case Left(_) => errorPage("要求の形が正しくありません")
       case Right(u) =>
@@ -275,9 +249,7 @@ final class OAuthProviderRoutes(
         }
     }
 
-  private def postOauthToken(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postOauthToken(req: Request[IO]): IO[Response[IO]] =
     basicClient(req).flatMap {
       case None => invalidClient
       case Some(c) =>
@@ -334,34 +306,26 @@ final class OAuthProviderRoutes(
         }
     }
 
-  private def postOauthRevoke(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postOauthRevoke(req: Request[IO]): IO[Response[IO]] =
     basicClient(req).flatMap {
       case None => invalidClient
       case Some(c) =>
         form(req) { f =>
           f.get("token").filter(_.nonEmpty).flatTraverse(t => ops.revokeOAuthToken(Crypto.sha256(t), c.id)).flatMap {
-            _.traverse_(
-              (
-                uid,
-                t
-              ) =>
-                audit.system(
-                  "system",
-                  "token.revoke",
-                  "token",
-                  t.id,
-                  Json.obj("userId" -> uid.asJson, "client" -> c.id.asJson)
-                )
+            _.traverse_((uid, t) =>
+              audit.system(
+                "system",
+                "token.revoke",
+                "token",
+                t.id,
+                Json.obj("userId" -> uid.asJson, "client" -> c.id.asJson)
+              )
             )
           } *> Ok(Json.obj()).map(_.putHeaders("Cache-Control" -> "no-store"))
         }
     }
 
-  private def postPagesLookup(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def postPagesLookup(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       body[Json](req) { j =>
         j.hcursor.get[List[String]]("ids") match {
@@ -370,12 +334,8 @@ final class OAuthProviderRoutes(
           case Right(ids) =>
             val uuids = ids.flatMap(i => scala.util.Try(UUID.fromString(i.trim)).toOption).distinct
             store.visiblePages(uuids, s).flatMap(ps =>
-              Ok(Json.obj("pages" -> ps.map(
-                (
-                  p,
-                  _
-                ) => PageLookupDto(p.id, p.workspaceId, p.title, p.icon.filter(_.nonEmpty))
-              ).asJson))
+              Ok(Json.obj("pages" ->
+                ps.map((p, _) => PageLookupDto(p.id, p.workspaceId, p.title, p.icon.filter(_.nonEmpty))).asJson))
             )
         }
       }
@@ -385,12 +345,8 @@ final class OAuthProviderRoutes(
 
   /** 登録済みのクライアント（揃っていなければ None） */
   def client: IO[Option[OAuthClient]] = st.settings("oauth_client.").map { m =>
-    (m.get(Keys.id), m.get(Keys.secret), m.get(Keys.redirect)).mapN(
-      (
-        id,
-        sec,
-        uri
-      ) => OAuthClient(id, sec, uri, m.getOrElse(Keys.name, id))
+    (m.get(Keys.id), m.get(Keys.secret), m.get(Keys.redirect)).mapN((id, sec, uri) =>
+      OAuthClient(id, sec, uri, m.getOrElse(Keys.name, id))
     )
   }
 
@@ -398,20 +354,14 @@ final class OAuthProviderRoutes(
   def clients: IO[List[OAuthClient]] = client.map(c => c.toList ++ extraClients.filterNot(x => c.exists(_.id == x.id)))
 
   /** 求められたスコープ（なければ read）. 一括参照だけのクライアントは read だけ. 許していないものが含まれていれば None */
-  private def scopes(
-    c: OAuthClient,
-    requested: Option[String]
-  ): Option[List[String]] = {
+  private def scopes(c: OAuthClient, requested: Option[String]): Option[List[String]] = {
     val rs = requested.map(
       _.split(' ').map(_.trim).filter(_.nonEmpty).toList.distinct
     ).filter(_.nonEmpty).getOrElse(List("read"))
     Option.when(rs.forall((if c.full then c.scopes else List("read")).contains))(rs)
   }
 
-  private def save(
-    v: SaveOAuthClientReq,
-    by: Option[UUID]
-  ): IO[Unit] =
+  private def save(v: SaveOAuthClientReq, by: Option[UUID]): IO[Unit] =
     st.setSettings(
       Map(Keys.id -> Some(v.clientId), Keys.redirect -> Some(v.redirectUri), Keys.name -> Some(v.name))
         ++ v.clientSecret.map(sec => Keys.secret -> Some(hashSecret(sec))),
@@ -419,9 +369,7 @@ final class OAuthProviderRoutes(
     )
 
   /** 起動時の初期登録（環境変数 OAUTH_CLIENT_*）。まだ登録されていないときだけ書く（管理画面での変更を上書きしない） */
-  def seed(
-    raw: SaveOAuthClientReq
-  ): IO[Unit] =
+  def seed(raw: SaveOAuthClientReq): IO[Unit] =
     client.flatMap {
       case Some(_) => IO.unit
       case None => validate(raw, hasSecret = false) match {
@@ -432,9 +380,7 @@ final class OAuthProviderRoutes(
         }
     }
 
-  private def clientDto(
-    c: Option[OAuthClient]
-  ): IO[OAuthClientDto] = c match {
+  private def clientDto(c: Option[OAuthClient]): IO[OAuthClientDto] = c match {
     case None => IO.pure(OAuthClientDto("", clientSecretSet = false, "", "skea", 0))
     case Some(c) =>
       ops.countOAuthTokens(c.id).map(n => OAuthClientDto(c.id, clientSecretSet = true, c.redirectUri, c.name, n))
@@ -442,15 +388,10 @@ final class OAuthProviderRoutes(
 
   // ---------------------------------------------------------------- 許可の画面（サーバーで HTML を組み立てる）
 
-  private def enc(
-    s: String
-  ): String = java.net.URLEncoder.encode(s, "UTF-8")
+  private def enc(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
 
   /** redirect_uri に結果を付けて戻す */
-  private def back(
-    uri: String,
-    params: (String, Option[String])*
-  ): IO[Response[IO]] = {
+  private def back(uri: String, params: (String, Option[String])*): IO[Response[IO]] = {
     val q = params.collect { case (k, Some(v)) => s"$k=${enc(v)}" }.mkString("&")
     IO.pure(Response[IO](Status.Found).putHeaders(Location(Uri.unsafeFromString(uri +
       (if uri.contains("?") then "&" else "?") + q))))
@@ -460,10 +401,7 @@ final class OAuthProviderRoutes(
    * 画面を返す。CSP に form-action は付けない（送信後のリダイレクトの連鎖にも効くため、連携元がさらに別の
    * origin（開発中の画面のサーバーなど）へ戻すと、許可の後の戻りが止まる。送信先は自分の固定のパスだけ）
    */
-  private def page(
-    title: String,
-    body: String
-  ): IO[Response[IO]] = {
+  private def page(title: String, body: String): IO[Response[IO]] = {
     val html =
       s"""<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
          |<title>${Html.escape(title)} | skiwi</title><style>
@@ -484,9 +422,7 @@ final class OAuthProviderRoutes(
     ))
   }
 
-  private def errorPage(
-    msg: String
-  ): IO[Response[IO]] =
+  private def errorPage(msg: String): IO[Response[IO]] =
     page("認可できません", s"<h1>認可できません</h1><p>${Html.escape(msg)}</p><p class=\"muted\">連携元のサービスの設定を確認してください。</p>")
       .map(_.withStatus(Status.BadRequest))
 
@@ -494,9 +430,8 @@ final class OAuthProviderRoutes(
    * 認可の要求を確かめる。client_id・redirect_uri が不正ならリダイレクトせずに画面でエラー、それ以外の不正は redirect_uri へエラーを返す。
    * 正しければ (クライアント, state, code_challenge)
    */
-  private def validateAuthorize(
-    p: String => Option[String]
-  ): IO[Either[IO[Response[IO]], (OAuthClient, Option[String], String)]] =
+  private def validateAuthorize(p: String => Option[String])
+    : IO[Either[IO[Response[IO]], (OAuthClient, Option[String], String)]] =
     clients.map { all =>
       (all.find(c => p("client_id").contains(c.id)), p("redirect_uri")) match {
         case (None, _) => Left(errorPage("登録されていないクライアントです（client_id）"))
@@ -520,18 +455,12 @@ final class OAuthProviderRoutes(
       }
     }
 
-  private def queryParam(
-    req: Request[IO],
-    k: String
-  ): Option[String] = req.uri.query.params.get(k).map(_.trim).filter(_.nonEmpty)
+  private def queryParam(req: Request[IO], k: String): Option[String] =
+    req.uri.query.params.get(k).map(_.trim).filter(_.nonEmpty)
 
   // ---------------------------------------------------------------- トークンの発行・失効（クライアント認証は HTTP Basic）
 
-  private def oauthError(
-    status: Status,
-    code: String,
-    desc: String
-  ): IO[Response[IO]] =
+  private def oauthError(status: Status, code: String, desc: String): IO[Response[IO]] =
     IO.pure(Response[IO](status).withEntity(Json.obj("error" -> code.asJson, "error_description" -> desc.asJson))
       .putHeaders("Cache-Control" -> "no-store", "Pragma" -> "no-cache")
       .putHeaders((if status == Status.Unauthorized then
@@ -540,19 +469,13 @@ final class OAuthProviderRoutes(
 
   private def invalidClient = oauthError(Status.Unauthorized, "invalid_client", "クライアントの認証に失敗しました")
 
-  private def basicClient(
-    req: Request[IO]
-  ): IO[Option[OAuthClient]] =
+  private def basicClient(req: Request[IO]): IO[Option[OAuthClient]] =
     req.headers.get[Authorization].collect { case Authorization(BasicCredentials(id, secret)) => (id, secret) } match {
       case None => IO.pure(None)
       case Some((id, secret)) => clients.map(_.find(c => c.id == id && c.secretMatches(secret)))
     }
 
-  private def form(
-    req: Request[IO]
-  )(
-    f: Map[String, String] => IO[Response[IO]]
-  ): IO[Response[IO]] =
+  private def form(req: Request[IO])(f: Map[String, String] => IO[Response[IO]]): IO[Response[IO]] =
     req.as[UrlForm].attempt.flatMap {
       case Left(_) => oauthError(Status.BadRequest, "invalid_request", "application/x-www-form-urlencoded で送ってください")
       case Right(u) => f(u.values.view.mapValues(_.headOption.getOrElse("")).toMap)

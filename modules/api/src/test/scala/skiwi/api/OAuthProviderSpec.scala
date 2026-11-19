@@ -27,11 +27,7 @@ class OAuthProviderSpec extends DbSuite {
   private val rwSecret = "skakapo-test-secret-0123456789"
   private val rwRedirect = "https://skakapo.test/api/connections/callback"
 
-  final case class Env(
-    store: Store,
-    ops: OpsStore,
-    ist: IntegrationStore,
-    app: HttpApp[IO])
+  final case class Env(store: Store, ops: OpsStore, ist: IntegrationStore, app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -78,10 +74,7 @@ class OAuthProviderSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String,
-    groups: List[String] = Nil
-  ): IO[(User, String)] = {
+  private def user(name: String, groups: List[String] = Nil): IO[(User, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -90,18 +83,14 @@ class OAuthProviderSpec extends DbSuite {
     } yield (u, token)
   }
 
-  private def json(
-    r: Response[IO]
-  ): IO[(Response[IO], Json)] =
+  private def json(r: Response[IO]): IO[(Response[IO], Json)] =
     r.bodyText.compile.string.map(s => (r, io.circe.parser.parse(s).getOrElse(Json.fromString(s))))
 
-  private def call(
-    session: Option[String],
-    method: Method,
-    path: String,
-    body: Option[Json] = None,
-    bearer: Option[String] = None
-  ): IO[(Response[IO], Json)] = {
+  private def call(session: Option[String],
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None,
+                   bearer: Option[String] = None): IO[(Response[IO], Json)] = {
     var req = Request[IO](method, Uri.unsafeFromString(path))
     body.foreach(b => req = req.withEntity(b))
     session.foreach(t => req = req.addCookie("skiwi_session", t))
@@ -111,11 +100,9 @@ class OAuthProviderSpec extends DbSuite {
 
   private val basic = Authorization(BasicCredentials(clientId, secret))
 
-  private def oauthPost(
-    path: String,
-    form: UrlForm,
-    auth: Option[Authorization] = Some(basic)
-  ): IO[(Response[IO], Json)] = {
+  private def oauthPost(path: String,
+                        form: UrlForm,
+                        auth: Option[Authorization] = Some(basic)): IO[(Response[IO], Json)] = {
     val req = Request[IO](Method.POST, Uri.unsafeFromString(path)).withEntity(form)
     env.app.run(auth.fold(req)(a => req.putHeaders(a))).flatMap(json)
   }
@@ -140,9 +127,7 @@ class OAuthProviderSpec extends DbSuite {
   private val verifier = "v" * 50
   private val challenge = Crypto.pkceChallenge(verifier)
 
-  private def authorizeQuery(
-    extra: (String, String)*
-  ): String = {
+  private def authorizeQuery(extra: (String, String)*): String = {
     val ps = Map(
       "response_type" -> "code",
       "client_id" -> clientId,
@@ -155,16 +140,10 @@ class OAuthProviderSpec extends DbSuite {
     Uri.unsafeFromString("/oauth/authorize").withQueryParams(ps).renderString
   }
 
-  private def location(
-    r: Response[IO]
-  ): Uri = r.headers.get[Location].get.uri
+  private def location(r: Response[IO]): Uri = r.headers.get[Location].get.uri
 
   /** 許可画面を開いて（CSRF の Cookie を受け取り）、決定をフォームで送る。戻り値は POST の応答 */
-  private def decide(
-    session: String,
-    decision: String,
-    csrfOverride: Option[String] = None
-  ): IO[Response[IO]] =
+  private def decide(session: String, decision: String, csrfOverride: Option[String] = None): IO[Response[IO]] =
     for {
       page <-
         env.app.run(Request[IO](Method.GET, Uri.unsafeFromString(authorizeQuery())).addCookie("skiwi_session", session))
@@ -193,9 +172,7 @@ class OAuthProviderSpec extends DbSuite {
     } yield r
 
   /** 許可してコードを受け取る */
-  private def code(
-    session: String
-  ): IO[String] =
+  private def code(session: String): IO[String] =
     decide(session, "allow").map { r =>
       assertEquals(r.status, Status.Found)
       val q = location(r).query.params
@@ -203,12 +180,10 @@ class OAuthProviderSpec extends DbSuite {
       q("code")
     }
 
-  private def exchange(
-    code: String,
-    v: String = verifier,
-    auth: Option[Authorization] = Some(basic),
-    uri: String = redirect
-  ) =
+  private def exchange(code: String,
+                       v: String = verifier,
+                       auth: Option[Authorization] = Some(basic),
+                       uri: String = redirect) =
     oauthPost(
       "/oauth/token",
       UrlForm("grant_type" -> "authorization_code", "code" -> code, "redirect_uri" -> uri, "code_verifier" -> v),
@@ -216,14 +191,9 @@ class OAuthProviderSpec extends DbSuite {
     )
 
   /** 許可 → トークン */
-  private def token(
-    session: String
-  ): IO[String] =
+  private def token(session: String): IO[String] =
     code(session).flatMap(exchange(_)).map {
-      (
-        r,
-        j
-      ) =>
+      (r, j) =>
         assertEquals(r.status, Status.Ok, j.noSpaces)
         j.hcursor.get[String]("access_token").toOption.get
     }
@@ -522,10 +492,7 @@ class OAuthProviderSpec extends DbSuite {
   }
 
   /** OAUTH_CLIENTS のクライアントで許可してトークンを受け取る（scope を指定）. 許可の画面を出せなければ Left（リダイレクト先） */
-  private def rwToken(
-    session: String,
-    scope: String
-  ): IO[Either[String, (String, String)]] = {
+  private def rwToken(session: String, scope: String): IO[Either[String, (String, String)]] = {
     val ps = Map(
       "response_type" -> "code",
       "client_id" -> rwId,
@@ -550,10 +517,7 @@ class OAuthProviderSpec extends DbSuite {
           .addCookie("skiwi_session", session).addCookie(OAuthProviderRoutes.CsrfCookie, csrf)).flatMap { r =>
           val code = location(r).query.params("code")
           exchange(code, auth = Some(Authorization(BasicCredentials(rwId, rwSecret))), uri = rwRedirect).map {
-            (
-              tr,
-              j
-            ) =>
+            (tr, j) =>
               assertEquals(tr.status, Status.Ok, j.noSpaces)
               Right((j.hcursor.get[String]("access_token").toOption.get, html))
           }

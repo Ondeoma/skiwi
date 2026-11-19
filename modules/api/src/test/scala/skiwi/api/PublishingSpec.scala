@@ -18,14 +18,13 @@ class PublishingSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set.empty, cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    ops: OpsStore,
-    attSt: AttachmentStore,
-    blobs: InMemoryBlobStore,
-    shares: ShareRoutes,
-    app: HttpApp[IO])
+  final case class Env(store: Store,
+                       docs: DocStore,
+                       ops: OpsStore,
+                       attSt: AttachmentStore,
+                       blobs: InMemoryBlobStore,
+                       shares: ShareRoutes,
+                       app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -64,9 +63,7 @@ class PublishingSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -74,12 +71,10 @@ class PublishingSpec extends DbSuite {
     } yield (AuthSession(u, Nil, false), token)
   }
 
-  private def call(
-    token: Option[String],
-    method: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[(Status, Json)] = {
+  private def call(token: Option[String],
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None): IO[(Status, Json)] = {
     var req = Request[IO](method, Uri.unsafeFromString(path))
     token.foreach(t => req = req.addCookie("skiwi_session", t))
     body.foreach(b => req = req.withEntity(b))
@@ -88,21 +83,11 @@ class PublishingSpec extends DbSuite {
     )
   }
 
-  private def page(
-    ws: UUID,
-    title: String,
-    parent: Option[UUID],
-    by: UUID
-  ) =
+  private def page(ws: UUID, title: String, parent: Option[UUID], by: UUID) =
     env.store.createPage(ws, parent, Placement.Last, title, None, by).map(_.toOption.get)
 
   /** 本文を保存する（サーバーは Yjs を解釈しないので、Yjs 状態はダミー） */
-  private def setText(
-    pageId: UUID,
-    text: String,
-    by: UUID,
-    extra: List[Json] = Nil
-  ) = {
+  private def setText(pageId: UUID, text: String, by: UUID, extra: List[Json] = Nil) = {
     val doc = Json.obj(
       "type" -> "doc".asJson,
       "content" ->
@@ -114,9 +99,7 @@ class PublishingSpec extends DbSuite {
     env.docs.saveCompaction(pageId, Array[Byte](1, 2, 3), doc, text, Set.empty, Set.empty, by)
   }
 
-  private def firstText(
-    j: Json
-  ) =
+  private def firstText(j: Json) =
     j.hcursor.downField(
       "content"
     ).downField("content").downArray.downField("content").downArray.get[String]("text").toOption

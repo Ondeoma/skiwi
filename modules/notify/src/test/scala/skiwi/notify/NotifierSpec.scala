@@ -23,10 +23,7 @@ class NotifierSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
 
   /** 他テストのアウトボックスを巻き込まないよう、このテストのページに限定して処理させる。 */
-  private def drainFor(
-    xa: doobie.Transactor[IO],
-    pages: Set[UUID]
-  ): IO[Unit] = {
+  private def drainFor(xa: doobie.Transactor[IO], pages: Set[UUID]): IO[Unit] = {
     val arr = pages.toArray
     sql"update mail_outbox set not_before = now() + interval '1 day' where sent_at is null and not skipped and (page_id is null or not (page_id = any($arr)))"
       .update.run.transact(xa).void
@@ -84,9 +81,7 @@ class NotifierSpec extends DbSuite {
       val store = new Store(xa)
       val ops = new OpsStore(xa)
       val failing = new Mailer {
-        def send(
-          m: Mail
-        ) = IO.raiseError(new RuntimeException("SMTP down"))
+        def send(m: Mail) = IO.raiseError(new RuntimeException("SMTP down"))
       }
       val n = new Notifier(store, ops, Some(failing), "http://localhost", Set.empty)
       for {

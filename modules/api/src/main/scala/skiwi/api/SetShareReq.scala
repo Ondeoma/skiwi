@@ -5,18 +5,17 @@ import io.circe.Decoder
 import java.time.Instant
 
 /** expiresAt / startsAt / password / slug / description: 項目なし=変更しない、null（空文字も）=解除、値=設定。 */
-final case class SetShareReq(
-  includeChildren: Option[Boolean],
-  expiresAt: Option[Option[Instant]],
-  password: Option[Option[String]],
-  hideHeader: Option[Boolean] = None,
-  sidebar: Option[String] = None,
-  mode: Option[String] = None,
-  startsAt: Option[Option[Instant]] = None,
-  slug: Option[Option[String]] = None,
-  indexable: Option[Boolean] = None,
-  description: Option[Option[String]] = None,
-  showReleases: Option[Boolean] = None)
+final case class SetShareReq(includeChildren: Option[Boolean],
+                             expiresAt: Option[Option[Instant]],
+                             password: Option[Option[String]],
+                             hideHeader: Option[Boolean] = None,
+                             sidebar: Option[String] = None,
+                             mode: Option[String] = None,
+                             startsAt: Option[Option[Instant]] = None,
+                             slug: Option[Option[String]] = None,
+                             indexable: Option[Boolean] = None,
+                             description: Option[Option[String]] = None,
+                             showReleases: Option[Boolean] = None)
 
 object SetShareReq {
   given Decoder[SetShareReq] = Decoder.instance { c =>

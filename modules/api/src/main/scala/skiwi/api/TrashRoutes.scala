@@ -14,31 +14,27 @@ import java.time.Instant
 import java.util.UUID
 import scala.concurrent.duration.*
 
-final case class TrashedPageDto(
-  id: UUID,
-  title: String,
-  icon: Option[String],
-  deletedAt: Instant,
-  deletedBy: Option[String],
-  count: Long,
-  purgeAt: Instant) derives Encoder.AsObject
-final case class TrashedWorkspaceDto(
-  id: UUID,
-  name: String,
-  deletedAt: Instant,
-  deletedBy: Option[String],
-  purgeAt: Instant) derives Encoder.AsObject
-final case class RenameWorkspaceReq(
-  name: String) derives Decoder
+final case class TrashedPageDto(id: UUID,
+                                title: String,
+                                icon: Option[String],
+                                deletedAt: Instant,
+                                deletedBy: Option[String],
+                                count: Long,
+                                purgeAt: Instant) derives Encoder.AsObject
+final case class TrashedWorkspaceDto(id: UUID,
+                                     name: String,
+                                     deletedAt: Instant,
+                                     deletedBy: Option[String],
+                                     purgeAt: Instant) derives Encoder.AsObject
+final case class RenameWorkspaceReq(name: String) derives Decoder
 
 /** ワークスペースの名前変更・削除とゴミ箱。削除はゴミ箱へ移し、保存期間（既定30日）を過ぎたら完全に削除する。 */
-final class TrashRoutes(
-  protected val store: Store,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  blobs: Option[BlobStore] = None,
-  retention: FiniteDuration = 30.days,
-  accessChanged: IO[Unit] = IO.unit) extends PageRouteSupport {
+final class TrashRoutes(protected val store: Store,
+                        protected val sessions: SessionAuth,
+                        audit: Audit,
+                        blobs: Option[BlobStore] = None,
+                        retention: FiniteDuration = 30.days,
+                        accessChanged: IO[Unit] = IO.unit) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
@@ -54,16 +50,9 @@ final class TrashRoutes(
     case req @ DELETE -> Root / "api" / "trash" / "workspaces" / UUIDVar(id) => deleteTrashWorkspace(req, id)
   }
 
-  private def patchWorkspace(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def patchWorkspace(req: Request[IO], id: UUID): IO[Response[IO]] =
     withWs(req, id, Role.Edit) {
-      (
-        s,
-        ws,
-        _
-      ) =>
+      (s, ws, _) =>
         decodeBody[RenameWorkspaceReq](req).flatMap {
           case Right(b) if validName(b.name, MaxWorkspaceName).isDefined =>
             store.renameWorkspace(id, b.name.trim).flatMap {
@@ -82,16 +71,9 @@ final class TrashRoutes(
         }
     }
 
-  private def deleteWorkspace(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteWorkspace(req: Request[IO], id: UUID): IO[Response[IO]] =
     withWs(req, id, Role.Edit) {
-      (
-        s,
-        ws,
-        _
-      ) =>
+      (s, ws, _) =>
         store.deleteWorkspace(id, s.user.id).flatMap { ok =>
           if !ok then err(ErrorCode.WorkspaceNotFound)
           else
@@ -100,10 +82,7 @@ final class TrashRoutes(
         }
     }
 
-  private def getWorkspaceTrash(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getWorkspaceTrash(req: Request[IO], id: UUID): IO[Response[IO]] =
     withVisibleWs(req, id) { s =>
       store.trashedPages(id).flatMap { items =>
         // 編集権限のあるものだけ（ページ単位で共有されている人もいるため1件ずつ判定する）
@@ -124,10 +103,7 @@ final class TrashRoutes(
       }
     }
 
-  private def postTrashPageRestore(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postTrashPageRestore(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       store.pageAccessAny(id, s).flatMap {
         case Some((page, r)) if r >= Role.Edit =>
@@ -155,10 +131,7 @@ final class TrashRoutes(
       }
     }
 
-  private def deleteTrashPage(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteTrashPage(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       store.pageAccessAny(id, s).flatMap {
         case Some((p, r)) if r >= Role.Edit =>
@@ -178,19 +151,14 @@ final class TrashRoutes(
       }
     }
 
-  private def getTrashWorkspaces(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def getTrashWorkspaces(req: Request[IO]): IO[Response[IO]] =
     authed(req)(s =>
       store.trashedWorkspaces(s).flatMap(ws =>
         Ok(ws.map(w => TrashedWorkspaceDto(w.id, w.name, w.deletedAt, w.deletedBy, purgeAt(w.deletedAt))))
       )
     )
 
-  private def postTrashWorkspaceRestore(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postTrashWorkspaceRestore(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       store.workspaceRoleAny(id, s).flatMap {
         case Some((_, r)) if r >= Role.Edit =>
@@ -205,10 +173,7 @@ final class TrashRoutes(
       }
     }
 
-  private def deleteTrashWorkspace(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteTrashWorkspace(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       store.workspaceRoleAny(id, s).flatMap {
         case Some((w, r)) if r >= Role.Edit =>
@@ -221,14 +186,10 @@ final class TrashRoutes(
       }
     }
 
-  private def purgeAt(
-    at: Instant
-  ) = at.plusMillis(retention.toMillis)
+  private def purgeAt(at: Instant) = at.plusMillis(retention.toMillis)
 
   /** 添付ファイルの実体を消す（失敗してもDB側の削除は戻さない）。 */
-  private def dropBlobs(
-    keys: List[String]
-  ): IO[Unit] =
+  private def dropBlobs(keys: List[String]): IO[Unit] =
     blobs.traverse_(b =>
       keys.traverse_(k =>
         b.delete(k).handleErrorWith(e => sbirds.observe.Log.report(ErrorCode.TrashBlobDeleteFailed, s"$k: $e", e))

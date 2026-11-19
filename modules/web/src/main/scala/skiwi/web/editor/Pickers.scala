@@ -52,30 +52,20 @@ object Blocks {
   )
 
   /** 項目の分類（決まっていないパネルは「構成・装飾」、ほかは「基本」） */
-  def categoryOf(
-    title: String
-  ): String = CategoryOf.getOrElse(title, if (title.endsWith("パネル")) "構成・装飾" else "基本")
+  def categoryOf(title: String): String = CategoryOf.getOrElse(title, if (title.endsWith("パネル")) "構成・装飾" else "基本")
 
-  def str(
-    it: js.Dynamic,
-    key: String
-  ): String = {
+  def str(it: js.Dynamic, key: String): String = {
     val v = it.selectDynamic(key)
     if (js.isUndefined(v) || v == null) "" else v.toString
   }
 
-  def keywords(
-    it: js.Dynamic
-  ): List[String] = {
+  def keywords(it: js.Dynamic): List[String] = {
     val v = it.keywords
     if (js.isUndefined(v) || v == null) Nil else v.asInstanceOf[js.Array[String]].toList
   }
 
   /** 名前・説明・キーワードで絞り込む */
-  def filter(
-    items: js.Array[js.Dynamic],
-    query: String
-  ): js.Array[js.Dynamic] = {
+  def filter(items: js.Array[js.Dynamic], query: String): js.Array[js.Dynamic] = {
     val q = query.trim.toLowerCase
     if (q.isEmpty) items
     else items.filter(i =>
@@ -85,10 +75,7 @@ object Blocks {
   }
 
   /** ブロックの一覧のモーダルを開く. 選んだ項目（取り消しは None） */
-  def openPicker(
-    items: js.Array[js.Dynamic],
-    query: String
-  ): Future[Option[js.Dynamic]] = {
+  def openPicker(items: js.Array[js.Dynamic], query: String): Future[Option[js.Dynamic]] = {
     val p = Promise[Option[js.Dynamic]]()
     val box = dom.document.createElement("div")
     dom.document.body.appendChild(box)
@@ -109,15 +96,13 @@ object Blocks {
    * 絵文字アイコンの選択を parent（position: relative の要素）の下に開く. 外側クリック・Esc で onClose. 戻り値で閉じる.
    * head: 一覧の上に出す要素（パネルの色など）/ at: 画面座標に固定表示
    */
-  def openIconPicker(
-    parent: dom.Element,
-    onSelect: Option[String] => Unit,
-    onClose: () => Unit,
-    head: Option[dom.Element],
-    allowNone: Boolean,
-    noneLabel: Option[String],
-    at: Option[(Double, Double)]
-  ): () => Unit = {
+  def openIconPicker(parent: dom.Element,
+                     onSelect: Option[String] => Unit,
+                     onClose: () => Unit,
+                     head: Option[dom.Element],
+                     allowNone: Boolean,
+                     noneLabel: Option[String],
+                     at: Option[(Double, Double)]): () => Unit = {
     val box = dom.document.createElement("div")
     parent.appendChild(box)
     val unmount = Embeds.render(box)(IconPicker(

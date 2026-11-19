@@ -3,18 +3,10 @@ package skiwi.collab
 import scodec.bits.ByteVector
 
 class AwarenessSpec extends munit.FunSuite {
-  private def frame(
-    states: (Long, Long, String)*
-  ): ByteVector = {
+  private def frame(states: (Long, Long, String)*): ByteVector = {
     val body = Protocol.write { w =>
       w.varUint(states.size.toLong)
-      states.foreach(
-        (
-          id,
-          clock,
-          st
-        ) => { w.varUint(id); w.varUint(clock); w.string(st) }
-      )
+      states.foreach((id, clock, st) => { w.varUint(id); w.varUint(clock); w.string(st) })
     }
     Protocol.write { w => w.varUint(Protocol.MsgAwareness); Protocol.writeVarBytes(w, body) }
   }
@@ -32,9 +24,7 @@ class AwarenessSpec extends munit.FunSuite {
   }
 
   test("在席の名前は、クライアントが名乗ったものではなく接続を認証したユーザーにする（色などはそのまま）") {
-    def states(
-      f: ByteVector
-    ): List[String] = {
+    def states(f: ByteVector): List[String] = {
       val r = skiwi.ydoc.YReader(f.toArray); r.varUint()
       val u = skiwi.ydoc.YReader(r.varBytes()); val n = u.varUint()
       (0L until n).map(_ => { u.varUint(); u.varUint(); u.string() }).toList

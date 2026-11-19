@@ -11,9 +11,7 @@ import org.scalajs.dom
  */
 object Main {
 
-  def main(
-    args: Array[String]
-  ): Unit = {
+  def main(args: Array[String]): Unit = {
     ScalactiveConfig.titleTemplate = "%s | skiwi"
     ScalactiveConfig.defaultTitle = Some("skiwi")
     AppNames.init("skiwi")

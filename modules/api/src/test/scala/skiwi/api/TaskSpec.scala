@@ -18,11 +18,7 @@ class TaskSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set.empty, cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    ops: OpsStore,
-    app: HttpApp[IO])
+  final case class Env(store: Store, docs: DocStore, ops: OpsStore, app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -48,9 +44,7 @@ class TaskSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -58,12 +52,7 @@ class TaskSpec extends DbSuite {
     } yield (AuthSession(u, Nil, false), token)
   }
 
-  private def call(
-    token: String,
-    method: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[(Status, Json)] = {
+  private def call(token: String, method: Method, path: String, body: Option[Json] = None): IO[(Status, Json)] = {
     var req = Request[IO](method, Uri.unsafeFromString(path)).addCookie("skiwi_session", token)
     body.foreach(b => req = req.withEntity(b))
     env.app.run(req).flatMap(r =>
@@ -71,35 +60,20 @@ class TaskSpec extends DbSuite {
     )
   }
 
-  private def page(
-    ws: UUID,
-    title: String,
-    parent: Option[UUID],
-    by: UUID
-  ) =
+  private def page(ws: UUID, title: String, parent: Option[UUID], by: UUID) =
     env.store.createPage(ws, parent, Placement.Last, title, None, by).map(_.toOption.get)
 
-  private def mention(
-    u: UUID
-  ) = Json.obj("type" -> "mention".asJson, "attrs" -> Json.obj("userId" -> u.toString.asJson, "label" -> "x".asJson))
-  private def text(
-    s: String
-  ) = Json.obj("type" -> "text".asJson, "text" -> s.asJson)
-  private def item(
-    checked: Boolean,
-    inline: Json*
-  ) =
+  private def mention(u: UUID) =
+    Json.obj("type" -> "mention".asJson, "attrs" -> Json.obj("userId" -> u.toString.asJson, "label" -> "x".asJson))
+  private def text(s: String) = Json.obj("type" -> "text".asJson, "text" -> s.asJson)
+  private def item(checked: Boolean, inline: Json*) =
     Json.obj(
       "type" -> "taskItem".asJson,
       "attrs" -> Json.obj("checked" -> checked.asJson),
       "content" -> Json.arr(Json.obj("type" -> "paragraph".asJson, "content" -> inline.toList.asJson))
     )
-  private def due(
-    d: LocalDate
-  ) = Json.obj("type" -> "dueDate".asJson, "attrs" -> Json.obj("date" -> d.toString.asJson))
-  private def doc(
-    items: Json*
-  ) = Json.obj(
+  private def due(d: LocalDate) = Json.obj("type" -> "dueDate".asJson, "attrs" -> Json.obj("date" -> d.toString.asJson))
+  private def doc(items: Json*) = Json.obj(
     "type" -> "doc".asJson,
     "content" -> Json.arr(Json.obj("type" -> "taskList".asJson, "content" -> items.toList.asJson))
   )

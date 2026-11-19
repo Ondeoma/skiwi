@@ -12,11 +12,10 @@ import skiwi.db.{AutomationRule, AutomationStore, Store}
 import java.util.UUID
 
 /** ワークスペースの自動化ルールの設定（ワークスペースの編集権限が必要） */
-final class AutomationRoutes(
-  protected val store: Store,
-  rules: AutomationStore,
-  protected val sessions: SessionAuth,
-  audit: Audit) extends PageRouteSupport {
+final class AutomationRoutes(protected val store: Store,
+                             rules: AutomationStore,
+                             protected val sessions: SessionAuth,
+                             audit: Audit) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "api" / "workspaces" / UUIDVar(wsId) / "automations" => getWorkspaceAutomations(req, wsId)
@@ -26,28 +25,12 @@ final class AutomationRoutes(
     case req @ DELETE -> Root / "api" / "automations" / UUIDVar(id) => deleteAutomation(req, id)
   }
 
-  private def getWorkspaceAutomations(
-    req: Request[IO],
-    wsId: UUID
-  ): IO[Response[IO]] =
-    withWs(req, wsId, Role.Edit)(
-      (
-        _,
-        _,
-        _
-      ) => rules.list(wsId).flatMap(rs => Ok(rs.map(dto)))
-    )
+  private def getWorkspaceAutomations(req: Request[IO], wsId: UUID): IO[Response[IO]] =
+    withWs(req, wsId, Role.Edit)((_, _, _) => rules.list(wsId).flatMap(rs => Ok(rs.map(dto))))
 
-  private def postWorkspaceAutomations(
-    req: Request[IO],
-    wsId: UUID
-  ): IO[Response[IO]] =
+  private def postWorkspaceAutomations(req: Request[IO], wsId: UUID): IO[Response[IO]] =
     withWs(req, wsId, Role.Edit) {
-      (
-        s,
-        _,
-        _
-      ) =>
+      (s, _, _) =>
         decodeBody[SaveAutomationReq](req).flatMap {
           case Right(SaveAutomationReq(Some(name), _, Some(t), Some(a))) if validName(name).isDefined =>
             (AutomationSchema.trigger(t) *> AutomationSchema.action(a)) match {
@@ -70,15 +53,9 @@ final class AutomationRoutes(
         }
     }
 
-  private def patchAutomation(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def patchAutomation(req: Request[IO], id: UUID): IO[Response[IO]] =
     withRule(req, id) {
-      (
-        s,
-        r
-      ) =>
+      (s, r) =>
         body[SaveAutomationReq](req) {
           case b if b.name.exists(validName(_).isEmpty) => err(ErrorCode.NameInvalid)
           case b =>
@@ -109,23 +86,15 @@ final class AutomationRoutes(
         }
     }
 
-  private def deleteAutomation(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteAutomation(req: Request[IO], id: UUID): IO[Response[IO]] =
     withRule(req, id) {
-      (
-        s,
-        r
-      ) =>
+      (s, r) =>
         rules.delete(id) *>
           audit.log(s, "automation.delete", "workspace", r.workspaceId, Json.obj("name" -> r.name.asJson)) *>
           NoContent()
     }
 
-  private def dto(
-    r: AutomationRule
-  ) = AutomationDto(
+  private def dto(r: AutomationRule) = AutomationDto(
     r.id,
     r.name,
     r.enabled,
@@ -139,32 +108,12 @@ final class AutomationRoutes(
   )
 
   /** きっかけで指定したページ（データベース・配下の起点）が、このワークスペースにあり、作る人が見られること */
-  private def targetsOk(
-    s: AuthSession,
-    wsId: UUID,
-    trigger: Json
-  ): IO[Boolean] =
+  private def targetsOk(s: AuthSession, wsId: UUID, trigger: Json): IO[Boolean] =
     List("database", "under").flatMap(k => trigger.hcursor.get[String](k).toOption.flatMap(uuidOpt)).forallM { id =>
-      store.pageAccess(id, s).map(_.exists(
-        (
-          p,
-          _
-        ) => p.workspaceId == wsId
-      ))
+      store.pageAccess(id, s).map(_.exists((p, _) => p.workspaceId == wsId))
     }
 
-  private def withRule(
-    req: Request[IO],
-    id: UUID
-  )(
-    f: (AuthSession, AutomationRule) => IO[Response[IO]]
-  ) =
-    withWsItem(req, rules.get(id), "自動化ルール")(_.workspaceId)(
-      (
-        s,
-        _,
-        r
-      ) => f(s, r)
-    )
+  private def withRule(req: Request[IO], id: UUID)(f: (AuthSession, AutomationRule) => IO[Response[IO]]) =
+    withWsItem(req, rules.get(id), "自動化ルール")(_.workspaceId)((s, _, r) => f(s, r))
 
 }

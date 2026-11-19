@@ -11,12 +11,9 @@ object Markdown {
 
   import JsLike.*
 
-  private final case class N(
-    o: JsonObject) {
+  private final case class N(o: JsonObject) {
     def tpe: String = o("type").flatMap(_.asString).getOrElse("")
-    def attr(
-      k: String
-    ): Option[Json] = o("attrs").flatMap(_.asObject).flatMap(_(k))
+    def attr(k: String): Option[Json] = o("attrs").flatMap(_.asObject).flatMap(_(k))
 
     /** content が配列のときだけ Some */
     def contentOpt: Option[List[N]] = o("content").flatMap(_.asArray).map(_.toList.flatMap(_.asObject).map(N(_)))
@@ -26,41 +23,26 @@ object Markdown {
       o("marks").flatMap(_.asArray).fold(Nil)(_.toList.flatMap(_.asObject).map(m =>
         (m("type").flatMap(_.asString).getOrElse(""), m("attrs").flatMap(_.asObject).flatMap(_("href")))
       ))
-    def withType(
-      t: String
-    ): N = N(o.add("type", Json.fromString(t)))
+    def withType(t: String): N = N(o.add("type", Json.fromString(t)))
   }
 
   private val Escape = """([\\`*_\[\]#|<>])""".r
 
-  private def escapeText(
-    s: String
-  ): String = Escape.replaceAllIn(s, m => scala.util.matching.Regex.quoteReplacement("\\" + m.group(1)))
+  private def escapeText(s: String): String =
+    Escape.replaceAllIn(s, m => scala.util.matching.Regex.quoteReplacement("\\" + m.group(1)))
 
-  private def indent(
-    s: String,
-    pad: String
-  ): String =
-    lines(s).zipWithIndex.map(
-      (
-        l,
-        i
-      ) => if (i == 0 || l.isEmpty) l else pad + l
-    ).mkString("\n")
+  private def indent(s: String, pad: String): String =
+    lines(s).zipWithIndex.map((l, i) => if (i == 0 || l.isEmpty) l else pad + l).mkString("\n")
 
   private def origin: String = dom.window.location.origin
 
   /** URL を絶対URLにする（既定） */
-  def toAbsolute(
-    s: String
-  ): String = if (s.startsWith("/")) origin + s else s
+  def toAbsolute(s: String): String = if (s.startsWith("/")) origin + s else s
 
   private val noBoard: JsonObject => String = _ => "（ホワイトボード）"
 
   /** 表のセルの「|」を「\|」にする（すでに \ の付いたものはそのまま） */
-  private def escapePipes(
-    s: String
-  ): String = {
+  private def escapePipes(s: String): String = {
     val b = new StringBuilder
     s.indices.foreach { i =>
       if (s(i) == '|' && (i == 0 || s(i - 1) != '\\')) b ++= "\\|" else b += s(i)
@@ -69,21 +51,13 @@ object Markdown {
   }
 
   /** abs: URL の変換（引数は String(url ?? '')）、boardOf: ホワイトボードの書き出し */
-  private final class Writer(
-    abs: String => String,
-    boardOf: JsonObject => String) {
+  private final class Writer(abs: String => String, boardOf: JsonObject => String) {
 
-    private def absOf(
-      v: Option[Json]
-    ): String = abs(strOrEmpty(v))
+    private def absOf(v: Option[Json]): String = abs(strOrEmpty(v))
 
-    private def pageLinkHref(
-      n: N
-    ): String = abs(Nav.pageHref(str(n.attr("workspaceId")), str(n.attr("pageId"))))
+    private def pageLinkHref(n: N): String = abs(Nav.pageHref(str(n.attr("workspaceId")), str(n.attr("pageId"))))
 
-    def inlines(
-      nodes: Option[List[N]]
-    ): String = nodes.fold("")(_.map { n =>
+    def inlines(nodes: Option[List[N]]): String = nodes.fold("")(_.map { n =>
       n.tpe match {
         case "text" =>
           val ms = n.marks
@@ -108,18 +82,10 @@ object Markdown {
       }
     }.mkString)
 
-    private def or(
-      n: N,
-      k: String,
-      d: => String
-    ): String = if (truthy(n.attr(k))) str(n.attr(k)) else d
+    private def or(n: N, k: String, d: => String): String = if (truthy(n.attr(k))) str(n.attr(k)) else d
 
-    def block(
-      n: N
-    ): String = {
-      def kids(
-        sep: String = "\n\n"
-      ) = n.content.map(block).filter(_ != "").mkString(sep)
+    def block(n: N): String = {
+      def kids(sep: String = "\n\n") = n.content.map(block).filter(_ != "").mkString(sep)
       n.tpe match {
         case "doc" => kids()
         case "paragraph" => inlines(n.contentOpt)
@@ -148,11 +114,8 @@ object Markdown {
         case "bulletList" => n.content.map(li => "- " + indent(block(li.withType("listBody")), "  ")).mkString("\n")
         case "orderedList" =>
           val start = num(n.attr("start"), 1)
-          n.content.zipWithIndex.map(
-            (
-              li,
-              i
-            ) => s"${numStr(start + i)}. " + indent(block(li.withType("listBody")), "   ")
+          n.content.zipWithIndex.map((li, i) =>
+            s"${numStr(start + i)}. " + indent(block(li.withType("listBody")), "   ")
           ).mkString("\n")
         case "taskList" =>
           n.content.map(li =>
@@ -161,12 +124,7 @@ object Markdown {
         case "listBody" => n.content.map(block).mkString("\n")
         case "panel" =>
           val icon = n.attr("icon").filterNot(_.isNull).fold("ℹ️")(j => str(Some(j)))
-          lines(kids()).zipWithIndex.map(
-            (
-              l,
-              i
-            ) => trimEnd(if (i == 0) s"> $icon $l" else s"> $l")
-          ).mkString("\n")
+          lines(kids()).zipWithIndex.map((l, i) => trimEnd(if (i == 0) s"> $icon $l" else s"> $l")).mkString("\n")
         case "details" =>
           val cs = n.content
           s"<details>\n<summary>${inlines(cs.headOption.flatMap(_.contentOpt))}</summary>\n\n${cs.drop(1).map(block).mkString("\n\n")}\n\n</details>"
@@ -177,9 +135,7 @@ object Markdown {
           if (rows.isEmpty) ""
           else {
             val w = rows.map(_.length).max
-            def line(
-              r: List[String]
-            ) = s"| ${(0 until w).map(i => r.lift(i).getOrElse("")).mkString(" | ")} |"
+            def line(r: List[String]) = s"| ${(0 until w).map(i => r.lift(i).getOrElse("")).mkString(" | ")} |"
             (line(rows.head) :: s"|${" --- |" * w}" :: rows.tail.map(line)).mkString("\n")
           }
         case _ => if (n.contentOpt.isDefined) kids() else inlines(Some(List(n)))
@@ -190,18 +146,14 @@ object Markdown {
 
   private lazy val defaultWriter = new Writer(toAbsolute, noBoard)
 
-  private def nodeOf(
-    doc: Json
-  ): Option[N] = doc.asObject.map(N(_))
+  private def nodeOf(doc: Json): Option[N] = doc.asObject.map(N(_))
 
   private val ImageRe = """!\[([^\]]*)\]\([^)]*\)""".r
   private val LinkRe = """\[([^\]]*)\]\([^)]*\)""".r
   private val UnescapeRe = """\\([\\`*_\[\]#|<>])""".r
 
   /** 差分を読みやすくする: 画像は「🖼 説明」、リンクは文字だけ（↗）、Markdownのエスケープを外す */
-  private def readable(
-    s: String
-  ): String = {
+  private def readable(s: String): String = {
     import scala.util.matching.Regex.quoteReplacement as q
     val a = ImageRe.replaceAllIn(s, m => q(s"🖼 ${if (m.group(1).isEmpty) "画像" else m.group(1)}"))
     val b = LinkRe.replaceAllIn(a, m => q(s"${m.group(1)}↗"))
@@ -209,21 +161,17 @@ object Markdown {
   }
 
   /** 差分表示用: 本文の最上位のブロックごとの Markdown */
-  def blockUnits(
-    doc: Json
-  ): List[String] =
+  def blockUnits(doc: Json): List[String] =
     nodeOf(doc).fold(List.empty[String])(_.content.map(defaultWriter.block).filter(x => trim(x) != "").map(readable))
 
   /**
    * ページ本文を Markdown にする（タイトルは先頭の見出しとして付ける）. 画像・添付・ページへのリンクは絶対URL.
    * url: URL の変換（ZIP の書き出しで相対パスにする. 引数はサイト内のパス）、whiteboard: ホワイトボードの書き出し
    */
-  def toMarkdown(
-    doc: Json,
-    title: String,
-    url: Option[String => String] = None,
-    whiteboard: Option[JsonObject => String] = None
-  ): String = {
+  def toMarkdown(doc: Json,
+                 title: String,
+                 url: Option[String => String] = None,
+                 whiteboard: Option[JsonObject => String] = None): String = {
     val abs: String => String = url match {
       case Some(f) => u => { val r = replaceFirst(toAbsolute(u), origin, ""); f(if (r.isEmpty) u else r) }
       case None => toAbsolute

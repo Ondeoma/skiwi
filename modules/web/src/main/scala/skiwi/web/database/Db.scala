@@ -13,16 +13,10 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
 
 /** 値の計算に使う情報（関連先のデータベース・ユーザー名） */
-final case class Ctx(
-  props: List[DbProp],
-  targets: Map[String, RelatedDb],
-  users: Map[String, String])
+final case class Ctx(props: List[DbProp], targets: Map[String, RelatedDb], users: Map[String, String])
 
 /** 値を計算するのに使う項目の情報 */
-final case class RowLike(
-  values: Map[String, Json],
-  meta: Option[RowMeta] = None,
-  title: Option[String] = None)
+final case class RowLike(values: Map[String, Json], meta: Option[RowMeta] = None, title: Option[String] = None)
 
 /** データベースの列・値の扱い（表示・並べ替え・絞り込み. frontend/src/database/db.ts と同じ） */
 object Db {
@@ -91,9 +85,7 @@ object Db {
     "unique_id" -> "№"
   )
 
-  def icon(
-    t: String
-  ): String = TypeIcon.getOrElse(t, "≡")
+  def icon(t: String): String = TypeIcon.getOrElse(t, "≡")
 
   /** 集計（関連先の値）のしかた */
   val Fns: List[(String, String)] = List(
@@ -135,24 +127,16 @@ object Db {
     Map("table" -> "▦", "board" -> "▥", "calendar" -> "📅", "list" -> "☰", "gallery" -> "🖼", "timeline" -> "📊")
 
   /** 「（…）」の説明を除いた名前 */
-  def shortLabel(
-    s: String
-  ): String = s.replaceAll("（.*）", "")
+  def shortLabel(s: String): String = s.replaceAll("（.*）", "")
 
-  def like(
-    r: DbRow
-  ): RowLike = RowLike(r.values, r.meta, Some(r.page.title))
+  def like(r: DbRow): RowLike = RowLike(r.values, r.meta, Some(r.page.title))
 
   def newId(): String =
     js.Math.random().asInstanceOf[js.Dynamic].applyDynamic("toString")(36).asInstanceOf[String].slice(2, 10)
 
-  def ymd(
-    d: js.Date
-  ): String = Formula.ymd(d)
+  def ymd(d: js.Date): String = Formula.ymd(d)
 
-  def ymd(
-    ms: Double
-  ): String = Formula.ymd(new js.Date(ms))
+  def ymd(ms: Double): String = Formula.ymd(new js.Date(ms))
 
   /** カレンダーの最初の月（今月の1日） */
   def thisMonth(): Double = {
@@ -168,13 +152,9 @@ object Db {
     d.getTime()
   }
 
-  private def fmtTime(
-    iso: String
-  ): String = {
+  private def fmtTime(iso: String): String = {
     val d = new js.Date(iso)
-    def p(
-      n: Double
-    ) = f"${n.toInt}%02d"
+    def p(n: Double) = f"${n.toInt}%02d"
     s"${d.getFullYear().toInt}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}"
   }
 
@@ -205,17 +185,12 @@ object Db {
     )
   }
 
-  def option(
-    p: DbProp,
-    v: Val
-  ): Option[DbOption] = v match {
+  def option(p: DbProp, v: Val): Option[DbOption] = v match {
     case Str(id) => p.opts.find(_.id == id)
     case _ => None
   }
 
-  def arr(
-    v: Val
-  ): List[String] = v match {
+  def arr(v: Val): List[String] = v match {
     case Arr(xs) => xs.collect { case Str(s) => s }
     case _ => Nil
   }
@@ -223,11 +198,7 @@ object Db {
   private var depth = 0
 
   /** 数式の中の prop("列名") の値 */
-  private def formulaValue(
-    name: String,
-    row: RowLike,
-    ctx: Ctx
-  ): Val =
+  private def formulaValue(name: String, row: RowLike, ctx: Ctx): Val =
     if (name == "名前" || name == "title") Str(row.title.getOrElse(""))
     else {
       val p = ctx.props.find(_.name == name).getOrElse(throw Formula.FormulaError(s"「$name」という列はありません"))
@@ -254,14 +225,8 @@ object Db {
     }
 
   /** 列の値（集計・数式・自動の列は計算する） */
-  def cellValue(
-    p: DbProp,
-    row: RowLike,
-    ctx: Ctx
-  ): Val = {
-    def str(
-      o: Option[String]
-    ): Val = o.fold[Val](Null)(Str(_))
+  def cellValue(p: DbProp, row: RowLike, ctx: Ctx): Val = {
+    def str(o: Option[String]): Val = o.fold[Val](Null)(Str(_))
     p.`type` match {
       case "created_time" => str(row.meta.map(_.createdAt))
       case "edited_time" => str(row.meta.map(_.editedAt))
@@ -284,15 +249,9 @@ object Db {
     }
   }
 
-  private def round2(
-    r: Double
-  ): Double = js.Math.round(r * 100) / 100
+  private def round2(r: Double): Double = js.Math.round(r * 100) / 100
 
-  private def rollup(
-    p: DbProp,
-    row: RowLike,
-    ctx: Ctx
-  ): Val = {
+  private def rollup(p: DbProp, row: RowLike, ctx: Ctx): Val = {
     val rel = ctx.props.find(x => p.relation.contains(x.id) && x.`type` == "relation")
     val db = rel.flatMap(_.target).flatMap(ctx.targets.get)
     (rel, db) match {
@@ -324,22 +283,13 @@ object Db {
   }
 
   /** 関連先の項目の名前 */
-  private def relatedTitles(
-    p: DbProp,
-    v: Val,
-    ctx: Ctx
-  ): List[String] =
+  private def relatedTitles(p: DbProp, v: Val, ctx: Ctx): List[String] =
     arr(v).flatMap(id => ctx.targets.get(p.target.getOrElse("")).flatMap(_.rows.find(_.id == id))).map(r =>
       Titles.display(r.title)
     )
 
   /** 値の文字表現（検索・並べ替え・CSVなど） */
-  def text(
-    p: DbProp,
-    v: Val,
-    users: Map[String, String],
-    ctx: Option[Ctx] = None
-  ): String =
+  def text(p: DbProp, v: Val, users: Map[String, String], ctx: Option[Ctx] = None): String =
     if (v == Null) ""
     else p.`type` match {
       case "relation" => ctx.fold("")(c => relatedTitles(p, v, c).mkString(", "))
@@ -360,10 +310,7 @@ object Db {
       case _ => jsString(v)
     }
 
-  def isEmpty(
-    p: DbProp,
-    v: Val
-  ): Boolean = v match {
+  def isEmpty(p: DbProp, v: Val): Boolean = v match {
     case Null | Str("") | Arr(Nil) => true
     case _ => (p.`type` == "checkbox" && !truthy(v)) || (p.`type` == "select" && option(p, v).isEmpty)
   }
@@ -373,12 +320,7 @@ object Db {
   /** 並べ替えのキー（数値か文字列） */
   private type Key = Either[Double, String]
 
-  private def key(
-    p: Either[String, DbProp],
-    r: DbRow,
-    users: Map[String, String],
-    ctx: Ctx
-  ): Option[Key] = p match {
+  private def key(p: Either[String, DbProp], r: DbRow, users: Map[String, String], ctx: Ctx): Option[Key] = p match {
     case Left("title") => Some(Right(r.page.title))
     case Left(_) => Some(Right(r.page.updatedAt))
     case Right(p) =>
@@ -411,10 +353,7 @@ object Db {
       }
   }
 
-  private def compareKey(
-    x: Key,
-    y: Key
-  ): Int = (x, y) match {
+  private def compareKey(x: Key, y: Key): Int = (x, y) match {
     case (Right(a), Right(b)) => math.signum(a.compareTo(b))
     case _ =>
       val a = x.fold(identity, jsNumber)
@@ -422,26 +361,18 @@ object Db {
       if (a < b) -1 else if (a > b) 1 else 0
   }
 
-  private def num(
-    s: Option[String]
-  ): Double = s.fold(Double.NaN)(jsNumber)
+  private def num(s: Option[String]): Double = s.fold(Double.NaN)(jsNumber)
 
-  private def finite(
-    d: Double
-  ) = !d.isNaN && !d.isInfinite
+  private def finite(d: Double) = !d.isNaN && !d.isInfinite
 
-  def matches(
-    f: DbFilter,
-    props: List[DbProp],
-    r: DbRow,
-    users: Map[String, String],
-    me: Option[String],
-    ctx: Option[Ctx] = None
-  ): Boolean = {
+  def matches(f: DbFilter,
+              props: List[DbProp],
+              r: DbRow,
+              users: Map[String, String],
+              me: Option[String],
+              ctx: Option[Ctx] = None): Boolean = {
     val fv = f.value.getOrElse("")
-    def norm(
-      s: String
-    ) = Ui.normalizeForSearch(s)
+    def norm(s: String) = Ui.normalizeForSearch(s)
     if (f.prop == "title") {
       val t = norm(r.page.title)
       f.op match {
@@ -512,15 +443,13 @@ object Db {
   }
 
   /** ビューの絞り込み・並べ替えを当てた項目 */
-  def applyView(
-    v: DbView,
-    props: List[DbProp],
-    rows: List[DbRow],
-    users: Map[String, String],
-    me: Option[String],
-    q: String,
-    targets: Map[String, RelatedDb] = Map.empty
-  ): List[DbRow] = {
+  def applyView(v: DbView,
+                props: List[DbProp],
+                rows: List[DbRow],
+                users: Map[String, String],
+                me: Option[String],
+                q: String,
+                targets: Map[String, RelatedDb] = Map.empty): List[DbRow] = {
     val ctx = Ctx(props, targets, users)
     val nq = Ui.normalizeForSearch(q.trim)
     var out = rows.filter(r => v.filterList.forall(f => matches(f, props, r, users, me, Some(ctx))))
@@ -550,9 +479,7 @@ object Db {
   }
 
   /** 絞り込みの条件として選べるもの（値, 表示） */
-  def opsFor(
-    t: String
-  ): List[(String, String)] = {
+  def opsFor(t: String): List[(String, String)] = {
     val empty = List("empty" -> "が空", "notEmpty" -> "が空でない")
     t match {
       case "title" | "text" | "url" => ("contains" -> "に含む") :: empty
@@ -568,23 +495,15 @@ object Db {
     }
   }
 
-  def needsValue(
-    op: String
-  ): Boolean = op != "empty" && op != "notEmpty"
+  def needsValue(op: String): Boolean = op != "empty" && op != "notEmpty"
 
   // ---------------------------------------------------------------- CSV
 
-  private def csvCell(
-    s: String
-  ): String =
+  private def csvCell(s: String): String =
     if (s.exists(c => c == '"' || c == ',' || c == '\r' || c == '\n')) "\"" + s.replace("\"", "\"\"") + "\"" else s
 
   /** 表示している列で CSV を作る（Excel で開けるよう先頭に BOM を付ける） */
-  def toCsv(
-    props: List[DbProp],
-    rows: List[DbRow],
-    ctx: Ctx
-  ): String = {
+  def toCsv(props: List[DbProp], rows: List[DbRow], ctx: Ctx): String = {
     val head = "名前" :: props.map(_.name)
     val lines = rows.map(r =>
       r.page.title :: props.map { p =>
@@ -601,9 +520,7 @@ object Db {
   }
 
   /** CSV を読む（引用符・改行を含む値に対応） */
-  def parseCsv(
-    src: String
-  ): List[List[String]] = {
+  def parseCsv(src: String): List[List[String]] = {
     val s = if (src.startsWith("﻿")) src.substring(1) else src
     val rows = List.newBuilder[List[String]]
     var row = List.newBuilder[String]
@@ -630,9 +547,7 @@ object Db {
   }
 
   /** ファイルの中身を文字列に: UTF-8（読めなければ Excel などの Shift_JIS）。先頭の BOM は除く */
-  def decodeText(
-    data: js.Any
-  ): String = {
+  def decodeText(data: js.Any): String = {
     val TD = js.Dynamic.global.TextDecoder
     try js.Dynamic.newInstance(TD)(
         "utf-8",
@@ -642,16 +557,11 @@ object Db {
   }
 
   /** CSV ファイルを読む（UTF-8 として読めなければ Excel の CSV＝Shift_JIS として） */
-  def readCsv(
-    f: dom.File
-  ): Future[List[List[String]]] =
+  def readCsv(f: dom.File): Future[List[List[String]]] =
     f.asInstanceOf[js.Dynamic].arrayBuffer().asInstanceOf[js.Promise[js.Any]].toFuture.map(b => parseCsv(decodeText(b)))
 
   /** ファイルを選んでもらう（取り消したら空） */
-  def pickFiles(
-    accept: String,
-    multiple: Boolean = false
-  ): Future[List[dom.File]] = {
+  def pickFiles(accept: String, multiple: Boolean = false): Future[List[dom.File]] = {
     val p = Promise[List[dom.File]]()
     val input = dom.document.createElement("input").asInstanceOf[dom.HTMLInputElement]
     input.`type` = "file"
@@ -665,10 +575,7 @@ object Db {
   }
 
   /** CSV の取り込みの計画. props: 追加・変更後の列 / added: 追加した列の名前 / items: 項目の名前と値 */
-  final case class CsvPlan(
-    props: List[DbProp],
-    added: List[String],
-    items: List[(String, Map[String, Json])])
+  final case class CsvPlan(props: List[DbProp], added: List[String], items: List[(String, Map[String, Json])])
 
   val Truthy: Set[String] = Set("true", "1", "yes", "y", "✓", "✔", "はい", "済", "完了", "on", "x")
 
@@ -678,20 +585,14 @@ object Db {
    * CSV（1行目は列名）から取り込む項目を作る。「名前」（なければ1列目）を項目名にし、同じ名前の列に値を入れる
    * （ない列はテキストの列として追加。選択肢は足りない分を追加）
    */
-  def planCsvImport(
-    csv: List[List[String]],
-    db: Database
-  ): CsvPlan = {
+  def planCsvImport(csv: List[List[String]], db: Database): CsvPlan = {
     val head = csv.headOption.getOrElse(Nil)
     val body = csv.drop(1)
     val titleCol = math.max(0, head.indexWhere(h => Set("名前", "タイトル", "name", "title")(h.trim.toLowerCase)))
     val ps = mutable.ArrayBuffer.from(db.props)
     val added = List.newBuilder[String]
     val colProp: List[Option[String]] = head.zipWithIndex.map {
-      (
-        h,
-        i
-      ) =>
+      (h, i) =>
         if (i == titleCol || h.trim.isEmpty) None
         else {
           val p = ps.find(_.name == h.trim).getOrElse {
@@ -703,14 +604,9 @@ object Db {
           if (Computed(p.`type`)) None else Some(p.id)
         }
     }
-    def propOf(
-      id: String
-    ) = ps.find(_.id == id).get
+    def propOf(id: String) = ps.find(_.id == id).get
     // 選択肢: 足りないものを足す
-    def optId(
-      pid: String,
-      name: String
-    ): Option[String] = {
+    def optId(pid: String, name: String): Option[String] = {
       val n = name.trim
       if (n.isEmpty) None
       else {
@@ -722,12 +618,7 @@ object Db {
         }
       }
     }
-    val userByName = db.users.map(
-      (
-        id,
-        n
-      ) => n -> id
-    )
+    val userByName = db.users.map((id, n) => n -> id)
     val Sep = "[;；,、]"
     val items = body.map { r =>
       val values = mutable.LinkedHashMap.empty[String, Json]
@@ -760,9 +651,7 @@ object Db {
   private val DateRe = """^(\d{4})[-/年.](\d{1,2})[-/月.](\d{1,2})日?""".r
 
   /** 日付の表記（2026/1/5、2026-01-05、2026年1月5日）を YYYY-MM-DD に */
-  def parseDate(
-    s: String
-  ): Option[String] =
+  def parseDate(s: String): Option[String] =
     DateRe.findPrefixMatchOf(s.trim).flatMap { m =>
       val (y, mo, d) = (m.group(1).toInt, m.group(2).toInt, m.group(3).toInt)
       if (mo < 1 || mo > 12 || d < 1 || d > 31) None else Some(f"$y%d-$mo%02d-$d%02d")
@@ -783,21 +672,14 @@ object Db {
   )
 
   /** 列の種類で使える集計 */
-  def calcsFor(
-    t: String
-  ): List[String] =
+  def calcsFor(t: String): List[String] =
     if (Set("number", "rollup", "formula", "unique_id")(t))
       List("count", "count_values", "count_empty", "sum", "avg", "min", "max")
     else if (t == "checkbox") List("count", "checked", "unchecked")
     else if (Set("date", "created_time", "edited_time")(t)) List("count", "count_values", "count_empty", "min", "max")
     else List("count", "count_values", "count_empty")
 
-  def calc(
-    fn: String,
-    p: Option[DbProp],
-    rows: List[DbRow],
-    ctx: Ctx
-  ): String =
+  def calc(fn: String, p: Option[DbProp], rows: List[DbRow], ctx: Ctx): String =
     if (fn == "count") rows.size.toString
     else p match {
       case None => ""

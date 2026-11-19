@@ -8,10 +8,7 @@ import scala.scalajs.js
 object WsText {
 
   /** 日本語の並び（localeCompare(b, 'ja')）で a が先か */
-  def jaLess(
-    a: String,
-    b: String
-  ): Boolean = a.asInstanceOf[js.Dynamic].localeCompare(b, "ja").asInstanceOf[Double] < 0
+  def jaLess(a: String, b: String): Boolean = a.asInstanceOf[js.Dynamic].localeCompare(b, "ja").asInstanceOf[Double] < 0
 
 }
 
@@ -21,11 +18,9 @@ object WsText {
  */
 object WsPrefs {
 
-  def stored[A](
-    key: String,
-    parse: Option[String] => A,
-    serialize: A => Option[String] = (a: A) => Some(a.toString)
-  ): RV[A] = {
+  def stored[A](key: String,
+                parse: Option[String] => A,
+                serialize: A => Option[String] = (a: A) => Some(a.toString)): RV[A] = {
     val r = RV(parse(Prefs.get(key)))
     r.addWatcher(_ => serialize(r.v).foreach(Prefs.set(key, _)))
     r

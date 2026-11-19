@@ -13,18 +13,15 @@ import java.time.Instant
 import java.util.UUID
 import skiwi.core.ErrorCode
 
-final case class AvatarDto(
-  avatarUrl: Option[String]) derives Encoder.AsObject
+final case class AvatarDto(avatarUrl: Option[String]) derives Encoder.AsObject
 
 /**
  * ユーザーのアイコン。画像はブラウザで正方形に縮めてから送る（PNG・JPEG・WebP、200KB まで）。
  *  - `GET /api/users/{id}/avatar`: ログイン中のユーザーなら誰のものでも見られる（`?v=` 付きは長くキャッシュする）
  *  - `PUT /api/me/avatar`（本文が画像そのもの）・`DELETE /api/me/avatar`: 自分のアイコンを変える・消す
  */
-final class AvatarRoutes(
-  ops: OpsStore,
-  protected val sessions: SessionAuth,
-  maxBytes: Int = AvatarRoutes.MaxBytes) extends RouteSupport {
+final class AvatarRoutes(ops: OpsStore, protected val sessions: SessionAuth, maxBytes: Int = AvatarRoutes.MaxBytes)
+  extends RouteSupport {
 
   import AvatarRoutes.*
 
@@ -35,10 +32,7 @@ final class AvatarRoutes(
     case req @ DELETE -> Root / "api" / "me" / "avatar" => deleteMeAvatar(req)
   }
 
-  private def getUserAvatar(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getUserAvatar(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { _ =>
       val versioned = req.uri.query.params.contains("v")
       ops.avatar(id).flatMap {
@@ -67,9 +61,7 @@ final class AvatarRoutes(
       }
     }
 
-  private def putMeAvatar(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def putMeAvatar(req: Request[IO]): IO[Response[IO]] =
     authed(req) { s =>
       val ct = req.headers.get[`Content-Type`].map(c => s"${c.mediaType.mainType}/${c.mediaType.subType}")
       ct.filter(Types.contains) match {
@@ -85,9 +77,7 @@ final class AvatarRoutes(
       }
     }
 
-  private def deleteMeAvatar(
-    req: Request[IO]
-  ): IO[Response[IO]] =
+  private def deleteMeAvatar(req: Request[IO]): IO[Response[IO]] =
     authed(req)(s => ops.deleteAvatar(s.user.id) *> Ok(AvatarDto(None)))
 
 }
@@ -96,38 +86,17 @@ object AvatarRoutes {
   val MaxBytes = 200 * 1024
   private val Types = Set("image/png", "image/jpeg", "image/webp")
 
-  def url(
-    userId: UUID,
-    version: Instant
-  ): String = s"/api/users/$userId/avatar?v=${version.toEpochMilli}"
+  def url(userId: UUID, version: Instant): String = s"/api/users/$userId/avatar?v=${version.toEpochMilli}"
 
   /** 表示するアイコンの URL（自分で登録したもの → IdP のもの）. どちらもない人は含まない */
-  def urls(
-    ops: OpsStore,
-    userIds: List[UUID]
-  ): IO[Map[UUID, String]] =
-    (ops.avatarVersions(userIds), ops.pictures(userIds)).mapN(
-      (
-        vs,
-        pics
-      ) =>
-        pics ++ vs.map(
-          (
-            id,
-            v
-          ) => id -> url(id, v)
-        )
+  def urls(ops: OpsStore, userIds: List[UUID]): IO[Map[UUID, String]] =
+    (ops.avatarVersions(userIds), ops.pictures(userIds)).mapN((vs, pics) =>
+      pics ++ vs.map((id, v) => id -> url(id, v))
     )
 
   /** 先頭のバイトが、名乗った種類の画像のものか */
-  private[api] def looksLike(
-    contentType: String,
-    d: Array[Byte]
-  ): Boolean = {
-    def at(
-      i: Int,
-      bs: Int*
-    ) = d.length >= i + bs.length && bs.indices.forall(k => (d(i + k) & 0xff) == bs(k))
+  private[api] def looksLike(contentType: String, d: Array[Byte]): Boolean = {
+    def at(i: Int, bs: Int*) = d.length >= i + bs.length && bs.indices.forall(k => (d(i + k) & 0xff) == bs(k))
     contentType match {
       case "image/png" => at(0, 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a)
       case "image/jpeg" => at(0, 0xff, 0xd8, 0xff)

@@ -18,11 +18,7 @@ class CommentSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set("cm-admins"), cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    ops: OpsStore,
-    app: HttpApp[IO])
+  final case class Env(store: Store, docs: DocStore, ops: OpsStore, app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -47,10 +43,7 @@ class CommentSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String,
-    groups: List[String] = Nil
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String, groups: List[String] = Nil): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(s"$name-${UUID.randomUUID()}", None, name)
@@ -59,12 +52,7 @@ class CommentSpec extends DbSuite {
     } yield (AuthSession(u, Nil, false), token)
   }
 
-  private def call(
-    token: String,
-    method: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[(Status, Json)] = {
+  private def call(token: String, method: Method, path: String, body: Option[Json] = None): IO[(Status, Json)] = {
     var req = Request[IO](method, Uri.unsafeFromString(path)).addCookie("skiwi_session", token)
     body.foreach(b => req = req.withEntity(b))
     env.app.run(req).flatMap(r =>
@@ -72,19 +60,15 @@ class CommentSpec extends DbSuite {
     )
   }
 
-  private def kinds(
-    token: String
-  ): IO[List[String]] =
+  private def kinds(token: String): IO[List[String]] =
     call(
       token,
       Method.GET,
       "/api/notifications"
     ).map(_._2.hcursor.get[List[Json]]("items").toOption.get.map(_.hcursor.get[String]("kind").toOption.get))
 
-  private def view(
-    p: UUID,
-    u: AuthSession
-  ) = env.store.setPageAcl(p, PageAcl(true, List(AclEntry(Principal(PrincipalType.User, u.user.id), Role.View))))
+  private def view(p: UUID, u: AuthSession) =
+    env.store.setPageAcl(p, PageAcl(true, List(AclEntry(Principal(PrincipalType.User, u.user.id), Role.View))))
 
   test("comments, replies, mentions only for people who can see the page, resolve and delete") {
     run {

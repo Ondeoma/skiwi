@@ -14,11 +14,10 @@ import java.time.Instant
 import java.util.UUID
 
 /** フォームの項目。prop: 列のID（"title" は項目の名前）、label: 表示名（省くと列の名前）、help: 説明 */
-final case class FormFieldDto(
-  prop: String,
-  label: Option[String] = None,
-  required: Boolean = false,
-  help: Option[String] = None) derives Encoder.AsObject
+final case class FormFieldDto(prop: String,
+                              label: Option[String] = None,
+                              required: Boolean = false,
+                              help: Option[String] = None) derives Encoder.AsObject
 object FormFieldDto {
   given Decoder[FormFieldDto] = Decoder.instance { c =>
     for {
@@ -29,26 +28,24 @@ object FormFieldDto {
     } yield FormFieldDto(prop, label, req.getOrElse(false), help)
   }
 }
-final case class FormDto(
-  id: UUID,
-  title: String,
-  description: Option[String],
-  fields: List[FormFieldDto],
-  requireLogin: Boolean,
-  respondentProp: Option[String],
-  enabled: Boolean,
-  url: String,
-  createdBy: Option[String],
-  createdAt: Instant,
-  lastAt: Option[Instant],
-  useCount: Int) derives Encoder.AsObject
-final case class SaveFormReq(
-  title: String,
-  description: Option[String],
-  fields: List[FormFieldDto],
-  requireLogin: Boolean = false,
-  respondentProp: Option[String] = None,
-  enabled: Option[Boolean] = None)
+final case class FormDto(id: UUID,
+                         title: String,
+                         description: Option[String],
+                         fields: List[FormFieldDto],
+                         requireLogin: Boolean,
+                         respondentProp: Option[String],
+                         enabled: Boolean,
+                         url: String,
+                         createdBy: Option[String],
+                         createdAt: Instant,
+                         lastAt: Option[Instant],
+                         useCount: Int) derives Encoder.AsObject
+final case class SaveFormReq(title: String,
+                             description: Option[String],
+                             fields: List[FormFieldDto],
+                             requireLogin: Boolean = false,
+                             respondentProp: Option[String] = None,
+                             enabled: Option[Boolean] = None)
 object SaveFormReq {
   given Decoder[SaveFormReq] = Decoder.instance { c =>
     for {
@@ -63,37 +60,33 @@ object SaveFormReq {
 }
 
 /** 回答者に見せるフォーム（データは含まない） */
-final case class PublicFieldDto(
-  prop: String,
-  label: String,
-  `type`: String,
-  required: Boolean,
-  help: Option[String],
-  options: List[Json]) derives Encoder.AsObject
-final case class PublicFormDto(
-  title: String,
-  description: Option[String],
-  fields: List[PublicFieldDto],
-  requireLogin: Boolean,
-  loggedIn: Boolean,
-  userName: Option[String]) derives Encoder.AsObject
-final case class SubmitFormReq(
-  values: JsonObject) derives Decoder
+final case class PublicFieldDto(prop: String,
+                                label: String,
+                                `type`: String,
+                                required: Boolean,
+                                help: Option[String],
+                                options: List[Json]) derives Encoder.AsObject
+final case class PublicFormDto(title: String,
+                               description: Option[String],
+                               fields: List[PublicFieldDto],
+                               requireLogin: Boolean,
+                               loggedIn: Boolean,
+                               userName: Option[String]) derives Encoder.AsObject
+final case class SubmitFormReq(values: JsonObject) derives Decoder
 
 /**
  * データベースのフォーム。回答はデータベースの項目になる（フォームを作った人の権限で作る）。
  *  - 設定: /api/pages/{データベース}/forms（データベースの編集権限）
  *  - 回答: /api/forms/public/{トークン}（ログイン不要。「ログインが必要」にすると回答者を記録できる）
  */
-final class FormRoutes(
-  protected val store: Store,
-  dbs: DatabaseStore,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  publicUrl: String,
-  rate: Ref[IO, Map[UUID, List[Long]]],
-  webhooks: Option[WebhookService] = None,
-  automations: Option[Automations] = None) extends PageRouteSupport {
+final class FormRoutes(protected val store: Store,
+                       dbs: DatabaseStore,
+                       protected val sessions: SessionAuth,
+                       audit: Audit,
+                       publicUrl: String,
+                       rate: Ref[IO, Map[UUID, List[Long]]],
+                       webhooks: Option[WebhookService] = None,
+                       automations: Option[Automations] = None) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     // ------------------------------------------------------------ 設定
@@ -105,26 +98,12 @@ final class FormRoutes(
     case req @ POST -> Root / "api" / "forms" / "public" / token => postFormsPublic(req, token)
   }
 
-  private def getPageForms(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
-    withDb(req, id)(
-      (
-        _,
-        _
-      ) => dbs.forms(id).flatMap(fs => Ok(fs.map(dto)))
-    )
+  private def getPageForms(req: Request[IO], id: UUID): IO[Response[IO]] =
+    withDb(req, id)((_, _) => dbs.forms(id).flatMap(fs => Ok(fs.map(dto))))
 
-  private def postPageForms(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postPageForms(req: Request[IO], id: UUID): IO[Response[IO]] =
     withDb(req, id) {
-      (
-        s,
-        p
-      ) =>
+      (s, p) =>
         (decodeBody[SaveFormReq](req), dbs.get(id)).flatMapN {
           case (Left(_), _) | (_, None) => err(ErrorCode.RequestBodyInvalid)
           case (Right(b), Some(d)) =>
@@ -154,15 +133,9 @@ final class FormRoutes(
         }
     }
 
-  private def putForm(
-    req: Request[IO],
-    fid: UUID
-  ): IO[Response[IO]] =
+  private def putForm(req: Request[IO], fid: UUID): IO[Response[IO]] =
     withForm(req, fid) {
-      (
-        s,
-        fm
-      ) =>
+      (s, fm) =>
         (decodeBody[SaveFormReq](req), dbs.get(fm.databasePageId)).flatMapN {
           case (Left(_), _) | (_, None) => err(ErrorCode.RequestBodyInvalid)
           case (Right(b), Some(d)) =>
@@ -191,23 +164,13 @@ final class FormRoutes(
         }
     }
 
-  private def deleteForm(
-    req: Request[IO],
-    fid: UUID
-  ): IO[Response[IO]] =
-    withForm(req, fid)(
-      (
-        s,
-        fm
-      ) =>
-        dbs.deleteForm(fid) *>
-          audit.log(s, "form.delete", "page", fm.databasePageId, Json.obj("form" -> fm.title.asJson)) *> NoContent()
+  private def deleteForm(req: Request[IO], fid: UUID): IO[Response[IO]] =
+    withForm(req, fid)((s, fm) =>
+      dbs.deleteForm(fid) *>
+        audit.log(s, "form.delete", "page", fm.databasePageId, Json.obj("form" -> fm.title.asJson)) *> NoContent()
     )
 
-  private def getFormsPublic(
-    req: Request[IO],
-    token: String
-  ): IO[Response[IO]] =
+  private def getFormsPublic(req: Request[IO], token: String): IO[Response[IO]] =
     (dbs.formByToken(token), sessions.fromRequest(req)).flatMapN {
       case (Some(f), s) if f.enabled =>
         dbs.get(f.databasePageId).flatMap {
@@ -240,10 +203,7 @@ final class FormRoutes(
       case _ => err(ErrorCode.ItemNotFound)
     }
 
-  private def postFormsPublic(
-    req: Request[IO],
-    token: String
-  ): IO[Response[IO]] =
+  private def postFormsPublic(req: Request[IO], token: String): IO[Response[IO]] =
     (dbs.formByToken(token), sessions.fromRequest(req)).flatMapN {
       case (Some(f), _) if !f.enabled => err(ErrorCode.ItemNotFound)
       case (None, _) => err(ErrorCode.ItemNotFound)
@@ -259,12 +219,8 @@ final class FormRoutes(
     }
 
   private val base = publicUrl.stripSuffix("/")
-  private def fieldsOf(
-    f: DbForm
-  ) = parseOrNull(f.fields).as[List[FormFieldDto]].getOrElse(Nil)
-  private def dto(
-    f: DbForm
-  ) = FormDto(
+  private def fieldsOf(f: DbForm) = parseOrNull(f.fields).as[List[FormFieldDto]].getOrElse(Nil)
+  private def dto(f: DbForm) = FormDto(
     f.id,
     f.title,
     f.description,
@@ -283,41 +239,19 @@ final class FormRoutes(
   private val Answerable = Set("text", "number", "select", "multi_select", "date", "checkbox", "url")
   private val PerMinute = 30
 
-  private def withDb(
-    req: Request[IO],
-    id: UUID
-  )(
-    f: (AuthSession, Page) => IO[Response[IO]]
-  ) =
+  private def withDb(req: Request[IO], id: UUID)(f: (AuthSession, Page) => IO[Response[IO]]) =
     withPage(req, id, Role.Edit) {
-      (
-        s,
-        p,
-        _
-      ) =>
+      (s, p, _) =>
         dbs.isDatabase(id).flatMap(if _ then f(s, p) else err(ErrorCode.NotADatabase))
     }
-  private def withForm(
-    req: Request[IO],
-    fid: UUID
-  )(
-    f: (AuthSession, DbForm) => IO[Response[IO]]
-  ) =
+  private def withForm(req: Request[IO], fid: UUID)(f: (AuthSession, DbForm) => IO[Response[IO]]) =
     dbs.form(fid).flatMap {
       case None => err(ErrorCode.FormNotFound)
-      case Some(fm) => withDb(req, fm.databasePageId)(
-          (
-            s,
-            _
-          ) => f(s, fm)
-        )
+      case Some(fm) => withDb(req, fm.databasePageId)((s, _) => f(s, fm))
     }
 
   /** 設定の確認: 回答できる列だけ、名前は1つまで */
-  private def validate(
-    b: SaveFormReq,
-    props: List[DatabaseSchema.Prop]
-  ): Option[String] =
+  private def validate(b: SaveFormReq, props: List[DatabaseSchema.Prop]): Option[String] =
     if b.title.trim.isEmpty || b.title.length > 200 then Some("タイトルは1〜200文字にしてください")
     else if b.fields.isEmpty || b.fields.size > 50 then Some("select 1-50 fields")
     else if b.fields.map(_.prop).distinct.size != b.fields.size then Some("項目が重複しています")
@@ -330,15 +264,9 @@ final class FormRoutes(
     then Some("説明が長すぎます（1000文字まで）")
     else None
 
-  private def allow(
-    id: UUID
-  ): IO[Boolean] = perMinute(rate, id, PerMinute)
+  private def allow(id: UUID): IO[Boolean] = perMinute(rate, id, PerMinute)
 
-  private def submit(
-    f: DbForm,
-    respondent: Option[AuthSession],
-    in: JsonObject
-  ): IO[Response[IO]] = {
+  private def submit(f: DbForm, respondent: Option[AuthSession], in: JsonObject): IO[Response[IO]] = {
     val fields = fieldsOf(f)
     // 件名も、フォームの項目にあるときだけ受け付ける
     val title =
@@ -352,12 +280,7 @@ final class FormRoutes(
       err(ErrorCode.FormRequiredMissing, s"必須の項目が入力されていません: ${missing.map(_.prop).mkString(",")}")
     else {
       // フォームの項目に含まれる列だけを受け付ける
-      val values = JsonObject.fromIterable(in.toList.filter(
-        (
-          k,
-          _
-        ) => k != "title" && fields.exists(_.prop == k)
-      ))
+      val values = JsonObject.fromIterable(in.toList.filter((k, _) => k != "title" && fields.exists(_.prop == k)))
       (f.createdById.flatTraverse(sessions.sessionFor), dbs.get(f.databasePageId)).flatMapN {
         case (None, _) | (_, None) => err(ErrorCode.FormDisabled)
         case (Some(owner), Some(d)) =>
@@ -370,12 +293,7 @@ final class FormRoutes(
               DatabaseSchema.props(parseOrNull(d.props)).flatMap(ps =>
                 DatabaseSchema.patch(
                   ps,
-                  withRespondent.filter(
-                    (
-                      _,
-                      v
-                    ) => !v.isNull
-                  )
+                  withRespondent.filter((_, v) => !v.isNull)
                 )
               ) match {
                 case Left(m) => err(ErrorCode.InvalidInput, m)

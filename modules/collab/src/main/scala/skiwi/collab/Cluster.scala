@@ -12,17 +12,14 @@ import skiwi.core.ErrorCode
  * 3ノード構成の設定。internalUrl は他ノードから到達できるこのノードのURL（例: http://10.0.0.11:8080）。
  * secret はノード間転送の印（外部から転送済みを装えないようにする）。
  */
-final case class ClusterConfig(
-  nodeId: String,
-  internalUrl: String,
-  secret: String,
-  heartbeatEvery: FiniteDuration = 5.seconds,
-  deadAfter: FiniteDuration = 15.seconds)
+final case class ClusterConfig(nodeId: String,
+                               internalUrl: String,
+                               secret: String,
+                               heartbeatEvery: FiniteDuration = 5.seconds,
+                               deadAfter: FiniteDuration = 15.seconds)
 
 /** ノードの生存管理とページの担当決定。生存ノードはDBのハートビートで判断する（etcd等は使わない）。 */
-final class ClusterManager(
-  val cfg: ClusterConfig,
-  store: ClusterStore) {
+final class ClusterManager(val cfg: ClusterConfig, store: ClusterStore) {
 
   private val nodes: Ref[IO, List[ClusterNode]] = Ref.unsafe(Nil)
 
@@ -31,15 +28,11 @@ final class ClusterManager(
   def aliveNodes: IO[List[ClusterNode]] = nodes.get
 
   /** ページの担当ノード。生存ノードが分からない間（起動直後・DB障害時）は None（＝自ノードで処理）。 */
-  def ownerOf(
-    pageId: UUID
-  ): IO[Option[ClusterNode]] =
+  def ownerOf(pageId: UUID): IO[Option[ClusterNode]] =
     nodes.get.map(ns => Rendezvous.pick(pageId.toString, ns)(_.id))
 
   /** ハートビートを打ち、生存ノード集合が変わったら onChange を呼ぶ。 */
-  def loop(
-    onChange: IO[Unit]
-  ): IO[Nothing] = {
+  def loop(onChange: IO[Unit]): IO[Nothing] = {
     val tick =
       for {
         _ <- store.heartbeat(cfg.nodeId, cfg.internalUrl)
@@ -73,9 +66,7 @@ final class ClusterManager(
   private lazy val http = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(2)).build()
 
   /** 担当ノードが応答するか（/healthz）。担当でないページの接続を閉じる前に確認する。 */
-  def reachable(
-    node: ClusterNode
-  ): IO[Boolean] =
+  def reachable(node: ClusterNode): IO[Boolean] =
     IO.blocking {
       val r = java.net.http.HttpRequest.newBuilder(java.net.URI.create(node.url.stripSuffix("/") + "/healthz"))
         .timeout(java.time.Duration.ofSeconds(2)).GET().build()

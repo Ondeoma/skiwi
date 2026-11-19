@@ -17,11 +17,10 @@ import java.time.Instant
 import java.util.UUID
 
 /** parentId: 項目なし=既定（同じワークスペースなら元と同じ階層、別のワークスペースなら直下）、null=ワークスペース直下 */
-final case class DuplicateReq(
-  workspaceId: Option[UUID],
-  parentId: Option[Option[UUID]],
-  includeChildren: Option[Boolean],
-  title: Option[String])
+final case class DuplicateReq(workspaceId: Option[UUID],
+                              parentId: Option[Option[UUID]],
+                              includeChildren: Option[Boolean],
+                              title: Option[String])
 object DuplicateReq {
   given Decoder[DuplicateReq] = Decoder.instance { c =>
     for {
@@ -32,47 +31,34 @@ object DuplicateReq {
     } yield DuplicateReq(ws, par, inc, t)
   }
 }
-final case class IdPairDto(
-  from: UUID,
-  to: UUID) derives Encoder.AsObject
-final case class DuplicateDto(
-  rootId: UUID,
-  workspaceId: UUID,
-  pages: List[IdPairDto],
-  attachments: List[IdPairDto]) derives Encoder.AsObject
+final case class IdPairDto(from: UUID, to: UUID) derives Encoder.AsObject
+final case class DuplicateDto(rootId: UUID, workspaceId: UUID, pages: List[IdPairDto], attachments: List[IdPairDto])
+  derives Encoder.AsObject
 
-final case class AccessRequestReq(
-  role: Option[String],
-  message: Option[String]) derives Decoder
+final case class AccessRequestReq(role: Option[String], message: Option[String]) derives Decoder
 
 /** status: none（申請していない）| pending（承認待ち）| has_access（すでに閲覧・編集できる） */
-final case class AccessStatusDto(
-  status: String,
-  role: Option[String] = None) derives Encoder.AsObject
-final case class AccessRequestDto(
-  id: UUID,
-  userId: UUID,
-  name: String,
-  email: Option[String],
-  role: String,
-  message: Option[String],
-  createdAt: Instant) derives Encoder.AsObject
+final case class AccessStatusDto(status: String, role: Option[String] = None) derives Encoder.AsObject
+final case class AccessRequestDto(id: UUID,
+                                  userId: UUID,
+                                  name: String,
+                                  email: Option[String],
+                                  role: String,
+                                  message: Option[String],
+                                  createdAt: Instant) derives Encoder.AsObject
 
 /** expiresAt: 許可する権限の期限（任意） */
-final case class DecideReq(
-  role: Option[String],
-  expiresAt: Option[Instant] = None) derives Decoder
+final case class DecideReq(role: Option[String], expiresAt: Option[Instant] = None) derives Decoder
 
 /** ページの複製と、閲覧権限の申請。 */
-final class PageCopyRoutes(
-  protected val store: Store,
-  attachments: AttachmentStore,
-  blobs: Option[BlobStore],
-  requests: AccessRequestStore,
-  ops: OpsStore,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  accessChanged: IO[Unit] = IO.unit) extends PageRouteSupport {
+final class PageCopyRoutes(protected val store: Store,
+                           attachments: AttachmentStore,
+                           blobs: Option[BlobStore],
+                           requests: AccessRequestStore,
+                           ops: OpsStore,
+                           protected val sessions: SessionAuth,
+                           audit: Audit,
+                           accessChanged: IO[Unit] = IO.unit) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
 
@@ -87,16 +73,9 @@ final class PageCopyRoutes(
         if action == "approve" || action == "deny" => postAccessRequest(req, rid, action)
   }
 
-  private def postPageDuplicate(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postPageDuplicate(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.View) {
-      (
-        s,
-        p,
-        _
-      ) =>
+      (s, p, _) =>
         body[DuplicateReq](req) { b =>
           val ws = b.workspaceId.getOrElse(p.workspaceId)
           val sameWs = ws == p.workspaceId
@@ -161,12 +140,7 @@ final class PageCopyRoutes(
                   r <- Created(DuplicateDto(
                     root,
                     ws,
-                    pairs.map(
-                      (
-                        a,
-                        b
-                      ) => IdPairDto(a, b)
-                    ),
+                    pairs.map((a, b) => IdPairDto(a, b)),
                     files
                   ))
                 } yield r
@@ -175,10 +149,7 @@ final class PageCopyRoutes(
         }
     }
 
-  private def postPageAccessRequests(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postPageAccessRequests(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       body[AccessRequestReq](req) { b =>
         val role = b.role.filter(Set("view", "edit")).getOrElse("view")
@@ -187,10 +158,7 @@ final class PageCopyRoutes(
           case Some((_, r)) if r >= requested(role) => Ok(AccessStatusDto("has_access", Some(r.asString)))
           case _ =>
             requests.create(id, s.user.id, role, msg).flatMap {
-              (
-                ar,
-                created
-              ) =>
+              (ar, created) =>
                 val notify =
                   if !created then IO.unit
                   else
@@ -217,10 +185,7 @@ final class PageCopyRoutes(
       }
     }
 
-  private def getPageAccessRequestsMine(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageAccessRequestsMine(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       store.pageAccess(id, s).flatMap {
         case Some((_, r)) => Ok(AccessStatusDto("has_access", Some(r.asString)))
@@ -231,16 +196,9 @@ final class PageCopyRoutes(
       }
     }
 
-  private def getPageAccessRequests(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageAccessRequests(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        _,
-        _,
-        _
-      ) =>
+      (_, _, _) =>
         requests.pending(id).flatMap { rs =>
           store.userRoles(id, rs.map(_.userId).toSet, sessions.adminGroups).flatMap { roles =>
             // 申請者がすでに申請した権限を持っていれば片付ける
@@ -250,11 +208,7 @@ final class PageCopyRoutes(
         }
     }
 
-  private def postAccessRequest(
-    req: Request[IO],
-    rid: UUID,
-    action: String
-  ): IO[Response[IO]] =
+  private def postAccessRequest(req: Request[IO], rid: UUID, action: String): IO[Response[IO]] =
     authed(req) { s =>
       requests.get(rid).flatMap {
         case None => err(ErrorCode.AccessRequestNotFound)
@@ -336,14 +290,10 @@ final class PageCopyRoutes(
     }
 
   /** 申請の権限（"edit" 以外は閲覧） */
-  private def requested(
-    role: String
-  ): Role = if role == "edit" then Role.Edit else Role.View
+  private def requested(role: String): Role = if role == "edit" then Role.Edit else Role.View
 
   /** 申請を受け取る人: 所有者・作成者のうち編集できる人。いなければ編集できる人（最大10人）。 */
-  private def approvers(
-    pageId: UUID
-  ): IO[Set[UUID]] =
+  private def approvers(pageId: UUID): IO[Set[UUID]] =
     requests.ownerAndCreator(pageId).flatMap(us =>
       store.userRoles(pageId, us.toSet, sessions.adminGroups).map(rs => us.filter(rs.get(_).contains(Role.Edit)))
     ).flatMap {
@@ -355,8 +305,7 @@ final class PageCopyRoutes(
       case xs => IO.pure(xs.toSet)
     }
 
-  private def reqDto(
-    r: AccessRequest
-  ) = AccessRequestDto(r.id, r.userId, r.userName, r.userEmail, r.role, r.message, r.createdAt)
+  private def reqDto(r: AccessRequest) =
+    AccessRequestDto(r.id, r.userId, r.userName, r.userEmail, r.role, r.message, r.createdAt)
 
 }

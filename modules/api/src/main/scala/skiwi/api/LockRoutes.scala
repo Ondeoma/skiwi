@@ -12,32 +12,26 @@ import skiwi.db.Store
 import java.time.Instant
 import java.util.UUID
 
-final case class LockUserDto(
-  id: UUID,
-  name: String) derives Encoder.AsObject
+final case class LockUserDto(id: UUID, name: String) derives Encoder.AsObject
 
 /** canEdit: 保護中でも編集できる（自分が保護した・所有者・指定された）。canChange: 保護の設定・解除ができる */
-final case class LockDto(
-  locked: Boolean,
-  lockedAt: Option[Instant],
-  lockedBy: Option[String],
-  reason: Option[String],
-  editors: List[LockUserDto],
-  canEdit: Boolean,
-  canChange: Boolean) derives Encoder.AsObject
-final case class SetLockReq(
-  reason: Option[String],
-  editors: Option[List[UUID]]) derives Decoder
+final case class LockDto(locked: Boolean,
+                         lockedAt: Option[Instant],
+                         lockedBy: Option[String],
+                         reason: Option[String],
+                         editors: List[LockUserDto],
+                         canEdit: Boolean,
+                         canChange: Boolean) derives Encoder.AsObject
+final case class SetLockReq(reason: Option[String], editors: Option[List[UUID]]) derives Decoder
 
 /**
  * ページの保護（編集のロック）。保護中は、保護した人・所有者・指定した人だけが編集できる（ほかの編集者は閲覧のみ）。
  * 保護の設定・解除: 保護中でも編集できる人と管理者。保護されていないページは編集者なら誰でも保護できる。
  */
-final class LockRoutes(
-  protected val store: Store,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  accessChanged: AccessChanged = IO.unit) extends PageRouteSupport {
+final class LockRoutes(protected val store: Store,
+                       protected val sessions: SessionAuth,
+                       audit: Audit,
+                       accessChanged: AccessChanged = IO.unit) extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "lock" => getPageLock(req, id)
@@ -45,10 +39,7 @@ final class LockRoutes(
     case req @ DELETE -> Root / "api" / "pages" / UUIDVar(id) / "lock" => deletePageLock(req, id)
   }
 
-  private def getPageLock(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageLock(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       load(id, s).flatMap {
         case (_, _, None) => err(ErrorCode.PageNotFound)
@@ -56,10 +47,7 @@ final class LockRoutes(
       }
     }
 
-  private def putPageLock(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def putPageLock(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       load(id, s).flatMap {
         case (_, _, None) => err(ErrorCode.PageNotFound)
@@ -83,10 +71,7 @@ final class LockRoutes(
       }
     }
 
-  private def deletePageLock(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deletePageLock(req: Request[IO], id: UUID): IO[Response[IO]] =
     authed(req) { s =>
       (store.pageAccess(id, s), store.pageLock(id)).flatMapN {
         case (None, _) => err(ErrorCode.PageNotFound)
@@ -103,18 +88,10 @@ final class LockRoutes(
   private type Access = Option[(Page, Role)]
 
   /** 保護の状態と、保護を考えない権限・実効の権限 */
-  private def load(
-    id: UUID,
-    s: AuthSession
-  ): IO[(Option[skiwi.db.PageLock], Access, Access)] =
+  private def load(id: UUID, s: AuthSession): IO[(Option[skiwi.db.PageLock], Access, Access)] =
     (store.pageLock(id), store.rawAndPageAccess(id, s)).mapN { case (lock, (raw, eff)) => (lock, raw, eff) }
 
-  private def render(
-    s: AuthSession,
-    lock: Option[skiwi.db.PageLock],
-    raw: Access,
-    eff: Access
-  ): IO[LockDto] = {
+  private def render(s: AuthSession, lock: Option[skiwi.db.PageLock], raw: Access, eff: Access): IO[LockDto] = {
     val rawEdit = raw.exists(_._2 == Role.Edit)
     val effEdit = eff.exists(_._2 == Role.Edit)
     lock match {
@@ -135,10 +112,7 @@ final class LockRoutes(
   }
 
   /** 変更後の状態（読み直す） */
-  private def state(
-    id: UUID,
-    s: AuthSession
-  ): IO[LockDto] =
+  private def state(id: UUID, s: AuthSession): IO[LockDto] =
     load(id, s).flatMap(render(s, _, _, _))
 
 }

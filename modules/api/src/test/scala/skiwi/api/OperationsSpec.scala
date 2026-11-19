@@ -19,15 +19,14 @@ class OperationsSpec extends DbSuite {
 
   private val apiCfg = ApiConfig(adminGroups = Set("ops-admins"), cookieSecure = false)
 
-  final case class Env(
-    store: Store,
-    docs: DocStore,
-    ops: OpsStore,
-    autos: Automations,
-    backups: BackupService,
-    backupSt: BackupStore,
-    blobs: InMemoryBlobStore,
-    app: HttpApp[IO])
+  final case class Env(store: Store,
+                       docs: DocStore,
+                       ops: OpsStore,
+                       autos: Automations,
+                       backups: BackupService,
+                       backupSt: BackupStore,
+                       blobs: InMemoryBlobStore,
+                       app: HttpApp[IO])
 
   private val res: Resource[IO, Env] = cfg match {
     case None => Resource.eval(IO.raiseError[Env](new IllegalStateException("TEST_DATABASE_URL not set")))
@@ -92,10 +91,7 @@ class OperationsSpec extends DbSuite {
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
   private def env = fixture()
 
-  private def user(
-    name: String,
-    groups: List[String] = Nil
-  ): IO[(AuthSession, String)] = {
+  private def user(name: String, groups: List[String] = Nil): IO[(AuthSession, String)] = {
     val token = Crypto.randomToken()
     for {
       u <- env.store.upsertUser(
@@ -108,12 +104,10 @@ class OperationsSpec extends DbSuite {
     } yield (AuthSession(u, Nil, groups.contains("ops-admins")), token)
   }
 
-  private def call(
-    token: Option[String],
-    method: Method,
-    path: String,
-    body: Option[Json] = None
-  ): IO[(Status, Json)] = {
+  private def call(token: Option[String],
+                   method: Method,
+                   path: String,
+                   body: Option[Json] = None): IO[(Status, Json)] = {
     var req = Request[IO](method, Uri.unsafeFromString(path))
     token.foreach(t => req = req.addCookie("skiwi_session", t))
     body.foreach(b => req = req.withEntity(b))
@@ -122,12 +116,7 @@ class OperationsSpec extends DbSuite {
     )
   }
 
-  private def page(
-    ws: UUID,
-    title: String,
-    parent: Option[UUID],
-    by: UUID
-  ) =
+  private def page(ws: UUID, title: String, parent: Option[UUID], by: UUID) =
     env.store.createPage(ws, parent, Placement.Last, title, None, by).map(_.toOption.get)
 
   test("lock: only the locker, the owner and listed users can edit; others become viewers") {

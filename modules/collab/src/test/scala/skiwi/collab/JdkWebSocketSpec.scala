@@ -22,9 +22,7 @@ class JdkWebSocketSpec extends CatsEffectSuite {
   private given org.typelevel.log4cats.LoggerFactory[IO] = org.typelevel.log4cats.noop.NoOpFactory[IO]
 
   /** /echo: 受けたフレームをそのまま返す（ヘッダの X-Test を最初にテキストで返す）。/deny: 403 */
-  private def app(
-    wsb: WebSocketBuilder[IO]
-  ): HttpApp[IO] = HttpRoutes.of[IO] {
+  private def app(wsb: WebSocketBuilder[IO]): HttpApp[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "echo" =>
       val hello = req.headers.get(CIString("X-Test")).map(_.head.value).getOrElse("")
       Queue.unbounded[IO, WebSocketFrame].flatMap { q =>
@@ -46,9 +44,7 @@ class JdkWebSocketSpec extends CatsEffectSuite {
 
   override def munitFixtures = List(server)
 
-  private def url(
-    path: String
-  ) = Uri.unsafeFromString(s"ws://127.0.0.1:${server().address.port.value}$path")
+  private def url(path: String) = Uri.unsafeFromString(s"ws://127.0.0.1:${server().address.port.value}$path")
 
   test("ヘッダを付けてつなぎ、テキストとバイナリを送受信できる") {
     JdkWebSocket.client().flatMap(_.connectHighLevel(WSRequest(url("/echo")).withHeaders(Headers(Header.Raw(

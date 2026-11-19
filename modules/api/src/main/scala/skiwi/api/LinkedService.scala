@@ -11,17 +11,14 @@ import io.circe.syntax.*
  * @param parse      相手の応答から (キー, 画面に返す項目) を取り出す（形が違うものは捨てる）
  * @param details    項目1つの詳しい中身を読む相手の API（種類 → キーからパスを作る。GET・Bearer）。ページの中のブロックが使う
  */
-final case class LinkedService(
-  name: String,
-  lookupPath: String,
-  requestField: String,
-  usesProjectKeys: Boolean,
-  isKey: (IntegrationSettings, String) => Boolean,
-  parse: (Json, IntegrationSettings) => List[(String, Json)],
-  details: Map[String, String => String] = Map.empty) {
-  def complete(
-    s: IntegrationSettings
-  ): Boolean =
+final case class LinkedService(name: String,
+                               lookupPath: String,
+                               requestField: String,
+                               usesProjectKeys: Boolean,
+                               isKey: (IntegrationSettings, String) => Boolean,
+                               parse: (Json, IntegrationSettings) => List[(String, Json)],
+                               details: Map[String, String => String] = Map.empty) {
+  def complete(s: IntegrationSettings): Boolean =
     s.url.nonEmpty && s.clientId.nonEmpty && s.clientSecret.exists(_.nonEmpty) &&
       (!usesProjectKeys || s.projectKeys.nonEmpty)
 }
@@ -36,23 +33,14 @@ object LinkedService {
     "/api/tasks/lookup",
     "keys",
     usesProjectKeys = true,
-    isKey = (
-      s,
-      k
-    ) =>
+    isKey = (s, k) =>
       s.projectKeys.exists(p =>
         k.startsWith(p + "-") && k.length > p.length + 1 && k.drop(p.length + 1).forall(_.isDigit)
       ),
-    parse = (
-      j,
-      s
-    ) =>
+    parse = (j, s) =>
       items(j, "tasks") { c =>
         (c.get[String]("key"), c.get[String]("title")).mapN {
-          (
-            k,
-            title
-          ) =>
+          (k, title) =>
             val st = c.downField("status")
             // 色は CSS に入れるので #RRGGBB などだけ
             val color = st.get[String]("color").toOption.filter(Color.matches).getOrElse("#6b7280")
@@ -76,20 +64,11 @@ object LinkedService {
     "/api/files/lookup",
     "ids",
     usesProjectKeys = false,
-    isKey = (
-      _,
-      k
-    ) => Uuid.matches(k) && k == k.toLowerCase,
-    parse = (
-      j,
-      _
-    ) =>
+    isKey = (_, k) => Uuid.matches(k) && k == k.toLowerCase,
+    parse = (j, _) =>
       items(j, "files") { c =>
         (c.get[String]("id").map(_.toLowerCase), c.get[String]("name")).mapN {
-          (
-            id,
-            name
-          ) =>
+          (id, name) =>
             id -> Json.obj(
               "key" -> id.asJson,
               "name" -> name.asJson,
@@ -109,20 +88,11 @@ object LinkedService {
     "/api/forms/lookup",
     "ids",
     usesProjectKeys = false,
-    isKey = (
-      _,
-      k
-    ) => Uuid.matches(k) && k == k.toLowerCase,
-    parse = (
-      j,
-      s
-    ) =>
+    isKey = (_, k) => Uuid.matches(k) && k == k.toLowerCase,
+    parse = (j, s) =>
       items(j, "forms") { c =>
         (c.get[String]("id").map(_.toLowerCase), c.get[String]("title")).mapN {
-          (
-            id,
-            title
-          ) =>
+          (id, title) =>
             id -> Json.obj(
               "key" -> id.asJson,
               "title" -> title.asJson,
@@ -142,9 +112,6 @@ object LinkedService {
 
   private def items(
     j: Json,
-    field: String
-  )(
-    f: io.circe.ACursor => io.circe.Decoder.Result[(String, Json)]
-  ): List[(String, Json)] =
+    field: String)(f: io.circe.ACursor => io.circe.Decoder.Result[(String, Json)]): List[(String, Json)] =
     j.hcursor.downField(field).values.toList.flatten.flatMap(t => f(t.hcursor).toOption)
 }

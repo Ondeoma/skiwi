@@ -127,11 +127,7 @@ object Main extends IOApp.Simple {
           Some(bus),
           cluster,
           wsc,
-          onMentions = (
-            pid,
-            users,
-            by
-          ) =>
+          onMentions = (pid, users, by) =>
             store.userNames(by.toList).flatMap(n =>
               mentions.notify("mention", pid, users -- by, n.values.toList.sorted.mkString("、"), "")
             )
@@ -292,10 +288,7 @@ object Main extends IOApp.Simple {
     } yield ()
 
   /** 起動時、DB（Patroniのプライマリ）が使えるまで待ってからマイグレーションする。3ノード同時起動でもFlywayのロックで1回だけ適用される。 */
-  private def migrateWithRetry(
-    cfg: AppConfig,
-    attempt: Int = 1
-  ): IO[Int] =
+  private def migrateWithRetry(cfg: AppConfig, attempt: Int = 1): IO[Int] =
     Database.migrate(cfg.db).handleErrorWith { e =>
       if attempt >= 60 then IO.raiseError(e)
       else
@@ -304,12 +297,8 @@ object Main extends IOApp.Simple {
     }
 
   /** DB から定期的に読むメトリクス（skorimako のダッシュボード・アラート用）。 */
-  private def gauges(
-    xa: doobie.Transactor[IO]
-  ): Resource[IO, Unit] = {
-    def q(
-      sqlText: doobie.Fragment
-    ): IO[Long] = sqlText.query[Long].unique.transact(xa)
+  private def gauges(xa: doobie.Transactor[IO]): Resource[IO, Unit] = {
+    def q(sqlText: doobie.Fragment): IO[Long] = sqlText.query[Long].unique.transact(xa)
     List(
       Metrics.gauge("skiwi.users.active", "有効なユーザーの数")(q(sql"select count(*) from app_user where not disabled")),
       Metrics.gauge(
@@ -341,9 +330,7 @@ object Main extends IOApp.Simple {
   }
 
   /** 画面が使う設定（ログイン不要。秘密は含めない） */
-  private def clientConfigRoutes(
-    cfg: AppConfig
-  ): HttpRoutes[IO] = HttpRoutes.of[IO] {
+  private def clientConfigRoutes(cfg: AppConfig): HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "api" / "client-config" =>
       Ok(io.circe.Json.obj(
         "drawioUrl" -> io.circe.Json.fromString(cfg.drawioUrl),
@@ -352,10 +339,7 @@ object Main extends IOApp.Simple {
   }
 
   /** ロードバランサー(HAProxy)用のヘルスチェック。DB(プライマリ)に書けない状態なら 503。 */
-  private def healthRoutes(
-    xa: doobie.Transactor[IO],
-    node: Option[String]
-  ): HttpRoutes[IO] = HttpRoutes.of[IO] {
+  private def healthRoutes(xa: doobie.Transactor[IO], node: Option[String]): HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "healthz" =>
       sql"select not pg_is_in_recovery()".query[Boolean].unique.transact(xa).timeout(3.seconds).attempt.flatMap {
         case Right(true) => Ok(s"ok ${node.getOrElse("")}".trim)
@@ -369,16 +353,12 @@ object Main extends IOApp.Simple {
       }
   }
 
-  private def blobStore(
-    cfg: AppConfig
-  ): Resource[IO, Option[sbirds.storage.BlobStore]] = cfg.s3 match {
+  private def blobStore(cfg: AppConfig): Resource[IO, Option[sbirds.storage.BlobStore]] = cfg.s3 match {
     case Some(c) => S3BlobStore.resource(c).evalTap(_.ensureBucket).map(b => Some(b))
     case None => Resource.eval(sbirds.observe.Log.println("[skiwi] WARNING: S3_ENDPOINT が未設定のため、添付ファイルは使えません").as(None))
   }
 
-  private def startupNotes(
-    cfg: AppConfig
-  ): IO[Unit] =
+  private def startupNotes(cfg: AppConfig): IO[Unit] =
     (if cfg.smtp.isEmpty then sbirds.observe.Log.println("[skiwi] WARNING: SMTP_HOST が未設定のため、メールは送りません")
      else IO.unit) *>
       (if cfg.scimToken.isEmpty then
@@ -389,9 +369,7 @@ object Main extends IOApp.Simple {
       )(sbirds.observe.Log.println("[skiwi] WARNING: OIDC が未設定です。開発用のログイン（DEV_LOGIN）を使います。本番では使わないでください"))
 
   /** 例外をコード付きのエラーの応答にする（大きすぎる本文は 413、予期しない例外は 500）. */
-  private def errors(
-    app: HttpApp[IO]
-  ): HttpApp[IO] =
+  private def errors(app: HttpApp[IO]): HttpApp[IO] =
     Errors.handle(
       Kleisli(req =>
         app.run(req).adaptError { case e: Security.BodyTooLarge => AppError(ErrorCode.RequestTooLarge, e.getMessage) }
@@ -401,9 +379,7 @@ object Main extends IOApp.Simple {
 
   /** /s/{key} または /s/{key}/{pageKey} */
   private object GuestPath {
-    def unapply(
-      path: Uri.Path
-    ): Option[(String, Option[String])] =
+    def unapply(path: Uri.Path): Option[(String, Option[String])] =
       path.segments.map(_.decoded()).toList match {
         case "s" :: key :: Nil => Some((key, None))
         case "s" :: key :: page :: Nil => Some((key, Some(page).filter(_.nonEmpty)))
@@ -416,9 +392,7 @@ object Main extends IOApp.Simple {
    * 画面（index.html）の CSP. スクリプトは自分のオリジン（/assets）・index.html の中のインラインのもの（ハッシュ）・RUM の送り先だけ.
    * wasm-unsafe-eval: ホワイトボード（Excalidraw）がフォントの書き出しに WebAssembly を使う。ほかの読み込み先は制限しない（埋め込み・画像・draw.io）
    */
-  private def spaCsp(
-    html: String
-  ): String = {
+  private def spaCsp(html: String): String = {
     val inline = "(?s)<script>(.*?)</script>".r.findAllMatchIn(html).map { m =>
       val d = java.security.MessageDigest.getInstance(
         "SHA-256"
@@ -432,15 +406,10 @@ object Main extends IOApp.Simple {
   private val SandboxCsp =
     "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation-by-user-activation"
 
-  private def spa(
-    dir: String,
-    shares: ShareRoutes
-  ): HttpRoutes[IO] = {
+  private def spa(dir: String, shares: ShareRoutes): HttpRoutes[IO] = {
     val files = fileService[IO](FileService.Config(dir))
     def readIndex = fs2.io.file.Files[IO].readUtf8(Path(dir) / "index.html").compile.string
-    def html(
-      body: String
-    ) = Response[IO](Status.Ok).withEntity(body)(using EntityEncoder.stringEncoder)
+    def html(body: String) = Response[IO](Status.Ok).withEntity(body)(using EntityEncoder.stringEncoder)
       .withContentType(headers.`Content-Type`(
         MediaType.text.html,
         Charset.`UTF-8`
@@ -473,31 +442,21 @@ object Main extends IOApp.Simple {
   }
 
   /** 期限の近いToDoを1時間ごとに確認して通知する（同じToDoには1回だけ。複数ノードで動いても重複しにくいよう少しずらす） */
-  private def taskDueLoop(
-    ops: OpsStore,
-    tz: String
-  ): IO[Unit] =
+  private def taskDueLoop(ops: OpsStore, tz: String): IO[Unit] =
     Periodic.run(1.minute, 1.hour, ErrorCode.TaskDueCheckFailed)(ops.enqueueTaskDue(tz))
 
   /** 期限を過ぎた権限を1分ごとに消し、接続中の画面の権限を確かめ直す。 */
-  private def aclExpiryLoop(
-    store: Store,
-    accessChanged: IO[Unit]
-  ): IO[Unit] =
+  private def aclExpiryLoop(store: Store, accessChanged: IO[Unit]): IO[Unit] =
     Periodic.run(1.minute, 1.minute, ErrorCode.AclExpiryFailed)(store.purgeExpiredAcl.flatMap(n =>
       IO.whenA(n > 0)(accessChanged)
     ))
 
   /** 古い通知を1時間ごとに消す（既読は90日、未読でも1年を過ぎたもの） */
-  private def notificationPurgeLoop(
-    ops: OpsStore
-  ): IO[Unit] =
+  private def notificationPurgeLoop(ops: OpsStore): IO[Unit] =
     Periodic.run(5.minutes, 1.hour, ErrorCode.NotificationPurgeFailed)(ops.purgeNotifications().void)
 
   /** 期限切れセッションを定期的に削除する（基準の時刻は毎回取り直す） */
-  private def purgeLoop(
-    store: Store
-  ): IO[Unit] =
+  private def purgeLoop(store: Store): IO[Unit] =
     Periodic.run(
       10.minutes,
       10.minutes,

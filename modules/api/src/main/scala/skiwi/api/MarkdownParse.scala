@@ -12,12 +12,7 @@ import scala.collection.mutable.ArrayBuffer
  */
 object MarkdownParse {
 
-  private def node(
-    tpe: String,
-    attrs: (String, Json)*
-  )(
-    content: Vector[Json]
-  ): Json = {
+  private def node(tpe: String, attrs: (String, Json)*)(content: Vector[Json]): Json = {
     val base = Vector("type" -> tpe.asJson) ++ Option.when(attrs.nonEmpty)("attrs" -> Json.obj(attrs*)) ++
       Option.when(content.nonEmpty)("content" -> Json.fromValues(content))
     Json.obj(base*)
@@ -28,18 +23,14 @@ object MarkdownParse {
   /** 見出し。末尾の「 ###」は正規表現ではなく後から除く（遅延一致と空白の組み合わせは、長い行で二乗の時間がかかるため） */
   private object Heading {
     private val Re = """^ {0,3}(#{1,6})(?:[ \t]+(.*))?$""".r
-    def unapply(
-      l: String
-    ): Option[(String, String)] = l match {
+    def unapply(l: String): Option[(String, String)] = l match {
       case Re(hs, rest) =>
         val t = Option(rest).getOrElse("").trim
         val closed = t.reverse.dropWhile(_ == '#').reverse
         Some((hs, if closed.isEmpty then "" else if closed.last == ' ' || closed.last == '\t' then closed.trim else t))
       case _ => None
     }
-    def matches(
-      l: String
-    ): Boolean = Re.matches(l)
+    def matches(l: String): Boolean = Re.matches(l)
   }
   private val Fence = """^ {0,3}(`{3,}|~{3,})[ \t]*([^`\s]*).*$""".r
   private val Quote = """^ {0,3}> ?(.*)$""".r
@@ -48,42 +39,29 @@ object MarkdownParse {
   private val Task = """^\[([ xX])\][ \t]+(.*)$""".r
   private val ImageAlone = """^ *!\[([^\]]*)\]\(([^)\s]+)(?: +"[^"]*")?\) *$""".r
 
-  private def blank(
-    l: String
-  ) = l.trim.isEmpty
+  private def blank(l: String) = l.trim.isEmpty
 
   // 区切り線と表の区切り行は正規表現を使わずに判定する
   // （Java の正規表現はグループの繰り返しを再帰で処理するため、長い行で StackOverflowError になる）
-  private def isRule(
-    l: String
-  ): Boolean = {
+  private def isRule(l: String): Boolean = {
     val t = l.trim
     indentOf(l) <= 3 && t.nonEmpty && "-*_".contains(t.head) && t.forall(c => c == t.head || c == ' ' || c == '\t') &&
     t.count(_ == t.head) >= 3
   }
-  private def isTableSep(
-    l: String
-  ): Boolean = {
+  private def isTableSep(l: String): Boolean = {
     val t = l.trim.stripPrefix("|").stripSuffix("|")
     t.nonEmpty && t.split("\\|", -1).forall(_.trim.matches(":?-+:?"))
   }
 
   /** 入れ子（引用・リスト・行内の書式）の深さの上限。悪意のある入力でスタックを使い切らせない */
   private val MaxDepth = 32
-  private def indentOf(
-    l: String
-  ) = l.takeWhile(_ == ' ').length
+  private def indentOf(l: String) = l.takeWhile(_ == ' ').length
 
   /** Markdown の文字を、本文の最上位のブロックの並びにする。 */
-  def blocks(
-    markdown: String
-  ): Vector[Json] =
+  def blocks(markdown: String): Vector[Json] =
     parseBlocks(markdown.replace("\r\n", "\n").replace("\t", "    ").split("\n", -1).toVector, 0)
 
-  private def parseBlocks(
-    lines: Vector[String],
-    depth: Int
-  ): Vector[Json] = {
+  private def parseBlocks(lines: Vector[String], depth: Int): Vector[Json] = {
     if depth >= MaxDepth then
       return Vector(node("paragraph")(inlines(lines.filterNot(blank).map(_.trim).mkString(" "))))
     val out = ArrayBuffer.empty[Json]
@@ -91,12 +69,8 @@ object MarkdownParse {
     // 各行から見て次の空でない行の位置（リストの空行の扱いで、毎回先を探し直さないように）
     val nextNonBlank = Array.fill(lines.size + 1)(lines.size)
     for k <- (lines.size - 1) to 0 by -1 do nextNonBlank(k) = if blank(lines(k)) then nextNonBlank(k + 1) else k
-    def tableStart(
-      k: Int
-    ): Boolean = lines(k).contains('|') && k + 1 < lines.size && isTableSep(lines(k + 1))
-    def startsBlock(
-      k: Int
-    ): Boolean = {
+    def tableStart(k: Int): Boolean = lines(k).contains('|') && k + 1 < lines.size && isTableSep(lines(k + 1))
+    def startsBlock(k: Int): Boolean = {
       val l = lines(k)
       Heading.matches(l) || Fence.matches(l) || isRule(l) || Quote.matches(l) || Bullet.matches(l) ||
       Ordered.matches(l) || tableStart(k)
@@ -140,10 +114,7 @@ object MarkdownParse {
           while i < lines.size && !blank(lines(i)) && lines(i).contains('|') do { rows += cells(lines(i)); i += 1 }
           val w = rows.map(_.size).max
           out += node("table")(rows.toVector.zipWithIndex.map {
-            (
-              r,
-              ri
-            ) =>
+            (r, ri) =>
               node("tableRow")((0 until w).toVector.map { ci =>
                 node(
                   if ri == 0 then "tableHeader" else "tableCell"
@@ -161,12 +132,7 @@ object MarkdownParse {
             case List(ImageAlone(alt, src)) => out +=
                 node("image", "src" -> src.asJson, "alt" -> alt.asJson)(Vector.empty)
             case ls =>
-              val content = ls.map(inlines).reduceLeft(
-                (
-                  a,
-                  b
-                ) => (a :+ Json.obj("type" -> "hardBreak".asJson)) ++ b
-              )
+              val content = ls.map(inlines).reduceLeft((a, b) => (a :+ Json.obj("type" -> "hardBreak".asJson)) ++ b)
               out += node("paragraph")(content)
           }
       }
@@ -174,37 +140,26 @@ object MarkdownParse {
     out.toVector
   }
 
-  private def nonEmpty(
-    bs: Vector[Json]
-  ): Vector[Json] = if bs.isEmpty then Vector(node("paragraph")(Vector.empty)) else bs
+  private def nonEmpty(bs: Vector[Json]): Vector[Json] =
+    if bs.isEmpty then Vector(node("paragraph")(Vector.empty)) else bs
 
   /** 表の行をセルに分ける（\| はセルの区切りにしない）。 */
-  private def cells(
-    line: String
-  ): Vector[String] = {
+  private def cells(line: String): Vector[String] = {
     val t = line.trim.stripPrefix("|")
     val body = if t.endsWith("|") && !t.endsWith("\\|") then t.dropRight(1) else t
     body.split("""(?<!\\)\|""", -1).toVector.map(_.trim.replace("\\|", "|"))
   }
 
   /** リスト（箇条書き・番号付き・ToDo）。同じ字下げの同じ種類の項目が続く間。戻り値: (リストのノード, 次の行) */
-  private def parseList(
-    lines: Vector[String],
-    start: Int,
-    nextNonBlank: Array[Int],
-    depth: Int
-  ): (Json, Int) = {
-    def nextLine(
-      from: Int
-    ): Option[String] = Option(nextNonBlank(math.min(from, lines.size))).filter(_ < lines.size).map(lines)
+  private def parseList(lines: Vector[String], start: Int, nextNonBlank: Array[Int], depth: Int): (Json, Int) = {
+    def nextLine(from: Int): Option[String] =
+      Option(nextNonBlank(math.min(from, lines.size))).filter(_ < lines.size).map(lines)
     val first = lines(start)
     val base = indentOf(first)
     val ordered = Ordered.matches(first)
     // ToDo と普通の箇条書きは別のリスト（エディタでは別の種類）
     val firstTask = first match { case Bullet(_, _, rest) => Task.matches(rest); case _ => false }
-    def marker(
-      l: String
-    ): Option[(String, Int)] = l match { // (本文, 本文の始まりの桁)
+    def marker(l: String): Option[(String, Int)] = l match { // (本文, 本文の始まりの桁)
       case Bullet(sp, m, rest) if !ordered && sp.length == base && Task.matches(rest) == firstTask =>
         Some((rest, sp.length + m.length + 1))
       case Ordered(sp, n, rest) if ordered && sp.length == base => Some((rest, sp.length + n.length + 2))
@@ -255,10 +210,7 @@ object MarkdownParse {
   }
 
   /** 項目の中身。最初は段落でなければならない（エディタの決まり）。 */
-  private def itemContent(
-    lines: Vector[String],
-    depth: Int
-  ): Vector[Json] = {
+  private def itemContent(lines: Vector[String], depth: Int): Vector[Json] = {
     val bs = parseBlocks(lines, depth + 1)
     if bs.headOption.flatMap(_.hcursor.get[String]("type").toOption).contains("paragraph") then bs
     else node("paragraph")(Vector.empty) +: bs
@@ -266,9 +218,7 @@ object MarkdownParse {
 
   // ---------------------------------------------------------------- 行内
 
-  private final case class Mark(
-    tpe: String,
-    attrs: Option[Json] = None) {
+  private final case class Mark(tpe: String, attrs: Option[Json] = None) {
     def json: Json = attrs.fold(Json.obj("type" -> tpe.asJson))(a => Json.obj("type" -> tpe.asJson, "attrs" -> a))
   }
 
@@ -277,35 +227,22 @@ object MarkdownParse {
 
   /** 行内の Markdown を文字のノードの並びにする（同じマークの続いた文字はまとめる）。 */
   private val MaxInline = 4000
-  def inlines(
-    s: String
-  ): Vector[Json] = {
+  def inlines(s: String): Vector[Json] = {
     val out = ArrayBuffer.empty[(String, List[Mark])]
-    def emit(
-      t: String,
-      marks: List[Mark]
-    ): Unit =
+    def emit(t: String, marks: List[Mark]): Unit =
       if t.nonEmpty then
         if out.nonEmpty && out.last._2 == marks then out(out.size - 1) = (out.last._1 + t, marks)
         else out += ((t, marks))
-    def isWordChar(
-      c: Char
-    ) = c.isLetterOrDigit && c < 0x3000 // 英数字（和文の中の _ は区切りとして扱う）
+    def isWordChar(c: Char) = c.isLetterOrDigit && c < 0x3000 // 英数字（和文の中の _ は区切りとして扱う）
 
-    def parse(
-      s: String,
-      marks: List[Mark]
-    ): Unit = {
+    def parse(s: String, marks: List[Mark]): Unit = {
       // 入れ子が深すぎる・行が長すぎるときは書式を解釈しない（スタックの使い切りと、閉じ記号の探索が二乗で重くなるのを防ぐ）
       if marks.size >= MaxDepth || s.length > MaxInline then { emit(s, marks); return }
       val buf = StringBuilder()
       def flush() = { emit(buf.toString, marks); buf.clear() }
       var i = 0
       // 区切り記号 d で閉じる位置（なければ -1）
-      def closing(
-        d: String,
-        from: Int
-      ): Int = {
+      def closing(d: String, from: Int): Int = {
         var j = from
         var found = -1
         while found < 0 && j <= s.length - d.length do
@@ -315,16 +252,12 @@ object MarkdownParse {
         found
       }
       // i から始まる区切り（** __ ~~ / * _）の閉じる位置（なければ -1）
-      def pairEnd(
-        k: Int
-      ): Int =
+      def pairEnd(k: Int): Int =
         if (s.startsWith("**", k) || s.startsWith("__", k) || s.startsWith("~~", k)) && k + 2 < s.length &&
           !s.charAt(k + 2).isWhitespace
         then closing(s.substring(k, k + 2), k + 2)
         else -1
-      def singleEnd(
-        k: Int
-      ): Int = {
+      def singleEnd(k: Int): Int = {
         val c = s.charAt(k)
         if (c == '*' || (c == '_' && (k == 0 || !isWordChar(s.charAt(k - 1))))) && k + 1 < s.length &&
           !s.charAt(k + 1).isWhitespace
@@ -332,10 +265,7 @@ object MarkdownParse {
         else -1
       }
       // i から始まる正規表現の一致（文字列を切り出さずに調べる）
-      def prefix(
-        r: scala.util.matching.Regex,
-        k: Int
-      ): Option[java.util.regex.Matcher] = {
+      def prefix(r: scala.util.matching.Regex, k: Int): Option[java.util.regex.Matcher] = {
         val m = r.pattern.matcher(s).region(k, s.length)
         Option.when(m.lookingAt())(m)
       }
@@ -393,11 +323,8 @@ object MarkdownParse {
             i = paren + 1
           }
         } else if c == '<' then
-          List("u" -> "underline", "mark" -> "highlight").find(
-            (
-              t,
-              _
-            ) => s.startsWith(s"<$t>", i) && s.indexOf(s"</$t>", i) > 0
+          List("u" -> "underline", "mark" -> "highlight").find((t, _) =>
+            s.startsWith(s"<$t>", i) && s.indexOf(s"</$t>", i) > 0
           ) match {
             case Some((t, m)) =>
               val end = s.indexOf(s"</$t>", i)
@@ -433,10 +360,7 @@ object MarkdownParse {
 
     parse(s, Nil)
     out.toVector.map {
-      (
-        t,
-        ms
-      ) =>
+      (t, ms) =>
         if ms.isEmpty then Json.obj("type" -> "text".asJson, "text" -> t.asJson)
         else
           Json.obj(
@@ -452,13 +376,9 @@ object MarkdownParse {
   private val TextBlocks = Set("paragraph", "heading", "codeBlock")
 
   /** 本文の平文（検索・抜粋用。エディタの getText({ blockSeparator: '\n' }) に近い形）。 */
-  def plainText(
-    blocks: Vector[Json]
-  ): String = {
+  def plainText(blocks: Vector[Json]): String = {
     val parts = ArrayBuffer.empty[String]
-    def inlineText(
-      n: JsonObject
-    ): String =
+    def inlineText(n: JsonObject): String =
       n("content").flatMap(_.asArray).toVector.flatten.flatMap(_.asObject).map { k =>
         k("type").flatMap(_.asString) match {
           case Some("text") => k("text").flatMap(_.asString).getOrElse("")
@@ -466,9 +386,7 @@ object MarkdownParse {
           case _ => inlineText(k)
         }
       }.mkString
-    def walk(
-      n: JsonObject
-    ): Unit =
+    def walk(n: JsonObject): Unit =
       if n("type").flatMap(_.asString).exists(TextBlocks.contains) then parts += inlineText(n)
       else n("content").flatMap(_.asArray).toVector.flatten.flatMap(_.asObject).foreach(walk)
     blocks.flatMap(_.asObject).foreach(walk)

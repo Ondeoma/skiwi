@@ -8,9 +8,7 @@ import scala.scalajs.js
  */
 object Palette {
 
-  final case class Color(
-    id: String,
-    label: String)
+  final case class Color(id: String, label: String)
 
   val Colors: List[Color] = List(
     Color("gray", "グレー"),
@@ -24,9 +22,7 @@ object Palette {
     Color("red", "レッド"),
   )
 
-  def isColor(
-    v: Any
-  ): Boolean = v match {
+  def isColor(v: Any): Boolean = v match {
     case s: String => Colors.exists(_.id == s)
     case _ => false
   }
@@ -108,9 +104,7 @@ object Palette {
   )
 
   /** 文字列の先頭の絵文字（書記素）1つ. 入力欄に任意の絵文字を入れたとき用 */
-  def firstGrapheme(
-    s: String
-  ): String = {
+  def firstGrapheme(s: String): String = {
     val t = s.trim
     if (t.isEmpty) ""
     else {

@@ -10,14 +10,10 @@ object LinkExtract {
   private val PagePath =
     """/w/[0-9a-fA-F-]{36}/p/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})""".r.unanchored
 
-  def targets(
-    json: String
-  ): Set[UUID] =
+  def targets(json: String): Set[UUID] =
     io.circe.parser.parse(json).toOption.fold(Set.empty)(targets)
 
-  def targets(
-    j: Json
-  ): Set[UUID] =
+  def targets(j: Json): Set[UUID] =
     j.arrayOrObject(
       Set.empty,
       _.flatMap(targets).toSet,
@@ -36,14 +32,10 @@ object LinkExtract {
     )
 
   /** 本文中のメンション（mention ノードの userId）。 */
-  def mentions(
-    json: String
-  ): Set[UUID] =
+  def mentions(json: String): Set[UUID] =
     io.circe.parser.parse(json).toOption.fold(Set.empty)(mentions)
 
-  def mentions(
-    j: Json
-  ): Set[UUID] =
+  def mentions(j: Json): Set[UUID] =
     j.arrayOrObject(
       Set.empty,
       _.flatMap(mentions).toSet,
@@ -57,56 +49,34 @@ object LinkExtract {
 
   /** コメント本文のメンション: @[名前](ユーザーID) */
   private val CommentMention = """@\[[^\]]*\]\(([0-9a-fA-F-]{36})\)""".r
-  def commentMentions(
-    body: String
-  ): Set[UUID] =
+  def commentMentions(body: String): Set[UUID] =
     CommentMention.findAllMatchIn(body).flatMap(m => uuidOpt(m.group(1))).toSet
 
   /** ToDoリストの項目（担当者がいるものだけ）。text は項目の文章（入れ子の項目を除く。メンションは @名前）。 */
-  final case class Task(
-    seq: Int,
-    text: String,
-    checked: Boolean,
-    assignees: Set[UUID],
-    due: Option[java.time.LocalDate])
+  final case class Task(seq: Int,
+                        text: String,
+                        checked: Boolean,
+                        assignees: Set[UUID],
+                        due: Option[java.time.LocalDate])
 
-  def tasks(
-    json: String
-  ): List[Task] = io.circe.parser.parse(json).toOption.fold(Nil)(tasks)
+  def tasks(json: String): List[Task] = io.circe.parser.parse(json).toOption.fold(Nil)(tasks)
 
-  def tasks(
-    root: Json
-  ): List[Task] = {
+  def tasks(root: Json): List[Task] = {
     val out = scala.collection.mutable.ListBuffer.empty[Task]
-    def tpe(
-      j: Json
-    ) = j.hcursor.get[String]("type").toOption
-    def kids(
-      j: Json
-    ) = j.hcursor.get[List[Json]]("content").getOrElse(Nil)
-    def attr(
-      j: Json,
-      k: String
-    ) = j.hcursor.downField("attrs").downField(k).focus
+    def tpe(j: Json) = j.hcursor.get[String]("type").toOption
+    def kids(j: Json) = j.hcursor.get[List[Json]]("content").getOrElse(Nil)
+    def attr(j: Json, k: String) = j.hcursor.downField("attrs").downField(k).focus
     // 項目自身の内容（入れ子のリストには降りない）
-    def own(
-      j: Json
-    ): List[Json] =
+    def own(j: Json): List[Json] =
       kids(j).filterNot(k => tpe(k).exists(t => t == "taskList" || t == "bulletList" || t == "orderedList"))
-    def flat(
-      j: Json
-    ): List[Json] = j :: kids(j).flatMap(flat)
-    def textOf(
-      j: Json
-    ): String = tpe(j) match {
+    def flat(j: Json): List[Json] = j :: kids(j).flatMap(flat)
+    def textOf(j: Json): String = tpe(j) match {
       case Some("text") => j.hcursor.get[String]("text").getOrElse("")
       case Some("mention") => "@" + attr(j, "label").flatMap(_.asString).getOrElse("")
       case Some("dueDate") => ""
       case _ => kids(j).map(textOf).mkString(if tpe(j).contains("paragraph") then "" else " ")
     }
-    def walk(
-      j: Json
-    ): Unit = {
+    def walk(j: Json): Unit = {
       if tpe(j).contains("taskItem") then {
         val mine = own(j).flatMap(flat)
         val assignees = mine.filter(n => tpe(n).contains("mention")).flatMap(n =>

@@ -13,9 +13,7 @@ object JsModule {
 
   private var cache: Map[String, Future[js.Dynamic]] = Map.empty
 
-  def load(
-    name: String
-  ): Future[js.Dynamic] = cache.getOrElse(
+  def load(name: String): Future[js.Dynamic] = cache.getOrElse(
     name, {
       val f = js.Dynamic.global.skiwiLoad(name).asInstanceOf[js.Promise[js.Dynamic]].toFuture
       cache += name -> f

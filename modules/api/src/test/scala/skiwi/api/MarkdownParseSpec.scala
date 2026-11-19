@@ -7,12 +7,8 @@ import munit.FunSuite
 /** Markdown → 本文の JSON。 */
 class MarkdownParseSpec extends FunSuite {
 
-  private def j(
-    s: String
-  ): Json = parse(s).toOption.get
-  private def p(
-    s: String
-  ): Vector[Json] = MarkdownParse.blocks(s)
+  private def j(s: String): Json = parse(s).toOption.get
+  private def p(s: String): Vector[Json] = MarkdownParse.blocks(s)
 
   test("見出し・段落（行内の改行）・区切り線・コード・mermaid") {
     assertEquals(

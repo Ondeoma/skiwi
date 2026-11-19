@@ -13,26 +13,16 @@ import sbirds.storage.S3Config
 object Config {
 
   /** 空でない値 */
-  private def opt(
-    name: String
-  ): Option[String] = sys.env.get(name).map(_.trim).filter(_.nonEmpty)
-  private def int(
-    name: String
-  ): Option[Int] = opt(name).flatMap(_.toIntOption)
+  private def opt(name: String): Option[String] = sys.env.get(name).map(_.trim).filter(_.nonEmpty)
+  private def int(name: String): Option[Int] = opt(name).flatMap(_.toIntOption)
 
   /** true と書かれているときだけ有効（既定は無効） */
-  private def enabled(
-    name: String
-  ): Boolean = sys.env.get(name).exists(_.trim.equalsIgnoreCase("true"))
+  private def enabled(name: String): Boolean = sys.env.get(name).exists(_.trim.equalsIgnoreCase("true"))
 
   /** false と書かれているときだけ無効（既定は有効） */
-  private def disabled(
-    name: String
-  ): Boolean = sys.env.get(name).exists(_.trim.equalsIgnoreCase("false"))
+  private def disabled(name: String): Boolean = sys.env.get(name).exists(_.trim.equalsIgnoreCase("false"))
 
-  private def required(
-    name: String
-  ): Either[String, String] =
+  private def required(name: String): Either[String, String] =
     opt(name).toRight(s"環境変数 $name を設定してください")
 
   /** OAUTH_CLIENTS（JSON の配列）. 各要素は id・secret（16文字以上）・redirectUri（https:// か http://localhost）・name・scopes（read・write. 省くと read） */
@@ -43,31 +33,21 @@ object Config {
       ).flatMap(_.traverse { j =>
         val c = j.hcursor
         (c.get[String]("id"), c.get[String]("secret"), c.get[String]("redirectUri")).tupled.toOption
-          .filter(
-            (
-              id,
-              sec,
-              uri
-            ) =>
-              skiwi.api.OAuthProviderRoutes.ClientIdRe.matches(id) && sec.length >= 16 &&
-                (uri.startsWith("https://") || uri.startsWith("http://localhost"))
+          .filter((id, sec, uri) =>
+            skiwi.api.OAuthProviderRoutes.ClientIdRe.matches(id) && sec.length >= 16 &&
+              (uri.startsWith("https://") || uri.startsWith("http://localhost"))
           )
-          .map(
-            (
+          .map((id, sec, uri) =>
+            skiwi.api.OAuthClient(
               id,
-              sec,
-              uri
-            ) =>
-              skiwi.api.OAuthClient(
-                id,
-                skiwi.api.OAuthProviderRoutes.hashSecret(sec),
-                uri,
-                c.get[String]("name").getOrElse(id),
-                c.get[List[String]]("scopes").toOption.map(_.filter(Set(
-                  "read",
-                  "write"
-                ))).filter(_.nonEmpty).getOrElse(List("read"))
-              )
+              skiwi.api.OAuthProviderRoutes.hashSecret(sec),
+              uri,
+              c.get[String]("name").getOrElse(id),
+              c.get[List[String]]("scopes").toOption.map(_.filter(Set(
+                "read",
+                "write"
+              ))).filter(_.nonEmpty).getOrElse(List("read"))
+            )
           )
           .toRight("OAUTH_CLIENTS の各要素には id・secret（16文字以上）・redirectUri（https://）を指定してください")
       })
@@ -106,10 +86,7 @@ object Config {
     } yield {
       val base = pub.stripSuffix("/")
       // 秘密値: 短いもの・テンプレートのまま（change-me）のものは起動時にエラーにする
-      def secretOpt(
-        name: String,
-        min: Int
-      ): Option[String] = opt(name).map { v =>
+      def secretOpt(name: String, min: Int): Option[String] = opt(name).map { v =>
         if v.length < min || v.toLowerCase.contains("change-me") then
           throw new IllegalArgumentException(s"$name は${min}文字以上のランダムな値にしてください（雛形の値のままでは使えません）")
         v
@@ -170,14 +147,10 @@ object Config {
         // 空にすると図を編集できない（空のまま使う）
         drawioUrl = sys.env.get("DRAWIO_URL").map(_.trim.stripSuffix("/")).getOrElse(AppConfig.DefaultDrawioUrl),
         appSecret = secret,
-        oauthClientSeed = (opt("OAUTH_CLIENT_ID"), opt("OAUTH_CLIENT_SECRET"), opt("OAUTH_CLIENT_REDIRECT_URI")).mapN(
-          (
-            id,
-            sec,
-            uri
-          ) =>
+        oauthClientSeed =
+          (opt("OAUTH_CLIENT_ID"), opt("OAUTH_CLIENT_SECRET"), opt("OAUTH_CLIENT_REDIRECT_URI")).mapN((id, sec, uri) =>
             SaveOAuthClientReq(id, Some(sec), uri, opt("OAUTH_CLIENT_NAME").getOrElse("skea"))
-        ),
+          ),
         oauthClients = oauthClients,
         devLogin = devLogin,
         // 開発用のログインは誰でも管理者になれるので、既定ではこの機械の中からだけ受ける

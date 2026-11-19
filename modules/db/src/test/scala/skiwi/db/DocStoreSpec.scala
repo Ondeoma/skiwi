@@ -29,9 +29,7 @@ class DocStoreSpec extends DbSuite {
     } yield (new DocStore(xa), p.id, u.id)
   }
 
-  private def b(
-    i: Int
-  ) = Array[Byte](i.toByte)
+  private def b(i: Int) = Array[Byte](i.toByte)
 
   test("compaction removes only what the compacting client is known to have, keeping concurrent work") {
     run {
@@ -100,12 +98,7 @@ class DocStoreSpec extends DbSuite {
       for {
         got <- Deferred[IO, String]
         conn <- Deferred[IO, Unit]
-        fib <- bus.subscribe(List("skiwi_test"), conn.complete(()).void)(
-          (
-            ch,
-            p
-          ) => got.complete(s"$ch:$p").void
-        ).start
+        fib <- bus.subscribe(List("skiwi_test"), conn.complete(()).void)((ch, p) => got.complete(s"$ch:$p").void).start
         _ <- conn.get.timeout(10.seconds)
         _ <- bus.publish("skiwi_test", "こんにちは|1")
         v <- got.get.timeout(10.seconds)

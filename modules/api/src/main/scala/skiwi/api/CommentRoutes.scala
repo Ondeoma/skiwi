@@ -14,52 +14,41 @@ import skiwi.db.{Comment, CommentStore, LinkExtract, OpsStore, Store}
 import java.time.Instant
 import java.util.UUID
 
-final case class CommentDto(
-  id: UUID,
-  threadId: Option[UUID],
-  anchor: Option[String],
-  quote: Option[String],
-  body: String,
-  authorId: Option[UUID],
-  authorName: Option[String],
-  createdAt: Instant,
-  updatedAt: Instant,
-  resolvedAt: Option[Instant],
-  resolvedBy: Option[String],
-  deleted: Boolean,
-  canEdit: Boolean,
-  canDelete: Boolean,
-  authorAvatarUrl: Option[String]) derives Encoder.AsObject
-final case class NewCommentReq(
-  body: String,
-  threadId: Option[UUID],
-  anchor: Option[String],
-  quote: Option[String]) derives Decoder
-final case class EditCommentReq(
-  body: String) derives Decoder
-final case class ResolveReq(
-  resolved: Boolean) derives Decoder
+final case class CommentDto(id: UUID,
+                            threadId: Option[UUID],
+                            anchor: Option[String],
+                            quote: Option[String],
+                            body: String,
+                            authorId: Option[UUID],
+                            authorName: Option[String],
+                            createdAt: Instant,
+                            updatedAt: Instant,
+                            resolvedAt: Option[Instant],
+                            resolvedBy: Option[String],
+                            deleted: Boolean,
+                            canEdit: Boolean,
+                            canDelete: Boolean,
+                            authorAvatarUrl: Option[String]) derives Encoder.AsObject
+final case class NewCommentReq(body: String, threadId: Option[UUID], anchor: Option[String], quote: Option[String])
+  derives Decoder
+final case class EditCommentReq(body: String) derives Decoder
+final case class ResolveReq(resolved: Boolean) derives Decoder
 
-final case class AudienceEntryDto(
-  userId: UUID,
-  name: String,
-  email: Option[String],
-  role: Role,
-  reason: String) derives Encoder.AsObject
+final case class AudienceEntryDto(userId: UUID, name: String, email: Option[String], role: Role, reason: String)
+  derives Encoder.AsObject
 
 /**
  * コメント（閲覧できる人は誰でも書ける）と、ページを閲覧できる人の一覧。
  *  - 編集・削除は投稿者（削除はページの編集者も可）。解決は投稿者とページの編集者。
  *  - 本文の @[名前](ユーザーID) はメンションとして通知する。返信はスレッドの参加者とウォッチしている人に通知する。
  */
-final class CommentRoutes(
-  protected val store: Store,
-  comments: CommentStore,
-  ops: OpsStore,
-  protected val sessions: SessionAuth,
-  audit: Audit,
-  mentions: Mentions,
-  webhooks: Option[WebhookService] = None)
+final class CommentRoutes(protected val store: Store,
+                          comments: CommentStore,
+                          ops: OpsStore,
+                          protected val sessions: SessionAuth,
+                          audit: Audit,
+                          mentions: Mentions,
+                          webhooks: Option[WebhookService] = None)
   extends PageRouteSupport {
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -72,28 +61,12 @@ final class CommentRoutes(
     case req @ GET -> Root / "api" / "pages" / UUIDVar(id) / "audience" => getPageAudience(req, id)
   }
 
-  private def getPageComments(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
-    withPage(req, id, Role.View)(
-      (
-        s,
-        _,
-        r
-      ) => comments.list(id).flatMap(dtos(s, r)).flatMap(Ok(_))
-    )
+  private def getPageComments(req: Request[IO], id: UUID): IO[Response[IO]] =
+    withPage(req, id, Role.View)((s, _, r) => comments.list(id).flatMap(dtos(s, r)).flatMap(Ok(_)))
 
-  private def postPageComments(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postPageComments(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.View) {
-      (
-        s,
-        _,
-        r
-      ) =>
+      (s, _, r) =>
         body[NewCommentReq](req) {
           case b if b.body.trim.isEmpty || b.body.length > 10000 => err(ErrorCode.CommentBodyLength)
           case b if b.anchor.exists(a => validAnchor.findFirstIn(a).isEmpty) =>
@@ -145,17 +118,9 @@ final class CommentRoutes(
         }
     }
 
-  private def patchComment(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def patchComment(req: Request[IO], id: UUID): IO[Response[IO]] =
     withComment(req, id) {
-      (
-        s,
-        c,
-        _,
-        r
-      ) =>
+      (s, c, _, r) =>
         body[EditCommentReq](req) {
           case _ if !c.authorId.contains(s.user.id) || c.deletedAt.isDefined => err(ErrorCode.CommentNotAuthor)
           case b if b.body.trim.isEmpty || b.body.length > 10000 => err(ErrorCode.CommentBodyLength)
@@ -168,17 +133,9 @@ final class CommentRoutes(
         }
     }
 
-  private def deleteComment(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def deleteComment(req: Request[IO], id: UUID): IO[Response[IO]] =
     withComment(req, id) {
-      (
-        s,
-        c,
-        _,
-        r
-      ) =>
+      (s, c, _, r) =>
         if !(c.authorId.contains(s.user.id) || r == Role.Edit) then err(ErrorCode.PermissionDenied)
         else
           comments.delete(id) *>
@@ -191,17 +148,9 @@ final class CommentRoutes(
             ) *> NoContent()
     }
 
-  private def postCommentResolve(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def postCommentResolve(req: Request[IO], id: UUID): IO[Response[IO]] =
     withComment(req, id) {
-      (
-        s,
-        c,
-        _,
-        r
-      ) =>
+      (s, c, _, r) =>
         body[ResolveReq](req) {
           case _ if !c.isRoot => err(ErrorCode.CommentResolveNotRoot)
           case _ if !(c.authorId.contains(s.user.id) || r == Role.Edit) => err(ErrorCode.PermissionDenied)
@@ -210,16 +159,9 @@ final class CommentRoutes(
         }
     }
 
-  private def getPageAudience(
-    req: Request[IO],
-    id: UUID
-  ): IO[Response[IO]] =
+  private def getPageAudience(req: Request[IO], id: UUID): IO[Response[IO]] =
     withPage(req, id, Role.Edit) {
-      (
-        _,
-        _,
-        _
-      ) =>
+      (_, _, _) =>
         store.audience(id, sessions.adminGroups).flatMap {
           case None => err(ErrorCode.PageNotFound)
           case Some(a) =>
@@ -228,15 +170,11 @@ final class CommentRoutes(
               case Acl.Source.WorkspaceEntry(pr) => pr.id
             }.distinct
             ops.principalNames(principalIds).flatMap { names =>
-              def who(
-                pr: Principal
-              ) = pr.tpe match {
+              def who(pr: Principal) = pr.tpe match {
                 case PrincipalType.Group => s"グループ「${names.get(pr.id).fold("(不明)")(_.name)}」"
                 case PrincipalType.User => "個別の共有"
               }
-              def title(
-                d: Int
-              ) = Titles.display(a.chainTitles.lift(d))
+              def title(d: Int) = Titles.display(a.chainTitles.lift(d))
               val dtos = a.entries.map { e =>
                 val reason = e.source match {
                   case None => "管理者"
@@ -253,30 +191,13 @@ final class CommentRoutes(
     }
 
   /** コメントとそのページへの権限を確認する */
-  private def withComment(
-    req: Request[IO],
-    id: UUID
-  )(
-    f: (AuthSession, Comment, Page, Role) => IO[Response[IO]]
-  ) =
+  private def withComment(req: Request[IO], id: UUID)(f: (AuthSession, Comment, Page, Role) => IO[Response[IO]]) =
     comments.get(id).flatMap {
       case None => err(ErrorCode.CommentNotFound)
-      case Some(c) => withPage(req, c.pageId, Role.View)(
-          (
-            s,
-            p,
-            r
-          ) => f(s, c, p, r)
-        )
+      case Some(c) => withPage(req, c.pageId, Role.View)((s, p, r) => f(s, c, p, r))
     }
 
-  private def dto(
-    s: AuthSession,
-    r: Role,
-    avatars: Map[UUID, String]
-  )(
-    c: Comment
-  ) = {
+  private def dto(s: AuthSession, r: Role, avatars: Map[UUID, String])(c: Comment) = {
     val mine = c.authorId.contains(s.user.id)
     CommentDto(
       c.id,
@@ -298,19 +219,9 @@ final class CommentRoutes(
   }
 
   /** 作者のアイコンの版を読んでから DTO にする */
-  private def dtos(
-    s: AuthSession,
-    r: Role
-  )(
-    cs: List[Comment]
-  ): IO[List[CommentDto]] =
+  private def dtos(s: AuthSession, r: Role)(cs: List[Comment]): IO[List[CommentDto]] =
     AvatarRoutes.urls(ops, cs.flatMap(_.authorId).distinct).map(av => cs.map(dto(s, r, av)))
-  private def dto1(
-    s: AuthSession,
-    r: Role
-  )(
-    c: Comment
-  ): IO[CommentDto] = dtos(s, r)(List(c)).map(_.head)
+  private def dto1(s: AuthSession, r: Role)(c: Comment): IO[CommentDto] = dtos(s, r)(List(c)).map(_.head)
 
   private val validAnchor = """^(text|wb):[0-9A-Za-z-]{1,64}$""".r
 

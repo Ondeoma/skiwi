@@ -5,12 +5,8 @@ import io.circe.Json
 import scala.collection.mutable.ArrayBuffer
 
 /** Yjs の構造体の ID（クライアントとその時計）。 */
-final case class YId(
-  client: Long,
-  clock: Long) {
-  def +(
-    n: Long
-  ): YId = YId(client, clock + n)
+final case class YId(client: Long, clock: Long) {
+  def +(n: Long): YId = YId(client, clock + n)
 }
 
 /** 親: ルートの型（名前）か、型を中身に持つ項目の ID。 */
@@ -54,9 +50,7 @@ enum YContent {
   }
 
   /** off の位置で2つに分ける（長さが 1 を超えうる中身だけ）。 */
-  def splitAt(
-    off: Int
-  ): (YContent, YContent) = this match {
+  def splitAt(off: Int): (YContent, YContent) = this match {
     case Deleted(n) => (Deleted(off), Deleted(n - off))
     case JsonC(vs) => (JsonC(vs.take(off)), JsonC(vs.drop(off)))
     case Str(s) =>
@@ -105,16 +99,11 @@ enum YStruct {
 type DeleteSet = Map[Long, Vector[(Long, Long)]]
 
 /** 1つの更新（Yjs の update v1）。 */
-final case class YUpdate(
-  structs: Vector[YStruct],
-  deletes: DeleteSet)
+final case class YUpdate(structs: Vector[YStruct], deletes: DeleteSet)
 
 object YCodec {
 
-  private def readContent(
-    r: YReader,
-    ref: Int
-  ): YContent = ref match {
+  private def readContent(r: YReader, ref: Int): YContent = ref match {
     case 1 => YContent.Deleted(r.varUint().toInt)
     case 2 => YContent.JsonC(Vector.fill(r.varUint().toInt)(r.string()))
     case 3 => YContent.Binary(r.varBytes())
@@ -130,9 +119,7 @@ object YCodec {
   }
 
   /** Yjs の update（v1）を読む。 */
-  def decode(
-    bytes: Array[Byte]
-  ): YUpdate = {
+  def decode(bytes: Array[Byte]): YUpdate = {
     val r = YReader(bytes)
     val structs = ArrayBuffer.empty[YStruct]
     val nClients = r.varUint()
@@ -171,10 +158,7 @@ object YCodec {
     YUpdate(structs.toVector, ds)
   }
 
-  private def writeContent(
-    w: YWriter,
-    c: YContent
-  ): Unit = c match {
+  private def writeContent(w: YWriter, c: YContent): Unit = c match {
     case YContent.Str(s) => w.string(s)
     case YContent.Type(t, name) => w.varUint(t.toLong); name.foreach(w.string)
     case YContent.Format(k, json) => w.string(k); w.string(json)
@@ -182,9 +166,7 @@ object YCodec {
     case other => throw IllegalArgumentException(s"writing $other is not supported")
   }
 
-  private def ref(
-    c: YContent
-  ): Int = c match {
+  private def ref(c: YContent): Int = c match {
     case _: YContent.Deleted => 1
     case _: YContent.JsonC => 2
     case _: YContent.Binary => 3
@@ -197,10 +179,7 @@ object YCodec {
   }
 
   /** 1つのクライアントの連続した項目（時計の順）と削除の集合を update（v1）にする。 */
-  def encode(
-    items: Vector[YStruct.Item],
-    deletes: DeleteSet
-  ): Array[Byte] = {
+  def encode(items: Vector[YStruct.Item], deletes: DeleteSet): Array[Byte] = {
     val w = YWriter()
     if items.isEmpty then w.varUint(0)
     else {
@@ -227,17 +206,9 @@ object YCodec {
     val ds = deletes.filter(_._2.nonEmpty)
     w.varUint(ds.size.toLong)
     ds.toList.sortBy(_._1).foreach {
-      (
-        client,
-        ranges
-      ) =>
+      (client, ranges) =>
         w.varUint(client); w.varUint(ranges.size.toLong)
-        ranges.sortBy(_._1).foreach(
-          (
-            c,
-            l
-          ) => { w.varUint(c); w.varUint(l) }
-        )
+        ranges.sortBy(_._1).foreach((c, l) => { w.varUint(c); w.varUint(l) })
     }
     w.result
   }

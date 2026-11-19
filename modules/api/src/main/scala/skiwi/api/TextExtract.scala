@@ -66,10 +66,7 @@ object TextExtract {
     "adoc"
   )
 
-  def kindOf(
-    filename: String,
-    contentType: String
-  ): Option[Kind] = {
+  def kindOf(filename: String, contentType: String): Option[Kind] = {
     val ext = filename.toLowerCase.split('.').lastOption.filter(_ => filename.contains('.')).getOrElse("")
     val ct = contentType.toLowerCase
     if ext == "pdf" || ct == "application/pdf" then Some(Kind.Pdf)
@@ -83,10 +80,7 @@ object TextExtract {
   }
 
   /** 文字を取り出す。読めない形式なら None（呼び出し側で kindOf を確かめておく）。失敗したら例外。 */
-  def extract(
-    file: Path,
-    kind: Kind
-  ): String = {
+  def extract(file: Path, kind: Kind): String = {
     val raw = kind match {
       case Kind.Pdf => pdf(file)
       case Kind.Docx => zipXml(
@@ -106,9 +100,7 @@ object TextExtract {
   }
 
   /** 空白をまとめ、検索に使えない文字（NUL など）を除き、上限で切る */
-  def clean(
-    s: String
-  ): String = {
+  def clean(s: String): String = {
     val noCtl =
       s.map(c => if c == '\n' || c == '\t' then c else if Character.isISOControl(c) || c == '�' then ' ' else c)
     val lines = noCtl.split('\n').iterator.map(_.replaceAll("[ \\t\\u3000]+", " ").trim).filter(_.nonEmpty)
@@ -118,9 +110,7 @@ object TextExtract {
 
   // ------------------------------------------------------------ PDF
 
-  private def pdf(
-    file: Path
-  ): String =
+  private def pdf(file: Path): String =
     Using.resource(Loader.loadPDF(file.toFile)) { doc =>
       val st = new PDFTextStripper()
       st.setSortByPosition(true)
@@ -130,15 +120,11 @@ object TextExtract {
 
   // ------------------------------------------------------------ テキスト
 
-  private def readLimited(
-    file: Path
-  ): Array[Byte] =
+  private def readLimited(file: Path): Array[Byte] =
     Using.resource(Files.newInputStream(file))(in => in.readNBytes(MaxChars * 4))
 
   /** UTF-8 として正しければ UTF-8、そうでなければ Shift_JIS（Windows-31J）として読む */
-  def decode(
-    bytes: Array[Byte]
-  ): String = {
+  def decode(bytes: Array[Byte]): String = {
     val b = if bytes.length >= 3 && bytes(0) == 0xef.toByte && bytes(1) == 0xbb.toByte && bytes(2) == 0xbf.toByte then
       bytes.drop(3)
     else bytes
@@ -166,14 +152,9 @@ object TextExtract {
   }
 
   /** 読んだ量を数え、上限を超えたら止める */
-  private final class Budget(
-    var left: Long)
-  private final class Limited(
-    in: InputStream,
-    budget: Budget) extends FilterInputStream(in) {
-    private def take(
-      n: Int
-    ): Int = {
+  private final class Budget(var left: Long)
+  private final class Limited(in: InputStream, budget: Budget) extends FilterInputStream(in) {
+    private def take(n: Int): Int = {
       if n > 0 then {
         budget.left -= n
         if budget.left < 0 then throw new IllegalStateException("展開すると大きすぎるファイルです")
@@ -181,24 +162,14 @@ object TextExtract {
       n
     }
     override def read(): Int = { val r = super.read(); if r >= 0 then take(1); r }
-    override def read(
-      b: Array[Byte],
-      off: Int,
-      len: Int
-    ): Int = take(super.read(b, off, len))
+    override def read(b: Array[Byte], off: Int, len: Int): Int = take(super.read(b, off, len))
   }
 
   /** 名前の数字の順（slide2 → slide10）に並べる */
-  private def natural(
-    names: List[String]
-  ): List[String] =
+  private def natural(names: List[String]): List[String] =
     names.sortBy(n => (n.replaceAll("\\d+", ""), "\\d+".r.findAllIn(n).map(_.toLong).toList.lastOption.getOrElse(0L)))
 
-  private def zipXml(
-    file: Path,
-    pick: String => Boolean,
-    read: XMLStreamReader => String
-  ): String =
+  private def zipXml(file: Path, pick: String => Boolean, read: XMLStreamReader => String): String =
     Using.resource(new ZipFile(file.toFile)) { zip =>
       val budget = new Budget(MaxUnzipBytes)
       val names = natural(zip.entries().asScala.map(_.getName).filter(pick).toList)
@@ -213,9 +184,7 @@ object TextExtract {
     }
 
   /** Office Open XML: <w:t>・<a:t> の文字。段落（p）の終わりで改行、tab・br も反映 */
-  private def ooxmlText(
-    r: XMLStreamReader
-  ): String = {
+  private def ooxmlText(r: XMLStreamReader): String = {
     val sb = new StringBuilder
     var inText = 0
     while r.hasNext && sb.length < MaxChars do
@@ -240,9 +209,7 @@ object TextExtract {
   }
 
   /** OpenDocument: 本文（office:body）の文字すべて。段落・見出しの終わりで改行 */
-  private def odfText(
-    r: XMLStreamReader
-  ): String = {
+  private def odfText(r: XMLStreamReader): String = {
     val sb = new StringBuilder
     var inBody = false
     while r.hasNext && sb.length < MaxChars do
@@ -267,16 +234,10 @@ object TextExtract {
   }
 
   /** Excel: シート名と、各セルの値（共有文字列・直接の文字・数値） */
-  private def xlsx(
-    file: Path
-  ): String =
+  private def xlsx(file: Path): String =
     Using.resource(new ZipFile(file.toFile)) { zip =>
       val budget = new Budget(MaxUnzipBytes)
-      def withXml[A](
-        name: String
-      )(
-        f: XMLStreamReader => A
-      ): Option[A] =
+      def withXml[A](name: String)(f: XMLStreamReader => A): Option[A] =
         Option(zip.getEntry(name)).map { e =>
           Using.resource(new Limited(zip.getInputStream(e), budget)) { in =>
             val r = xmlFactory.createXMLStreamReader(in)
