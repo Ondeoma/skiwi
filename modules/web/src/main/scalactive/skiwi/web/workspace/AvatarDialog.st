@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import org.scalajs.dom
 import skiwi.web.{Api, Backdrop, Store}
 import skiwi.web.parts.Avatar
@@ -66,7 +67,7 @@ def shownUrl(s: State): Option[String] = s.preview.v.orElse(Store.me.v.flatMap(_
         <div class="side">
           <button type="button" data-testid="avatar-pick" @click="s.fileEl.foreach(_.click())">画像を選ぶ…</button>
           <input ref="s.fileEl" type="file" accept="image/*" hidden data-testid="avatar-file" @change="onPick(s, event)">
-          <p class="note">真ん中を正方形に切り抜いて、小さくしてから保存します。アイコンは同じ skiwi を使うほかの人にも見えます。</p>
+          <p class="note">真ん中を正方形に切り抜いて、小さくしてから保存します。アイコンは同じ {{ AppNames.self }} を使うほかの人にも見えます。</p>
           <button v-if="Store.me.v.exists(_.avatarUrl.isDefined) && s.picked.v.isEmpty" type="button" class="link danger" :disabled="s.busy.v" data-testid="avatar-remove" @click="remove(s, props)">アイコンを外す</button>
         </div>
       </div>

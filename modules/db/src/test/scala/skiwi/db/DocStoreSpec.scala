@@ -9,28 +9,33 @@ import java.util.UUID
 import scala.concurrent.duration.*
 
 /** 圧縮の安全性（複数ノード対応）: 届けたと分かっているものだけを消す。 */
-class DocStoreSpec extends DbSuite:
+class DocStoreSpec extends DbSuite {
 
-  private val res = cfg match
-    case None    => Resource.eval(IO.raiseError[doobie.Transactor[IO]](new IllegalStateException("TEST_DATABASE_URL not set")))
+  private val res = cfg match {
+    case None =>
+      Resource.eval(IO.raiseError[doobie.Transactor[IO]](new IllegalStateException("TEST_DATABASE_URL not set")))
     case Some(c) => Resource.eval(Database.migrate(c)) *> Database.transactor(c)
+  }
   private val fixture = ResourceSuiteLocalFixture("xa", res)
   override def munitFixtures = if cfg.isDefined then List(fixture) else Nil
 
-  private def setup: IO[(DocStore, UUID, UUID)] =
+  private def setup: IO[(DocStore, UUID, UUID)] = {
     val xa = fixture()
     val store = new Store(xa)
-    for
-      u  <- store.upsertUser(s"doc-${UUID.randomUUID()}", None, "圧縮")
+    for {
+      u <- store.upsertUser(s"doc-${UUID.randomUUID()}", None, "圧縮")
       ws <- store.createWorkspace("圧縮テスト", u.id)
-      Right(p) <- store.createPage(ws.id, None, Placement.Last, "p", None, u.id)
-    yield (new DocStore(xa), p.id, u.id)
+      p <- store.createPage(ws.id, None, Placement.Last, "p", None, u.id).rethrow
+    } yield (new DocStore(xa), p.id, u.id)
+  }
 
-  private def b(i: Int) = Array[Byte](i.toByte)
+  private def b(
+    i: Int
+  ) = Array[Byte](i.toByte)
 
   test("compaction removes only what the compacting client is known to have, keeping concurrent work") {
     run {
-      for
+      for {
         (docs, page, user) <- setup
         s1 <- docs.appendUpdate(page, b(1))
         s2 <- docs.appendUpdate(page, b(2)) // 例: 他ノードで保存され、まだこのクライアントに届いていない
@@ -50,23 +55,25 @@ class DocStoreSpec extends DbSuite:
         // 両方のスナップショットを受け取ったクライアントの圧縮で1つにまとまる
         r3 <- docs.saveCompaction(page, b(30), Json.obj(), "C", Set.empty, Set(r1.snapshotId, r2.snapshotId), user)
         p3 <- docs.load(page)
-      yield
+      } yield {
         assertEquals(r3.removedSnapshots, 2)
         assertEquals(p3.snapshots.map(_._1), List(r3.snapshotId))
+      }
     }
   }
 
   test("getUpdate returns None once compacted away") {
     run {
-      for
+      for {
         (docs, page, user) <- setup
         s1 <- docs.appendUpdate(page, b(1))
         before <- docs.getUpdate(page, s1)
         _ <- docs.saveCompaction(page, b(9), Json.obj(), "x", Set(s1), Set.empty, user)
         after <- docs.getUpdate(page, s1)
-      yield
+      } yield {
         assert(before.exists(_.sameElements(b(1))))
         assertEquals(after, None)
+      }
     }
   }
 
@@ -74,14 +81,15 @@ class DocStoreSpec extends DbSuite:
     run {
       val cs = new ClusterStore(fixture())
       val id = s"test-node-${UUID.randomUUID().toString.take(6)}"
-      for
+      for {
         _ <- cs.heartbeat(id, "http://10.0.0.9:8080")
         a <- cs.alive(15.seconds)
         _ <- cs.remove(id)
         b <- cs.alive(15.seconds)
-      yield
+      } yield {
         assert(a.exists(n => n.id == id && n.url == "http://10.0.0.9:8080"))
         assert(!b.exists(_.id == id))
+      }
     }
   }
 
@@ -89,14 +97,20 @@ class DocStoreSpec extends DbSuite:
     run {
       val c = cfg.get
       val bus = new PgBus(c, fixture())
-      for
-        got  <- Deferred[IO, String]
+      for {
+        got <- Deferred[IO, String]
         conn <- Deferred[IO, Unit]
-        fib  <- bus.subscribe(List("skiwi_test"), conn.complete(()).void)((ch, p) => got.complete(s"$ch:$p").void).start
-        _    <- conn.get.timeout(10.seconds)
-        _    <- bus.publish("skiwi_test", "こんにちは|1")
-        v    <- got.get.timeout(10.seconds)
-        _    <- fib.cancel
-      yield assertEquals(v, "skiwi_test:こんにちは|1")
+        fib <- bus.subscribe(List("skiwi_test"), conn.complete(()).void)(
+          (
+            ch,
+            p
+          ) => got.complete(s"$ch:$p").void
+        ).start
+        _ <- conn.get.timeout(10.seconds)
+        _ <- bus.publish("skiwi_test", "こんにちは|1")
+        v <- got.get.timeout(10.seconds)
+        _ <- fib.cancel
+      } yield assertEquals(v, "skiwi_test:こんにちは|1")
     }
   }
+}

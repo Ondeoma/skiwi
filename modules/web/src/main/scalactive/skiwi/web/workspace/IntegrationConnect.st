@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import org.scalajs.dom
 import skiwi.web.Dialog
 
@@ -23,9 +24,9 @@ val texts: Map[String, Texts] = Map(
 )
 
 def message(name: String, r: String): (String, String) = r match {
-  case "connected" => ("ok", s"$name と連携しました。${texts(name).shows}。")
-  case "denied" => ("ng", s"$name との連携を取りやめました。")
-  case _ => ("ng", s"$name と連携できませんでした。時間をおいてやり直すか、管理者に確認してください。")
+  case "connected" => ("ok", s"${AppNames.nameOf(name)} と連携しました。${texts(name).shows}。")
+  case "denied" => ("ng", s"${AppNames.nameOf(name)} との連携を取りやめました。")
+  case _ => ("ng", s"${AppNames.nameOf(name)} と連携できませんでした。時間をおいてやり直すか、管理者に確認してください。")
 }
 
 def mounted(s: State, props: Props): Unit =
@@ -40,7 +41,7 @@ def mounted(s: State, props: Props): Unit =
 def unmounted(s: State): Unit = s.timer.v.foreach(dom.window.clearTimeout)
 
 def disconnect(name: String): Unit =
-  Dialog.confirm(s"$name との連携を解除しますか？\n${texts(name).lost}。", okLabel = "解除").foreach { ok =>
+  Dialog.confirm(s"${AppNames.nameOf(name)} との連携を解除しますか？\n${texts(name).lost}。", okLabel = "解除").foreach { ok =>
     if (ok) Integrations.disconnect(name).recover { case e => Dialog.alertError("解除できませんでした", e) }
   }
 
@@ -58,9 +59,9 @@ def noticeClass(s: State): String = "integration-notice " + s.notice.v.map(_._1)
     <template v-for="name in Integrations.Names" :key="name">
       <template v-if="Integrations.enabled(name)">
         <a v-if="!Integrations.connected(name)" role="menuitem" :href="connectUrl(name)" :data-testid='s"$name-connect"'
-           :title='s"$name で許可すると、${texts(name).shows}"'>🔗 {{ name }} と連携</a>
-        <a v-else href="#" role="menuitem" :data-testid='s"$name-disconnect"' :title='s"$name と連携済み。クリックで解除"'
-           @click.prevent="disconnect(name)">🔗 {{ name }} 連携中（解除）</a>
+           :title='s"${AppNames.nameOf(name)} で許可すると、${texts(name).shows}"'>🔗 {{ AppNames.of(name) }} と連携</a>
+        <a v-else href="#" role="menuitem" :data-testid='s"$name-disconnect"' :title='s"${AppNames.nameOf(name)} と連携済み。クリックで解除"'
+           @click.prevent="disconnect(name)">🔗 {{ AppNames.of(name) }} 連携中（解除）</a>
       </template>
     </template>
   </template>

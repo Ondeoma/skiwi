@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import skiwi.shared.*
 import skiwi.web.{Api, Dialog, Fmt}
 
@@ -48,7 +49,7 @@ def scopeLabel(scope: String): String = if (scope == "read") "閲覧のみ" else
     <h1>APIトークン</h1>
     <p class="muted">使い方は <RouterLink to="/settings/api">API の説明書</RouterLink> を見てください（その場で試せます）。</p>
     <p class="muted">
-      プログラムから skiwi の APIを使うためのトークンです。<code>Authorization: Bearer &lt;トークン&gt;</code> で送ります。
+      プログラムから {{ AppNames.self }} の APIを使うためのトークンです。<code>Authorization: Bearer &lt;トークン&gt;</code> で送ります。
       権限はあなた自身の権限に準じます。「閲覧のみ」は読み取り（GET）だけができます。
     </p>
 

@@ -8,13 +8,20 @@ import scala.collection.mutable.ArrayBuffer
 object Diff {
 
   private enum Op[T] {
-    case Same(a: T, b: T)
-    case Add(b: T)
-    case Del(a: T)
+    case Same(
+      a: T,
+      b: T)
+    case Add(
+      b: T)
+    case Del(
+      a: T)
   }
 
   /** 最長共通部分列による差分（a → b） */
-  private def lcs[T](a: IndexedSeq[T], b: IndexedSeq[T]): Vector[Op[T]] = {
+  private def lcs[T](
+    a: IndexedSeq[T],
+    b: IndexedSeq[T]
+  ): Vector[Op[T]] = {
     // 前後の一致を先に取り除く（大きな文書でも表を小さくする）
     var start = 0
     while (start < a.length && start < b.length && a(start) == b(start)) start += 1
@@ -57,7 +64,9 @@ object Diff {
   }
 
   /** 文字列をコードポイントごとに分ける（JS の [...s] と同じ） */
-  private def codePoints(s: String): IndexedSeq[String] = {
+  private def codePoints(
+    s: String
+  ): IndexedSeq[String] = {
     val out = ArrayBuffer.empty[String]
     var i = 0
     while (i < s.length) {
@@ -69,7 +78,10 @@ object Diff {
   }
 
   /** 文字単位の差分（コードポイント単位） */
-  private def charDiff(a: String, b: String): List[DiffPiece] = {
+  private def charDiff(
+    a: String,
+    b: String
+  ): List[DiffPiece] = {
     val out = ArrayBuffer.empty[DiffPiece]
     lcs(codePoints(a), codePoints(b)).foreach { o =>
       val (kind, text) = o match {
@@ -84,7 +96,11 @@ object Diff {
   }
 
   /** ブロック列の差分. 変更のない部分は前後 context ブロックを残して折りたたむ */
-  def diffBlocks(before: Seq[String], after: Seq[String], context: Int = 2): List[DiffRow] = {
+  def diffBlocks(
+    before: Seq[String],
+    after: Seq[String],
+    context: Int = 2
+  ): List[DiffRow] = {
     val ops = lcs(before.toIndexedSeq, after.toIndexedSeq)
     val rows = ArrayBuffer.empty[DiffRow]
     var k = 0
@@ -102,15 +118,18 @@ object Diff {
           }
         case _ =>
       }
-      if (!merged) rows += (ops(k) match {
-        case Op.Same(a, _) => DiffRow("same", text = Some(a))
-        case Op.Add(b) => DiffRow("add", text = Some(b))
-        case Op.Del(a) => DiffRow("del", text = Some(a))
-      })
+      if (!merged) rows +=
+        (ops(k) match {
+          case Op.Same(a, _) => DiffRow("same", text = Some(a))
+          case Op.Add(b) => DiffRow("add", text = Some(b))
+          case Op.Del(a) => DiffRow("del", text = Some(a))
+        })
       k += 1
     }
     // 折りたたみ
-    val near = rows.indices.map(i => rows(i).kind != "same" || rows.slice(math.max(0, i - context), i + context + 1).exists(_.kind != "same"))
+    val near = rows.indices.map(i =>
+      rows(i).kind != "same" || rows.slice(math.max(0, i - context), i + context + 1).exists(_.kind != "same")
+    )
     val out = ArrayBuffer.empty[DiffRow]
     var folded = 0
     rows.indices.foreach { i =>
@@ -124,6 +143,8 @@ object Diff {
   }
 
   /** 変更のあった行の数 */
-  def changeCount(rows: List[DiffRow]): Int = rows.count(r => r.kind != "same" && r.kind != "fold")
+  def changeCount(
+    rows: List[DiffRow]
+  ): Int = rows.count(r => r.kind != "same" && r.kind != "fold")
 
 }

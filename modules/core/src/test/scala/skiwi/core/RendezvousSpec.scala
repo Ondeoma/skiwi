@@ -2,8 +2,8 @@ package skiwi.core
 
 import munit.FunSuite
 
-class RendezvousSpec extends FunSuite:
-  private val keys  = (1 to 3000).map(i => java.util.UUID.nameUUIDFromBytes(s"page-$i".getBytes).toString)
+class RendezvousSpec extends FunSuite {
+  private val keys = (1 to 3000).map(i => java.util.UUID.nameUUIDFromBytes(s"page-$i".getBytes).toString)
   private val three = List("node1", "node2", "node3")
 
   test("deterministic regardless of node order") {
@@ -20,10 +20,11 @@ class RendezvousSpec extends FunSuite:
 
   test("removing a node only moves the keys it owned") {
     val before = keys.map(k => k -> Rendezvous.pick(k, three)(identity).get).toMap
-    val after  = keys.map(k => k -> Rendezvous.pick(k, List("node1", "node3"))(identity).get).toMap
+    val after = keys.map(k => k -> Rendezvous.pick(k, List("node1", "node3"))(identity).get).toMap
     keys.foreach { k => if before(k) != "node2" then assertEquals(after(k), before(k)) }
   }
 
   test("empty node list has no owner") {
     assertEquals(Rendezvous.pick("x", List.empty[String])(identity), None)
   }
+}

@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import io.circe.Json
 import org.scalajs.dom
 import skiwi.web.Api
@@ -117,7 +118,7 @@ def width(q: Question, c: Count): String = s"width: ${c.count * 100 / math.max(1
 <template>
   <div class="smohua-form" data-testid="smohua-form">
     <p v-if='is(s, "loading")' class="muted note">📋 フォームの回答を読み込んでいます…</p>
-    <p v-if='is(s, "off")' class="muted note">📋 フォームの回答（smohua との連携が設定されていません。管理者に確認してください）</p>
+    <p v-if='is(s, "off")' class="muted note">📋 フォームの回答（{{ AppNames.of("smohua") }} との連携が設定されていません。管理者に確認してください）</p>
     <p v-if='is(s, "connect")' class="note">📋 フォームの回答を表示するには、<a :href="connectUrl()" data-testid="smohua-form-connect">smohua と連携</a>してください。</p>
     <p v-if='is(s, "error")' class="note">📋 フォームの回答を表示できません: {{ s.error }} <button type="button" @click="load(s, props)">再読み込み</button></p>
     <template v-if='is(s, "ok")'>
@@ -131,7 +132,7 @@ def width(q: Question, c: Count): String = s"width: ${c.count * 100 / math.max(1
           <button type="button" :class='tabCls(s, "list")' @click='setTab(s, props, "list")'>一覧</button>
         </span>
         <button type="button" title="読み直す" @click="load(s, props)">↻</button>
-        <a :href="openUrl(props)" target="_blank" rel="noopener">smohua で開く</a>
+        <a :href="openUrl(props)" target="_blank" rel="noopener">{{ AppNames.of("smohua") }} で開く</a>
       </div>
     </template>
     <div v-if='isTab(s, "summary")' class="body">
@@ -156,7 +157,7 @@ def width(q: Question, c: Count): String = s"width: ${c.count * 100 / math.max(1
           </tr>
         </tbody>
       </table>
-      <p class="muted small">新しいものから50件までを表示しています。すべての回答は smohua で見られます。</p>
+      <p class="muted small">新しいものから50件までを表示しています。すべての回答は {{ AppNames.of("smohua") }} で見られます。</p>
     </div>
   </div>
 </template>

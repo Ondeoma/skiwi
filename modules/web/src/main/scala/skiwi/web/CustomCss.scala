@@ -17,21 +17,34 @@ object CustomCss {
   val PageScope = ".skiwi-page-css"
 
   /** css: 範囲限定・安全化した CSS / warnings: 適用されない記述の警告 */
-  final case class Scoped(css: String, warnings: List[String])
+  final case class Scoped(
+    css: String,
+    warnings: List[String])
 
   private type Warn = String => Unit
   private type MapUrl = Option[String => String]
 
-  private def re(src: String, flags: String = ""): js.RegExp = new js.RegExp(src, flags)
+  private def re(
+    src: String,
+    flags: String = ""
+  ): js.RegExp = new js.RegExp(src, flags)
 
-  private def test(src: String, flags: String, s: String): Boolean = re(src, flags).test(s)
+  private def test(
+    src: String,
+    flags: String,
+    s: String
+  ): Boolean = re(src, flags).test(s)
 
-  private def jsTrim(s: String): String = s.asInstanceOf[js.Dynamic].trim().asInstanceOf[String]
+  private def jsTrim(
+    s: String
+  ): String = s.asInstanceOf[js.Dynamic].trim().asInstanceOf[String]
 
   private val UrlSrc = """url\(\s*(['"]?)(.*?)\1\s*\)"""
 
   /** 値の中の url(...) の中身 */
-  private def urls(value: String): List[String] = {
+  private def urls(
+    value: String
+  ): List[String] = {
     val r = re(UrlSrc, "gi")
     val out = mutable.ListBuffer.empty[String]
     var m = r.exec(value)
@@ -44,31 +57,51 @@ object CustomCss {
   }
 
   /** url(...) の中身を f で読み替える */
-  private def replaceUrls(value: String, f: String => String): String =
-    value.asInstanceOf[js.Dynamic].replace(re(UrlSrc, "gi"),
-      ((_: String, q: String, u: String) => s"url($q${f(u)}$q)"): js.Function3[String, String, String, String]).asInstanceOf[String]
+  private def replaceUrls(
+    value: String,
+    f: String => String
+  ): String =
+    value.asInstanceOf[js.Dynamic].replace(
+      re(UrlSrc, "gi"),
+      (
+        (
+          _: String,
+          q: String,
+          u: String
+        ) => s"url($q${f(u)}$q)"
+      ): js.Function3[String, String, String, String]
+    ).asInstanceOf[String]
 
-  private def urlAllowed(u: String): Boolean = {
+  private def urlAllowed(
+    u: String
+  ): Boolean = {
     val s = jsTrim(u)
     skiwi.web.editor.SafeUrl.isAttachmentPath(s) || test("""^data:image\/""", "i", s)
   }
 
   /** 括弧の中の , では区切らない */
-  private def splitSelectors(sel: String): List[String] = {
+  private def splitSelectors(
+    sel: String
+  ): List[String] = {
     val out = mutable.ListBuffer.empty[String]
     var depth = 0
     val cur = new StringBuilder
     sel.foreach { ch =>
       if (ch == '(' || ch == '[') depth += 1
       else if (ch == ')' || ch == ']') depth -= 1
-      if (ch == ',' && depth == 0) { out += cur.toString; cur.clear() } else cur += ch
+      if (ch == ',' && depth == 0) { out += cur.toString; cur.clear() }
+      else cur += ch
     }
     out += cur.toString
     out.toList.map(jsTrim).filter(_.nonEmpty)
   }
 
   /** 範囲の外に効くセレクタ（「body ~ *」のような兄弟の指定）は取り除く. 全部取り除いたら None */
-  private def scopeSelector(sel: String, scope: String, warn: Warn): Option[String] = {
+  private def scopeSelector(
+    sel: String,
+    scope: String,
+    warn: Warn
+  ): Option[String] = {
     val out = splitSelectors(sel).flatMap { s =>
       val m = re("""^(:root|html|body)(?![\w-])""", "i").exec(s)
       if (m == null) List(s"$scope $s")
@@ -81,7 +114,11 @@ object CustomCss {
     if (out.isEmpty) None else Some(out.mkString(", "))
   }
 
-  private def sanitizeStyle(style: js.Dynamic, warn: Warn, mapUrl: MapUrl): Unit = {
+  private def sanitizeStyle(
+    style: js.Dynamic,
+    warn: Warn,
+    mapUrl: MapUrl
+  ): Unit = {
     val n = style.length.asInstanceOf[Int]
     val props = (0 until n).map(i => style.item(i).asInstanceOf[String]).toList
     props.foreach { prop =>
@@ -95,8 +132,7 @@ object CustomCss {
       else if (test("""image-set\(|(^|[^\w-])src\(""", "i", value)) {
         style.removeProperty(prop)
         warn(s"$prop: image-set() と src() は使えません（url() で添付ファイルを指定してください）")
-      }
-      else if (test("""url\(""", "i", value)) {
+      } else if (test("""url\(""", "i", value)) {
         if (urls(value).exists(u => !urlAllowed(u))) {
           style.removeProperty(prop)
           warn(s"$prop: 外部の url() は使えません（添付ファイルと data:image のみ）")
@@ -105,22 +141,34 @@ object CustomCss {
     }
   }
 
-  private def is(rule: js.Dynamic, cls: String): Boolean = {
+  private def is(
+    rule: js.Dynamic,
+    cls: String
+  ): Boolean = {
     val c = dom.window.asInstanceOf[js.Dynamic].selectDynamic(cls)
     !js.isUndefined(c) && js.special.instanceof(rule, c)
   }
 
-  private def ruleList(rules: js.Dynamic): List[js.Dynamic] =
+  private def ruleList(
+    rules: js.Dynamic
+  ): List[js.Dynamic] =
     if (js.isUndefined(rules) || rules == null) Nil
     else (0 until rules.length.asInstanceOf[Int]).map(i => rules.item(i).asInstanceOf[js.Dynamic]).toList
 
-  private def processRules(rules: js.Dynamic, scope: String, out: mutable.ListBuffer[String], warn: Warn, mapUrl: MapUrl,
-                           nested: Boolean = false): Unit =
+  private def processRules(
+    rules: js.Dynamic,
+    scope: String,
+    out: mutable.ListBuffer[String],
+    warn: Warn,
+    mapUrl: MapUrl,
+    nested: Boolean = false
+  ): Unit =
     ruleList(rules).foreach { rule =>
       if (is(rule, "CSSStyleRule")) {
         sanitizeStyle(rule.style, warn, mapUrl)
         // 入れ子のルールは中身だけ安全にする
-        if (ruleList(rule.cssRules).nonEmpty) processRules(rule.cssRules, scope, mutable.ListBuffer.empty, warn, mapUrl, nested = true)
+        if (ruleList(rule.cssRules).nonEmpty)
+          processRules(rule.cssRules, scope, mutable.ListBuffer.empty, warn, mapUrl, nested = true)
         if (!nested) scopeSelector(rule.selectorText.asInstanceOf[String], scope, warn).foreach { sel =>
           rule.selectorText = sel
           out += rule.cssText.asInstanceOf[String]
@@ -146,16 +194,24 @@ object CustomCss {
       }
     }
 
-  /** 利用者が @font-face・@keyframes で定義した名前に付ける接頭辞.
-    * 名前は文書全体に効くので、そのままだと画面（ツールバーなど）のフォントやアニメーションを置き換えられてしまう */
+  /**
+   * 利用者が @font-face・@keyframes で定義した名前に付ける接頭辞.
+   * 名前は文書全体に効くので、そのままだと画面（ツールバーなど）のフォントやアニメーションを置き換えられてしまう
+   */
   private val NamePrefix = "skiwi-u-"
-  private val NameProps  = List("font-family", "font", "animation", "animation-name")
+  private val NameProps = List("font-family", "font", "animation", "animation-name")
 
-  private def unquote(s: String): String = jsTrim(s).stripPrefix("\"").stripSuffix("\"").stripPrefix("'").stripSuffix("'")
+  private def unquote(
+    s: String
+  ): String = jsTrim(s).stripPrefix("\"").stripSuffix("\"").stripPrefix("'").stripSuffix("'")
 
   /** 定義した名前（フォント・キーフレーム）に接頭辞を付け、それを使う宣言も書き換える */
-  private def renameDefinitions(rules: js.Dynamic): Unit = {
-    def all(rs: js.Dynamic): List[js.Dynamic] = ruleList(rs).flatMap(r => r :: all(r.cssRules))
+  private def renameDefinitions(
+    rules: js.Dynamic
+  ): Unit = {
+    def all(
+      rs: js.Dynamic
+    ): List[js.Dynamic] = ruleList(rs).flatMap(r => r :: all(r.cssRules))
     val rs = all(rules)
     val names = rs.flatMap { r =>
       if (is(r, "CSSFontFaceRule")) Some(unquote(r.style.getPropertyValue("font-family").asInstanceOf[String]))
@@ -163,10 +219,14 @@ object CustomCss {
       else None
     }.filter(_.nonEmpty).distinct
     if (names.nonEmpty) {
-      def esc(n: String) = n.asInstanceOf[js.Dynamic].replace(re("""[.*+?^${}()|[\]\\]""", "g"), "\\$&").asInstanceOf[String]
+      def esc(
+        n: String
+      ) = n.asInstanceOf[js.Dynamic].replace(re("""[.*+?^${}()|[\]\\]""", "g"), "\\$&").asInstanceOf[String]
       // 引用符付き・なしのどちらの書き方でも、区切り（先頭・カンマ・空白）に挟まれた名前だけを置き換える
       val pattern = re(raw"""(^|[\s,])(["']?)(${names.map(esc).mkString("|")})\2(?=$$|[\s,;!])""", "g")
-      def renameIn(style: js.Dynamic): Unit =
+      def renameIn(
+        style: js.Dynamic
+      ): Unit =
         if (!js.isUndefined(style) && style != null) NameProps.foreach { prop =>
           val v = style.getPropertyValue(prop).asInstanceOf[String]
           if (v.nonEmpty) {
@@ -182,14 +242,19 @@ object CustomCss {
   }
 
   /** CSS を範囲限定・安全化する. 解析できない部分はブラウザの規則どおり読み飛ばされる */
-  def scopeCss(raw: String, scope: String = PageScope, mapUrl: MapUrl = None): Scoped = {
+  def scopeCss(
+    raw: String,
+    scope: String = PageScope,
+    mapUrl: MapUrl = None
+  ): Scoped = {
     val warnings = mutable.LinkedHashSet.empty[String]
     val warn: Warn = w => warnings += w
     if (test("""@import\b""", "i", raw)) warn("@import は使えません（外部の読み込み）")
     if (jsTrim(raw).isEmpty) Scoped("", Nil)
     else {
       val sheet = js.Dynamic.newInstance(js.Dynamic.global.CSSStyleSheet)()
-      val parsed = try { sheet.replaceSync(raw); true } catch { case _: Throwable => false }
+      val parsed = try { sheet.replaceSync(raw); true }
+      catch { case _: Throwable => false }
       if (!parsed) Scoped("", List("CSS を解析できませんでした"))
       else {
         val out = mutable.ListBuffer.empty[String]
@@ -201,8 +266,13 @@ object CustomCss {
   }
 
   /** 添付ファイルの URL をゲスト向けの公開リンク経由に読み替える */
-  def guestAttachmentUrl(token: String)(u: String): String =
-    if (u.startsWith("/api/attachments/")) s"/api/public/$token/attachments/" + u.substring("/api/attachments/".length) else u
+  def guestAttachmentUrl(
+    token: String
+  )(
+    u: String
+  ): String =
+    if (u.startsWith("/api/attachments/")) s"/api/public/$token/attachments/" + u.substring("/api/attachments/".length)
+    else u
 
   /** 重ねたCSSを <head> に入れる（旧 useCustomCss）. set で入れ替え、destroy で取り除く */
   final class Applier {
@@ -212,7 +282,10 @@ object CustomCss {
     dom.document.head.appendChild(el)
 
     /** guestToken: ゲスト表示のトークン（添付ファイルを公開リンク経由にする） */
-    def set(layers: Seq[String], guestToken: Option[String] = None): Unit = {
+    def set(
+      layers: Seq[String],
+      guestToken: Option[String] = None
+    ): Unit = {
       val map = guestToken.map(t => guestAttachmentUrl(t))
       el.textContent = layers.map(c => scopeCss(c, PageScope, map).css).mkString("\n")
     }

@@ -60,7 +60,7 @@ val SideKey = "skiwi.guestSide"
 def collapsedKey(props: Props): String = s"skiwi.guestCollapsed.${props.token}"
 
 def mounted(s: State, props: Props): Unit = {
-  pageTitle(s.current.mapC(_.fold("skiwi")(p => s"${p.displayTitle} - skiwi")))
+  pageTitle(s.current.mapC(_.fold("公開ページ")(_.displayTitle)))
   // サイドメニュー
   val mq = dom.window.matchMedia("(max-width: 720px)")
   s.narrow := mq.matches

@@ -13,7 +13,9 @@ object AvatarImage {
   private val MaxBytes = 200 * 1024
 
   /** 画像ファイルを、真ん中を正方形に切り抜いて Size に縮める（WebP、使えなければ JPEG. 200KB に収まるまで画質を下げる） */
-  def squareImage(file: dom.Blob): Future[dom.Blob] =
+  def squareImage(
+    file: dom.Blob
+  ): Future[dom.Blob] =
     js.Dynamic.global.createImageBitmap(file).asInstanceOf[js.Promise[js.Dynamic]].toFuture
       .recover { case _ => throw new Exception("画像として読めませんでした（PNG・JPEG・WebP・GIF などを選んでください）") }
       .flatMap { bmp =>
@@ -27,12 +29,17 @@ object AvatarImage {
         g.imageSmoothingQuality = "high"
         g.drawImage(bmp, (w - side) / 2, (h - side) / 2, side, side, 0, 0, Size, Size)
         bmp.close()
-        def encode(tpe: String, q: Double): Future[Option[dom.Blob]] = {
+        def encode(
+          tpe: String,
+          q: Double
+        ): Future[Option[dom.Blob]] = {
           val p = Promise[Option[dom.Blob]]()
           canvas.asInstanceOf[js.Dynamic].toBlob((b: dom.Blob) => p.success(Option(b)), tpe, q)
           p.future
         }
-        def tryQ(qs: List[Double]): Future[dom.Blob] = qs match {
+        def tryQ(
+          qs: List[Double]
+        ): Future[dom.Blob] = qs match {
           case Nil => Future.failed(new Exception("画像を小さくできませんでした"))
           case q :: rest =>
             encode("image/webp", q)

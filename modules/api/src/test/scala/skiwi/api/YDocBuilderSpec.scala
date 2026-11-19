@@ -2,7 +2,7 @@ package skiwi.api
 
 import munit.FunSuite
 
-class YDocBuilderSpec extends FunSuite:
+class YDocBuilderSpec extends FunSuite {
   test("paragraphs build a non-empty update and matching JSON") {
     val (bytes, json, text) = YDocBuilder.paragraphs(List("こんにちは🌸", "", "second line"))
     assert(bytes.length > 20)
@@ -13,3 +13,4 @@ class YDocBuilderSpec extends FunSuite:
   test("split trims blank edges") {
     assertEquals(YDocBuilder.split("\n\na\r\n\nb\n\n"), List("a", "", "b"))
   }
+}

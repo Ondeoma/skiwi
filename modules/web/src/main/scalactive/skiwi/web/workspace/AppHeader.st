@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import skiwi.web.Nav
 import skiwi.web.{Api, Store, Theme}
 import skiwi.web.parts.Avatar
@@ -37,9 +38,9 @@ def onThemeClick(e: org.scalajs.dom.Event): Unit = {
 <template>
   <header class="app-header" data-testid="app-header">
     <button v-if="!props.sideOpen.v" class="side-open" :title='s"サイドメニューを開く（${props.shortcut}）"' data-testid="side-open" @click="props.onOpenSide(())">☰</button>
-    <a href="/" class="brand" title="skiwi" @click='Nav.link(event, "/")'>
-      <img src="/logo.svg" alt="" width="28" height="28">
-      <span>skiwi</span>
+    <a href="/" class="brand" :title="AppNames.self.v" @click='Nav.link(event, "/")'>
+      <img :src='AppNames.logo("/logo.svg").v' alt="" height="28" class="brand-logo">
+      <span>{{ AppNames.self }}</span>
     </a>
     <IntegrationConnect part="notice" />
     <div class="user-wrap">
@@ -86,7 +87,7 @@ def onThemeClick(e: org.scalajs.dom.Event): Unit = {
 .side-open { width: 30px; height: 28px; padding: 0; color: var(--muted); background: var(--bg); }
 .side-open:hover { color: var(--fg); }
 .brand { display: inline-flex; align-items: center; gap: .45rem; color: var(--fg); text-decoration: none; font-weight: 700; font-size: 1.05rem; }
-.brand img { display: block; border-radius: 7px; }
+.brand img { display: block; border-radius: 7px; width: auto; }
 .user-wrap { position: relative; margin-left: auto; }
 .user { display: grid; place-items: center; border: none; border-radius: 50%; padding: 2px; background: none; }
 .user:hover, .user[aria-expanded="true"] { background: var(--hover); }

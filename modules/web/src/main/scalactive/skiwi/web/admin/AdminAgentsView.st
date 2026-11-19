@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import skiwi.shared.*
 import skiwi.web.{Dialog, Fmt, Nav}
 
@@ -107,7 +108,7 @@ def keyOpen(s: State, a: AgentDto): Boolean = s.keyFor.v.contains(a.id)
     <h1>🤖 エージェント専用アカウント</h1>
     <div class="about muted">
       <p>
-        skakapo などの外部の AI エージェントが skiwi の MCP（<code>/mcp</code>）と REST API を使うための、ログインしないアカウントです。
+        {{ AppNames.of("skakapo") }} などの外部の AI エージェントが {{ AppNames.self }} の MCP（<code>/mcp</code>）と REST API を使うための、ログインしないアカウントです。
         エージェントはここで発行した API キーで、<strong>このアカウント自身の権限</strong>で動きます（管理者の権限は持ちません）。
       </p>
       <p>
@@ -127,7 +128,7 @@ def keyOpen(s: State, a: AgentDto): Boolean = s.keyFor.v.contains(a.id)
       <code>{{ createdKey(s) }}</code>
       <button @click="copy(s)">コピー</button>
       <button @click="s.created := None">閉じる</button>
-      <p class="note">この画面を閉じると二度と表示されません。skakapo の管理画面の「サービス」→ このサービス →「エージェント専用アカウント」に貼り付けてください。</p>
+      <p class="note">この画面を閉じると二度と表示されません。{{ AppNames.of("skakapo") }} の管理画面の「サービス」→ このサービス →「エージェント専用アカウント」に貼り付けてください。</p>
     </div>
 
     <p v-if="s.rows.v.isEmpty" class="muted">読み込み中…</p>

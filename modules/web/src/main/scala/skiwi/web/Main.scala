@@ -11,8 +11,12 @@ import org.scalajs.dom
  */
 object Main {
 
-  def main(args: Array[String]): Unit = {
+  def main(
+    args: Array[String]
+  ): Unit = {
+    ScalactiveConfig.titleTemplate = "%s | skiwi"
     ScalactiveConfig.defaultTitle = Some("skiwi")
+    AppNames.init("skiwi")
     // 画面の移動で一番上へ戻すのは、各画面（スクロールする領域）に任せる
     ScalactiveConfig.scrollToTopOnNavigate = false
     Theme.apply()

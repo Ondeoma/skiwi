@@ -2,7 +2,7 @@
 import io.circe.Json
 import io.circe.syntax.*
 import org.scalajs.dom
-import skiwi.web.Api
+import skiwi.web.{Api, AppNames}
 
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.util.{Failure, Success}
@@ -30,7 +30,7 @@ def mounted(): Unit = dom.document.title = "ログイン - skiwi"
 
 <template>
   <div class="login">
-    <img src="/logo.svg" alt="skiwi" width="96" height="96" class="logo">
+    <img :src='AppNames.logo("/logo.svg").v' :alt="AppNames.self.v" height="96" class="logo">
     <h1>skiwi にログイン</h1>
     <p class="muted">開発用のログインです（IdP が設定されていない環境だけで使えます）。</p>
     <form @submit.prevent="login(s)">
@@ -45,7 +45,7 @@ def mounted(): Unit = dom.document.title = "ログイン - skiwi"
 
 <style scoped>
 .login { max-width: 420px; margin: 8vh auto 0; padding: 1.6rem; border: 1px solid var(--line); border-radius: 10px; }
-.logo { display: block; margin: 0 auto .6rem; }
+.logo { display: block; margin: 0 auto .6rem; width: auto; }
 h1 { text-align: center; font-size: 1.4rem; }
 .field { display: flex; flex-direction: column; gap: .25rem; margin: .8rem 0; }
 .field input { padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; }

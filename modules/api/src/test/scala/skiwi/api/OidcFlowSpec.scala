@@ -10,30 +10,30 @@ import org.http4s.dsl.io.*
 import org.http4s.headers.Location
 import org.http4s.implicits.*
 import cats.syntax.semigroupk.*
-import skiwi.auth.*
+import sbirds.auth.*
 import skiwi.db.*
 
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
 /** ログイン〜コールバック〜セッション〜/api/me を、偽のIdP(メモリ内)で通しで検証する。 */
-class OidcFlowSpec extends DbSuite:
+class OidcFlowSpec extends DbSuite {
 
   private val issuer = "https://idp.test/application/o/skiwi/"
   private val oidcCfg = OidcConfig(issuer, "skiwi-client", "s3cret", "https://skiwi.test/auth/callback")
 
   test("authorization code + PKCE flow creates a session with groups") {
     if cfg.isEmpty then IO(assume(false, "TEST_DATABASE_URL not set"))
-    else
+    else {
       val c = cfg.get
-      (for
-        _  <- Resource.eval(Database.migrate(c))
+      (for {
+        _ <- Resource.eval(Database.migrate(c))
         xa <- Database.transactor(c)
-      yield xa).use { xa =>
+      } yield xa).use { xa =>
         val store = new Store(xa)
-        for
+        for {
           challenge <- Ref.of[IO, String]("")
-          nonce     <- Ref.of[IO, String]("")
+          nonce <- Ref.of[IO, String]("")
           tokenForm <- Ref.of[IO, Option[UrlForm]](None)
           idp = HttpRoutes.of[IO] {
             case GET -> Root / "application" / "o" / "skiwi" / ".well-known" / "openid-configuration" =>
@@ -41,19 +41,26 @@ class OidcFlowSpec extends DbSuite:
                 "issuer" -> issuer.asJson,
                 "authorization_endpoint" -> "https://idp.test/authorize".asJson,
                 "token_endpoint" -> "https://idp.test/token".asJson,
-                "end_session_endpoint" -> "https://idp.test/logout".asJson))
+                "end_session_endpoint" -> "https://idp.test/logout".asJson
+              ))
             case req @ POST -> Root / "token" =>
               req.as[UrlForm].flatMap { f =>
                 tokenForm.set(Some(f)) *> nonce.get.flatMap { n =>
                   val claims = Json.obj(
-                    "iss" -> issuer.asJson, "aud" -> "skiwi-client".asJson,
+                    "iss" -> issuer.asJson,
+                    "aud" -> "skiwi-client".asJson,
                     "exp" -> (System.currentTimeMillis / 1000 + 300).asJson,
-                    "nonce" -> n.asJson, "sub" -> s"sub-${java.util.UUID.randomUUID()}".asJson,
-                    "name" -> "鈴木 花子".asJson, "email" -> "hanako@example.com".asJson,
-                    "groups" -> List("skiwi-admins", "営業部").asJson)
+                    "nonce" -> n.asJson,
+                    "sub" -> s"sub-${java.util.UUID.randomUUID()}".asJson,
+                    "name" -> "鈴木 花子".asJson,
+                    "email" -> "hanako@example.com".asJson,
+                    "groups" -> List("skiwi-admins", "営業部").asJson
+                  )
                   val e = Base64.getUrlEncoder.withoutPadding()
-                  val jwt = e.encodeToString("""{"alg":"none"}""".getBytes) + "." +
-                    e.encodeToString(claims.noSpaces.getBytes(StandardCharsets.UTF_8)) + ".x"
+                  // HS256（クライアントシークレットで署名. OIDC Core 10.1）
+                  val input = e.encodeToString("""{"alg":"HS256"}""".getBytes) + "." +
+                    e.encodeToString(claims.noSpaces.getBytes(StandardCharsets.UTF_8))
+                  val jwt = input + "." + e.encodeToString(Crypto.hmacSha256(oidcCfg.clientSecret, input.getBytes))
                   Ok(Json.obj("id_token" -> jwt.asJson, "access_token" -> "at".asJson, "token_type" -> "Bearer".asJson))
                 }
               }
@@ -63,7 +70,9 @@ class OidcFlowSpec extends DbSuite:
           ops = new OpsStore(xa)
           sess = new SessionAuth(store, ops, apiCfg)
           audit = new Audit(ops)
-          app = (new AuthRoutes(Some(oidc), store, sess, audit, publicUrl = "https://skiwi.test").routes <+> new ApiRoutes(store, new DocStore(xa), ops, sess, audit).routes).orNotFound
+          app =
+            (new AuthRoutes(Some(oidc), store, sess, audit, publicUrl = "https://skiwi.test").routes <+>
+              new ApiRoutes(store, new DocStore(xa), ops, sess, audit).routes).orNotFound
 
           // 1) /auth/login → IdPへのリダイレクト (PKCE S256, state, nonce)
           login <- app.run(Request[IO](Method.GET, uri"/auth/login"))
@@ -82,7 +91,10 @@ class OidcFlowSpec extends DbSuite:
           csrf <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")))
           _ = assertEquals(csrf.status, Status.BadRequest)
           // 2) /auth/callback → セッションCookie
-          cb <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")).addCookie("skiwi_login_state", stateCk.content))
+          cb <- app.run(Request[IO](
+            Method.GET,
+            Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")
+          ).addCookie("skiwi_login_state", stateCk.content))
           _ = assertEquals(cb.status, Status.Found)
           setCookie = cb.cookies.find(_.name == "skiwi_session").get
           _ = assert(setCookie.httpOnly && setCookie.secure)
@@ -97,13 +109,16 @@ class OidcFlowSpec extends DbSuite:
 
           // 3) セッションで /api/me
           me <- app.run(Request[IO](Method.GET, uri"/api/me").addCookie("skiwi_session", setCookie.content))
-          j  <- me.as[Json]
+          j <- me.as[Json]
           _ = assertEquals(j.hcursor.get[String]("name"), Right("鈴木 花子"))
           _ = assertEquals(j.hcursor.get[Boolean]("isAdmin"), Right(true))
           _ = assertEquals(j.hcursor.get[List[String]]("groups").map(_.toSet), Right(Set("skiwi-admins", "営業部")))
 
           // 4) stateは1回限り。再利用は拒否
-          replay <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")).addCookie("skiwi_login_state", stateCk.content))
+          replay <- app.run(Request[IO](
+            Method.GET,
+            Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")
+          ).addCookie("skiwi_login_state", stateCk.content))
           _ = assertEquals(replay.status, Status.BadRequest)
 
           // 5) ログアウト後は401. IdP にもログアウトを頼む（id_token_hint と戻り先を付けた end_session_endpoint を返す）
@@ -116,6 +131,8 @@ class OidcFlowSpec extends DbSuite:
           _ = assert(idp.query.params.get("id_token_hint").exists(_.nonEmpty))
           after <- app.run(Request[IO](Method.GET, uri"/api/me").addCookie("skiwi_session", setCookie.content))
           _ = assertEquals(after.status, Status.Unauthorized)
-        yield ()
+        } yield ()
       }
+    }
   }
+}

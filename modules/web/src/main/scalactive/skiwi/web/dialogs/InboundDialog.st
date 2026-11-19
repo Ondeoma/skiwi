@@ -117,7 +117,7 @@ def title(p: Props): String = s"📥 受信用の Webhook — ${p.name}"
 <template>
   <Modal label="受信用の Webhook" :title="title(props)" testid="inbound" :width="660" @close="props.onClose(())">
     <template #head><HelpLink to="automation#受信用の-webhook外からページを作る" /></template>
-    <p class="note">URL に JSON を POST すると、データベースに項目を追加したり、子ページ・コメントを作ったりします。フォーム・監視ツール・問い合わせ窓口の通知を skiwi に集められます。
+    <p class="note">URL に JSON を POST すると、データベースに項目を追加したり、子ページ・コメントを作ったりします。フォーム・監視ツール・問い合わせ窓口の通知を {{ AppNames.self }} に集められます。
       作った人の権限で動きます（その人が受け取り先を編集できなくなると止まります）。1分に60件まで。</p>
     <p v-if="s.error.v.nonEmpty" class="error" data-testid="inbound-error">{{ s.error }}</p>
 

@@ -3,20 +3,30 @@ package skiwi.collab
 import scodec.bits.ByteVector
 import skiwi.ydoc.YReader
 
-class ProtocolSpec extends munit.FunSuite:
+class ProtocolSpec extends munit.FunSuite {
   import Protocol.Inbound.*
 
-  private def varUint(n: Long)       = Protocol.write(_.varUint(n))
-  private def varString(s: String)   = Protocol.write(_.string(s))
-  private def varBytes(b: ByteVector) = Protocol.write(Protocol.writeVarBytes(_, b))
+  private def varUint(
+    n: Long
+  ) = Protocol.write(_.varUint(n))
+  private def varString(
+    s: String
+  ) = Protocol.write(_.string(s))
+  private def varBytes(
+    b: ByteVector
+  ) = Protocol.write(Protocol.writeVarBytes(_, b))
+
   /** 読めなければ None。読めたら (値, 読んだバイト数) */
-  private def readVarUint(b: ByteVector) =
+  private def readVarUint(
+    b: ByteVector
+  ) =
     scala.util.Try { val r = YReader(b.toArray); (r.varUint(), r.position) }.toOption
 
   test("varuint roundtrip across sizes") {
-    for n <- List(0L, 1L, 127L, 128L, 300L, 16383L, 16384L, 1L << 31, (1L << 40) + 5) do
+    for n <- List(0L, 1L, 127L, 128L, 300L, 16383L, 16384L, 1L << 31, (1L << 40) + 5) do {
       val enc = varUint(n)
       assertEquals(readVarUint(enc), Some((n, enc.size.toInt)))
+    }
   }
 
   test("varuint known encodings (lib0)") {
@@ -59,3 +69,4 @@ class ProtocolSpec extends munit.FunSuite:
     assertEquals(Protocol.parse(frame), CompactResponse("tok", ByteVector(9, 9), """{"type":"doc"}""", "本文"))
     assertEquals(Protocol.parse(frame.dropRight(1)), Malformed)
   }
+}

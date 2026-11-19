@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import skiwi.web.Nav
 import io.circe.Json
 import io.circe.parser.parse
@@ -205,7 +206,7 @@ def resultOk(r: TryResult): Boolean = r.status >= 200 && r.status < 300
 <template>
   <div class="docs" data-testid="api-docs">
     <header>
-      <a href="/" @click='Nav.link(event, "/")' class="back">← skiwi に戻る</a>
+      <a href="/" @click='Nav.link(event, "/")' class="back">← {{ AppNames.self }} に戻る</a>
       <h1>📘 API の説明書</h1>
       <p class="links"><a href="/openapi.json" target="_blank" rel="noopener">openapi.json</a>（OpenAPI 3.0。各種ツールに読み込めます）・<a href="/settings/tokens" @click='Nav.link(event, "/settings/tokens")'>APIトークンを発行</a></p>
     </header>

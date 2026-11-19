@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import skiwi.web.Nav
 import org.scalajs.dom
 
@@ -17,7 +18,7 @@ case class State(docs: RV[Option[HelpDocs]] = RV(None),
 def initState() = State()
 
 def mounted(s: State, props: Props): Unit = {
-  pageTitle(s.docs.mapC(d => current(d, props).fold("使い方 - skiwi")(c => s"${c.title} - 使い方 - skiwi")))
+  pageTitle(s.docs.mapC(d => current(d, props).fold("使い方")(c => s"${c.title} - 使い方")))
   HelpDocs.load().foreach { d =>
     s.docs := Some(d)
     s.hits := d.search(s.q.v)
@@ -110,9 +111,9 @@ def back(): Unit = if (dom.window.history.length > 1) dom.window.history.back() 
   <div class="help" data-testid="help">
     <header class="bar">
       <button class="menu-btn" title="目次" @click="s.sideOpen := !s.sideOpen.v">☰</button>
-      <a href="/help" @click='Nav.link(event, "/help")' class="brand">📖 skiwi の使い方</a>
+      <a href="/help" @click='Nav.link(event, "/help")' class="brand">📖 {{ AppNames.self }} の使い方</a>
       <input v-model="s.q" type="search" class="search" placeholder="🔍 マニュアルを検索（例: 共有、期限、データベース）" data-testid="help-search">
-      <button class="back" @click="back()">← skiwi に戻る</button>
+      <button class="back" @click="back()">← {{ AppNames.self }} に戻る</button>
     </header>
     <div class="layout">
       <nav :class='if (s.sideOpen.v) "side open" else "side"' aria-label="マニュアルの目次" data-testid="help-toc">
@@ -149,7 +150,7 @@ def back(): Unit = if (dom.window.history.length > 1) dom.window.history.back() 
 
           <!-- 目次（トップ） -->
           <section v-else class="top">
-            <h1>📖 skiwi の使い方</h1>
+            <h1>📖 {{ AppNames.self }} の使い方</h1>
             <p class="lead">チームの知識をページにまとめ、同時に編集し、必要な人と共有するための Wiki です。知りたいことを上の検索欄で探すか、下の章から読んでください。
               画面の「?」キーでキーボードショートカットの一覧、各画面の「？ 使い方」からその機能の説明を開けます。</p>
             <div class="cards">

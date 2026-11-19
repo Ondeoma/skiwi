@@ -70,7 +70,7 @@ def title(p: Props): String = s"🌐 ゲスト向けの表示 ― ${Dlg.untitled
     <p class="note">
       ゲスト向けの公開ページで、本文の上と下に入れるHTMLです（ログインしている人の画面には出ません）。
       {{ if (props.kind == "workspace") "このワークスペースの全ページに入ります。" else "" }}
-      HTMLは隔離された枠（iframe）の中で表示するため、スクリプトも使えますが、skiwi の画面やログイン情報には触れられません。リンクはページ全体で開きます。
+      HTMLは隔離された枠（iframe）の中で表示するため、スクリプトも使えますが、{{ AppNames.self }} の画面やログイン情報には触れられません。リンクはページ全体で開きます。
     </p>
     <p v-if="s.loading.v" class="muted">読み込み中…</p>
     <template v-else>

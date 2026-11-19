@@ -1,7 +1,6 @@
 <script lang="scala">
-import io.circe.syntax.*
 import org.scalajs.dom
-import skiwi.web.{Api, JsModule, Nav, Ui}
+import skiwi.web.{Api, Nav, Ui}
 import skiwi.web.editor.PageLinks
 
 import scala.concurrent.Future
@@ -31,7 +30,7 @@ case class State(children: RV[Boolean] = RV(!Nav.query("children").contains("0")
 def initState() = State()
 
 def mounted(s: State, props: Props): Unit = {
-  pageTitle(s.docTitle.mapC(t => if (t.isEmpty) "skiwi" else s"$t - PDF"))
+  pageTitle(s.docTitle.mapC(t => if (t.isEmpty) "PDF" else s"$t - PDF"))
   load(s, props).foreach { _ =>
     // 自動で印刷画面を開く（図・数式の描画を少し待つ）
     if (s.error.v.isEmpty && !Nav.query("auto").contains("0")) dom.window.setTimeout(() => dom.window.print(), 1200)

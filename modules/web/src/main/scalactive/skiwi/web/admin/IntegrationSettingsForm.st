@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.AppNames
 import org.scalajs.dom
 import skiwi.web.Dialog
 
@@ -42,7 +43,7 @@ def save(s: State, props: Props): Unit = {
   val ok = s.current.v match {
     case Some(before) if before.connections > 0 && before.url.nonEmpty &&
       (s.url.v.trim.stripSuffix("/") != before.url || s.clientId.v.trim != before.clientId) =>
-      Dialog.confirm(s"$name の URL か client_id を変えると、連携済みの ${before.connections} 人の連携が外れます（各自で連携し直しが必要です）。保存しますか？",
+      Dialog.confirm(s"${AppNames.nameOf(name)} の URL か client_id を変えると、連携済みの ${before.connections} 人の連携が外れます（各自で連携し直しが必要です）。保存しますか？",
         okLabel = "保存", danger = true)
     case _ => Future.successful(true)
   }
@@ -76,15 +77,15 @@ def secretPlaceholder(s: State): String = if (cur(s).exists(_.clientSecretSet)) 
   <p v-else-if="cur(s).isEmpty" class="muted">読み込み中…</p>
   <template v-else>
     <section class="box">
-      <h3>{{ props.svc }} に登録する redirect_uri</h3>
-      <p class="muted small">{{ props.svc }} の管理者に、クライアント（client_id・client_secret）とあわせて、この URL を登録してもらいます（完全一致で照合されます）。</p>
+      <h3>{{ AppNames.of(props.svc) }} に登録する redirect_uri</h3>
+      <p class="muted small">{{ AppNames.of(props.svc) }} の管理者に、クライアント（client_id・client_secret）とあわせて、この URL を登録してもらいます（完全一致で照合されます）。</p>
       <div class="copy">
         <code :data-testid='props.svc + "-redirect-uri"'>{{ cur(s).fold("")(_.redirectUri) }}</code>
         <button type="button" @click="copy(s)">{{ if (s.copied.v) "コピーしました" else "コピー" }}</button>
       </div>
     </section>
     <form class="box cfg" :data-testid='props.svc + "-settings"' @submit.prevent="save(s, props)">
-      <label>{{ props.svc }} の URL
+      <label>{{ AppNames.of(props.svc) }} の URL
         <input v-model="s.url" type="url" :placeholder='"https://" + props.svc + ".example.com"' :data-testid='props.svc + "-url"'>
       </label>
       <label>client_id
@@ -104,7 +105,7 @@ def secretPlaceholder(s: State): String = if (cur(s).exists(_.clientSecretSet)) 
       </div>
       <p v-if="s.saveError.v.nonEmpty" class="error" :data-testid='props.svc + "-save-error"'>{{ s.saveError }}</p>
       <p class="muted small">
-        URL・client_id・client_secret{{ if (props.projectKeys) "・プロジェクトキー" else "" }}がすべて揃うと、ユーザーのサイドバーに「{{ props.svc }} と連携」が出ます。URL を空にすると連携を止めます。
+        URL・client_id・client_secret{{ if (props.projectKeys) "・プロジェクトキー" else "" }}がすべて揃うと、ユーザーのサイドバーに「{{ AppNames.of(props.svc) }} と連携」が出ます。URL を空にすると連携を止めます。
       </p>
     </form>
   </template>

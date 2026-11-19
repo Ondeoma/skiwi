@@ -5,7 +5,11 @@ import skiwi.web.Ui
 /** 「:」で入力する絵文字（絵文字 名前 別名…。日本語・ひらがな・英語で探せる）. エディタの EmojiSuggest が使う */
 object Emoji {
 
-  final case class Item(emoji: String, name: String, keys: String) {
+  final case class Item(
+    emoji: String,
+    name: String,
+    keys: String) {
+
     /** 前方一致用に、名前・別名を語に分けておく */
     val words: Array[String] = keys.split(' ')
   }
@@ -19,7 +23,10 @@ object Emoji {
   }
 
   /** 名前・別名の前方一致を先に、含むものを後に */
-  def find(q: String, limit: Int = 12): List[Item] = {
+  def find(
+    q: String,
+    limit: Int = 12
+  ): List[Item] = {
     val k = Ui.normalizeForSearch(q.trim)
     if (k.isEmpty) items.take(limit)
     else {

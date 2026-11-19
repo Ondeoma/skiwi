@@ -18,7 +18,11 @@ import scala.util.{Failure, Success}
  */
 object PageLinks {
 
-  final case class PageUrl(workspaceId: String, pageId: String, blockId: Option[String], anchor: Option[String])
+  final case class PageUrl(
+    workspaceId: String,
+    pageId: String,
+    blockId: Option[String],
+    anchor: Option[String])
 
   private val Uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
   private val PathRe = s"(?i)^/w/($Uuid)/p/($Uuid)/?(?:\\?[^#]*)?(?:#(.*))?$$".r
@@ -26,18 +30,26 @@ object PageLinks {
   private val BlockRe = "(?i)^block-([0-9a-z]{4,40})$".r
 
   /** このシステムのページの URL か（同じホストのものだけ）. blockId: 同期ブロック（#sync-ID）、anchor: ブロック（#block-ID） */
-  def parse(raw: String): Option[PageUrl] = {
+  def parse(
+    raw: String
+  ): Option[PageUrl] = {
     val s = raw.trim
     if (s.isEmpty || "\\s".r.findFirstIn(s).isDefined) None
     else {
       val path =
         if ("(?i)^https?://.*".r.matches(s))
-          scala.util.Try(new dom.URL(s)).toOption.filter(_.host == dom.window.location.host).map(u => u.pathname + u.search + u.hash)
+          scala.util.Try(new dom.URL(s)).toOption.filter(_.host == dom.window.location.host).map(u =>
+            u.pathname + u.search + u.hash
+          )
         else Some(s)
       path.flatMap(PathRe.findFirstMatchIn).map { m =>
         val frag = Option(m.group(3)).getOrElse("")
-        PageUrl(m.group(1).toLowerCase, m.group(2).toLowerCase,
-          SyncRe.findFirstMatchIn(frag).map(_.group(1)), BlockRe.findFirstMatchIn(frag).map(_.group(1)))
+        PageUrl(
+          m.group(1).toLowerCase,
+          m.group(2).toLowerCase,
+          SyncRe.findFirstMatchIn(frag).map(_.group(1)),
+          BlockRe.findFirstMatchIn(frag).map(_.group(1))
+        )
       }
     }
   }
@@ -48,7 +60,9 @@ object PageLinks {
   private def changed(): Unit = listeners.foreach(_())
 
   /** ページ情報・ゲスト表示の状態が変わったら f を呼ぶ. 戻り値で解除 */
-  def onChange(f: js.Function0[Unit]): () => Unit = {
+  def onChange(
+    f: js.Function0[Unit]
+  ): () => Unit = {
     listeners += f
     () => listeners -= f
   }
@@ -56,24 +70,34 @@ object PageLinks {
   // ---------------------------------------------------------------- 表示用のページ情報
 
   /** state: loading / ok / denied（削除済み・権限なし） */
-  final case class LinkInfo(state: String, title: String = "", icon: Option[String] = None, workspaceId: String = "")
+  final case class LinkInfo(
+    state: String,
+    title: String = "",
+    icon: Option[String] = None,
+    workspaceId: String = "")
 
   private var cache: Map[String, LinkInfo] = Map.empty
 
-  def pageInfo(pageId: String): LinkInfo = cache.getOrElse(pageId, {
-    val loading = LinkInfo("loading")
-    cache += pageId -> loading
-    Api.page(pageId, redirectOn401 = false).onComplete {
-      case Success(p) => cache += pageId -> LinkInfo("ok", p.title, p.icon, p.workspaceId); changed()
-      case Failure(_: ApiError) => cache += pageId -> LinkInfo("denied"); changed()
-      case Failure(_) => cache -= pageId // 通信エラーは次に表示するときにやり直す（すぐには知らせない）
+  def pageInfo(
+    pageId: String
+  ): LinkInfo = cache.getOrElse(
+    pageId, {
+      val loading = LinkInfo("loading")
+      cache += pageId -> loading
+      Api.page(pageId, redirectOn401 = false).onComplete {
+        case Success(p) => cache += pageId -> LinkInfo("ok", p.title, p.icon, p.workspaceId); changed()
+        case Failure(_: ApiError) => cache += pageId -> LinkInfo("denied"); changed()
+        case Failure(_) => cache -= pageId // 通信エラーは次に表示するときにやり直す（すぐには知らせない）
+      }
+      loading
     }
-    loading
-  })
+  )
 
   // ---------------------------------------------------------------- ゲスト表示
 
-  final case class Guest(token: String, pages: Map[String, GuestPage])
+  final case class Guest(
+    token: String,
+    pages: Map[String, GuestPage])
 
   private var guestCtx: Option[Guest] = None
 
@@ -81,19 +105,31 @@ object PageLinks {
   def guest: Option[Guest] = guestCtx
 
   /** ゲスト表示（公開ページ・印刷）を始める・終える（None） */
-  def setGuest(ctx: Option[(String, List[GuestPage])]): Unit = {
-    guestCtx = ctx.map((token, pages) => Guest(token, pages.map(p => p.id -> p).toMap))
+  def setGuest(
+    ctx: Option[(String, List[GuestPage])]
+  ): Unit = {
+    guestCtx = ctx.map(
+      (
+        token,
+        pages
+      ) => Guest(token, pages.map(p => p.id -> p).toMap)
+    )
     changed()
   }
 
   // ---------------------------------------------------------------- 同期ブロックの元ページ
 
-  final case class SyncedSource(title: String, content: io.circe.Json)
+  final case class SyncedSource(
+    title: String,
+    content: io.circe.Json)
 
   private val Ttl = 1000.0
   private var recent: Map[String, (Double, Future[Option[SyncedSource]])] = Map.empty
 
-  private def load(pid: String, guestToken: Option[String]): Future[Option[SyncedSource]] = guestToken match {
+  private def load(
+    pid: String,
+    guestToken: Option[String]
+  ): Future[Option[SyncedSource]] = guestToken match {
     case Some(t) => GuestApi.page(t, pid).map(r => Some(SyncedSource(r.page.title, r.content)))
     case None =>
       // 取れなければ「権限なし」として表示する（ログイン画面には飛ばさない）
@@ -104,9 +140,17 @@ object PageLinks {
   }
 
   /** 元ページのタイトルと保存済みの本文（見られなければ None） */
-  def syncedSource(pid: String, guestToken: Option[String]): Future[Option[SyncedSource]] = {
+  def syncedSource(
+    pid: String,
+    guestToken: Option[String]
+  ): Future[Option[SyncedSource]] = {
     val now = js.Date.now()
-    recent = recent.filter((_, v) => now - v._1 < Ttl)
+    recent = recent.filter(
+      (
+        _,
+        v
+      ) => now - v._1 < Ttl
+    )
     val key = s"${guestToken.getOrElse("")}:$pid"
     recent.get(key).map(_._2).getOrElse {
       val p = load(pid, guestToken)
@@ -118,36 +162,52 @@ object PageLinks {
 
   private var subscribers: Set[js.Function0[Unit]] = Set.empty
   private var timer: Option[Int] = None
-  private val onVisible: js.Function1[dom.Event, Unit] = _ => if (dom.document.visibilityState == "visible") subscribers.foreach(_())
+  private val onVisible: js.Function1[dom.Event, Unit] =
+    _ => if (dom.document.visibilityState == "visible") subscribers.foreach(_())
 
   /** 30秒ごと・画面に戻ったときに refresh を呼ぶ. 戻り値で止める */
-  def onSyncedRefresh(refresh: js.Function0[Unit]): () => Unit = {
+  def onSyncedRefresh(
+    refresh: js.Function0[Unit]
+  ): () => Unit = {
     subscribers += refresh
     if (subscribers.size == 1) {
       timer = Some(dom.window.setInterval(() => onVisible(null), 30000))
       dom.document.addEventListener("visibilitychange", onVisible)
     }
-    () => if (subscribers.contains(refresh)) {
-      subscribers -= refresh
-      if (subscribers.isEmpty) {
-        timer.foreach(dom.window.clearInterval)
-        timer = None
-        dom.document.removeEventListener("visibilitychange", onVisible)
+    () =>
+      if (subscribers.contains(refresh)) {
+        subscribers -= refresh
+        if (subscribers.isEmpty) {
+          timer.foreach(dom.window.clearInterval)
+          timer = None
+          dom.document.removeEventListener("visibilitychange", onVisible)
+        }
       }
-    }
   }
 
   /** 本文（ProseMirror JSON）の中の同期ブロック（ID・中の文字・ノード）. 埋め込む範囲を選ぶ・表示するときに使う */
-  def syncedBlocks(doc: js.Any): js.Array[js.Any] = {
+  def syncedBlocks(
+    doc: js.Any
+  ): js.Array[js.Any] = {
     val out = js.Array[js.Any]()
-    def children(n: js.Dynamic): List[js.Dynamic] =
+    def children(
+      n: js.Dynamic
+    ): List[js.Dynamic] =
       if (js.isUndefined(n.content) || n.content == null) Nil else n.content.asInstanceOf[js.Array[js.Dynamic]].toList
-    def textOf(n: js.Dynamic): String =
-      (if (js.isUndefined(n.text) || n.text == null) "" else n.text.toString) + children(n).map(textOf).map(" " + _).mkString
-    def walk(n: js.Dynamic): Unit =
+    def textOf(
+      n: js.Dynamic
+    ): String =
+      (if (js.isUndefined(n.text) || n.text == null) "" else n.text.toString) +
+        children(n).map(textOf).map(" " + _).mkString
+    def walk(
+      n: js.Dynamic
+    ): Unit =
       if (!js.isUndefined(n) && n != null && js.typeOf(n) == "object") {
         val attrs = n.attrs
-        if (n.`type`.asInstanceOf[Any] == "syncedBlock" && !js.isUndefined(attrs) && attrs != null && !js.isUndefined(attrs.id) && attrs.id != null && attrs.id.toString.nonEmpty)
+        if (
+          n.`type`.asInstanceOf[Any] == "syncedBlock" && !js.isUndefined(attrs) && attrs != null &&
+          !js.isUndefined(attrs.id) && attrs.id != null && attrs.id.toString.nonEmpty
+        )
           out.push(js.Dynamic.literal(id = attrs.id, text = textOf(n).replaceAll("\\s+", " ").trim, node = n))
         children(n).foreach(walk)
       }
@@ -158,7 +218,12 @@ object PageLinks {
   /** JS（エディタ）へ渡す形 */
   def guestToJs: js.Any = guestCtx.fold[js.Any](null) { g =>
     val m = new js.Map[String, js.Any]()
-    g.pages.foreach((id, p) => m(id) = GuestApi.toJs(p.asJson))
+    g.pages.foreach(
+      (
+        id,
+        p
+      ) => m(id) = GuestApi.toJs(p.asJson)
+    )
     js.Dynamic.literal(token = g.token, pages = m)
   }
 
