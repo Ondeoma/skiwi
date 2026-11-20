@@ -1,5 +1,7 @@
 package skiwi.api
 
+import sbirds.net.NetGuard
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import com.sun.net.httpserver.HttpServer
@@ -37,7 +39,7 @@ class WorkflowSpec extends DbSuite {
       for {
         _ <- Resource.eval(Database.migrate(c))
         xa <- Database.transactor(c)
-        http <- NetGuard.client(allowPrivate = true)
+        http <- NetGuard.client(NetGuard.Policy.of(true))
       } yield {
         val store = new Store(xa)
         val ops = new OpsStore(xa)

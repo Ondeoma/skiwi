@@ -11,6 +11,7 @@ import skiwi.db.*
 import skiwi.ydoc.YEdit
 
 import java.util.UUID
+import scala.concurrent.duration.*
 
 /** 本文の書き換え方。 */
 enum ContentEditMode {
@@ -60,6 +61,9 @@ final class ContentEditRoutes(protected val store: Store,
   private val MaxMarkdown = 256 * 1024
   private val MaxBlocks = 5000
 
+  /** Yjs の状態の読み込みにかけてよい時間 */
+  private val LoadTimeout = 10.seconds
+
   private def doc(blocks: Vector[Json]): Json = Json.obj("type" -> "doc".asJson, "content" -> Json.fromValues(blocks))
 
   /** 見出しの節の範囲（最上位のブロックの番号。until は含まない）。 */
@@ -85,8 +89,13 @@ final class ContentEditRoutes(protected val store: Store,
 
   private def edit(s: AuthSession, page: Page, b: ContentEditReq, newBlocks: Vector[Json]): IO[Response[IO]] =
     docs.load(page.id).flatMap { parts =>
-      // Yjs の状態を読む（CPU を使うので、計算用のスレッドを長く占めないよう blocking で）
-      IO.blocking(YEdit.load(parts.snapshots.map(_._2) ++ parts.updates.map(_._2))).attempt
+      // Yjs の状態を読む（CPU を使うので、計算用のスレッドを長く占めないよう別のスレッドで）。
+      // 細工した update で読み込みが終わらないことがあるので、時間で打ち切る（YState は割り込みを見てやめる）
+      IO.interruptible(YEdit.load(parts.snapshots.map(_._2) ++ parts.updates.map(_._2)))
+        .timeoutTo(
+          LoadTimeout,
+          IO.raiseError(new java.util.concurrent.TimeoutException(s"${LoadTimeout.toSeconds} 秒以内に読み終わりませんでした"))
+        ).attempt
     }.flatMap {
       case Left(e) => err(ErrorCode.ContentUnreadable, s"本文を読めませんでした: ${e.getMessage}")
       case Right(state) =>

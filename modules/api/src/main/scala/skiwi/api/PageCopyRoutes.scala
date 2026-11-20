@@ -81,7 +81,8 @@ final class PageCopyRoutes(protected val store: Store,
           val sameWs = ws == p.workspaceId
           val parent = b.parentId.getOrElse(if sameWs then p.parentId else None)
           val placement = if sameWs && parent == p.parentId then Placement.After(p.id) else Placement.Last
-          val title = b.title.map(_.trim).filter(_.nonEmpty).getOrElse(s"${Titles.display(p.title)} のコピー").take(500)
+          val title =
+            b.title.map(_.trim).filter(_.nonEmpty).getOrElse(s"${Titles.display(p.title)} のコピー").take(MaxPageTitle)
           editUnder(s, ws, parent) {
             store.listPages(p.workspaceId, s).flatMap { visible =>
               store.duplicatePages(

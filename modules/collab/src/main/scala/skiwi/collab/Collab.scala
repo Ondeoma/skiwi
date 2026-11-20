@@ -1,11 +1,11 @@
 package skiwi.collab
 
+import sbirds.db.*
 import cats.effect.*
 import cats.effect.syntax.all.*
-import cats.effect.std.Semaphore
+import cats.effect.std.{Queue, Semaphore}
 import cats.syntax.all.*
 import fs2.*
-import fs2.concurrent.Topic
 import org.http4s.*
 import org.http4s.client.websocket.{WSClient, WSFrame, WSRequest}
 import org.http4s.dsl.Http4sDsl
@@ -17,7 +17,7 @@ import skiwi.api.SessionAuth
 import skiwi.collab.{Protocol as Wire}
 import sbirds.auth.Crypto
 import skiwi.core.*
-import skiwi.db.{DocStore, OpsStore, Periodic, PgBus, Store}
+import skiwi.db.{DocStore, OpsStore, PgBus, Store}
 import sbirds.observe.{Metrics, Telemetry}
 import sbirds.http.Errors
 
@@ -42,7 +42,25 @@ final case class CollabConfig(
   /** 更新通知メール: 編集が続いても、最初の更新からこの時間で送る。 */
   notifyMaxDelay: FiniteDuration = 30.minutes,
   /** 接続中セッションの権限を定期的に再確認する間隔（セッション失効・無効化への追従）。 */
-  revalidateEvery: FiniteDuration = 60.seconds)
+  revalidateEvery: FiniteDuration = 60.seconds,
+  /** 再確認で、同じ認証情報の接続のまとまり1つにかけてよい時間（1つが止まっても、ほかの接続の確認を進めるため）。 */
+  revalidateTimeout: FiniteDuration = 10.seconds,
+  /** 接続ごとの送信待ちの上限（件数）。読まない・遅い接続がこれを超えたら、その接続だけを切る。 */
+  sendQueueItems: Int = 1024,
+  /** 接続ごとの送信待ちの上限（バイト数）。1通だけなら、これより大きくても待たせる。 */
+  sendQueueBytes: Long = 16L * 1024 * 1024,
+  /** 1人が同時に開ける接続の数（ノードごと。0 以下なら制限しない）。 */
+  maxConnectionsPerUser: Int = 100,
+  /** 接続ごとに受け取る awareness の数（1秒あたり。0 以下なら制限しない）。超えた分は読むのを待たせる。 */
+  awarenessPerSecond: Int = 20,
+  /** 接続ごとに受け取る update のバイト数（1秒あたり。0 以下なら制限しない）。超えた分は読むのを待たせる。 */
+  updateBytesPerSecond: Long = 2L * 1024 * 1024,
+  /** 圧縮の応答で受け取る Yjs の状態の上限（文書全体なので、1通の update の上限より大きい）。 */
+  maxCompactBytes: Int = 32 * 1024 * 1024,
+  /** 圧縮の応答で受け取る本文の JSON の上限（文字数）。 */
+  maxContentChars: Int = 64 * 1024 * 1024,
+  /** 圧縮の応答で受け取る本文の文字（検索用）の上限（文字数）。 */
+  maxPlainTextChars: Int = 16 * 1024 * 1024)
 
 /** 配信物の識別（圧縮時に「そのクライアントへ届けたもの」を正確に把握するため）。 */
 enum Item {
@@ -73,9 +91,62 @@ private object Delivered {
   val empty: Delivered = Delivered(Set.empty, Set.empty)
 }
 
+/**
+ * 接続ごとの送信待ち。上限（件数・バイト数）を超えたら受け取らない（offer が false。呼び出し側がその接続を切る）。
+ * 読まない接続がルームのほかの人への配信や権限の再確認を止めないよう、配る側は決して待たない。
+ */
+private final class Subscriber(val id: Long,
+                               queue: Queue[IO, Out],
+                               load: Ref[IO, (Int, Long)],
+                               maxItems: Int,
+                               maxBytes: Long,
+                               /** あふれたときに接続を切る */
+                               val kick: IO[Unit]) {
+  def offer(o: Out): IO[Boolean] =
+    load.modify { case (n, b) =>
+      // 1通だけなら大きくても受け取る（大きな update を1つも送れなくならないように）
+      if n >= maxItems || (n > 0 && b + o.frame.size > maxBytes) then ((n, b), false)
+      else ((n + 1, b + o.frame.size), true)
+    }.flatTap(ok => if ok then queue.offer(o) else IO.unit).uncancelable
+
+  /** 送る順に取り出す（取り出した分だけ空きが増える） */
+  val stream: Stream[IO, Out] =
+    Stream.fromQueueUnterminated(queue).evalTap(o => load.update { case (n, b) => (n - 1, b - o.frame.size) })
+}
+
+private object Subscriber {
+  def create(id: Long, maxItems: Int, maxBytes: Long, kick: IO[Unit]): IO[Subscriber] =
+    (
+      Queue.unbounded[IO, Out],
+      Ref.of[IO, (Int, Long)]((0, 0L))
+    ).mapN(new Subscriber(id, _, _, maxItems, maxBytes, kick))
+}
+
+/** 受信の頻度の上限（トークンバケット）。使い切ったら、足りない分がたまるまでの待ち時間を返す（perSecond が 0 以下なら制限しない）。 */
+private final class Throttle(perSecond: Double, burst: Double, state: Ref[IO, (Double, Long)]) {
+  def take(n: Double): IO[FiniteDuration] =
+    if perSecond <= 0 then IO.pure(Duration.Zero)
+    else
+      IO.monotonic.flatMap { now =>
+        state.modify { case (tokens, last) =>
+          val t = math.min(burst, tokens + (now.toNanos - last) / 1e9 * perSecond) - n
+          ((t, now.toNanos), if t >= 0 then Duration.Zero else (-t / perSecond * 1000).toLong.millis)
+        }
+      }
+
+  /** n だけ使い、使いすぎていれば待つ（この接続の次の受信が遅れるだけ） */
+  def pace(n: Double): IO[Unit] = take(n).flatMap(d => if d > Duration.Zero then IO.sleep(d) else IO.unit)
+}
+
+private object Throttle {
+  def create(perSecond: Double, burst: Double): IO[Throttle] =
+    IO.monotonic.flatMap(now => Ref.of[IO, (Double, Long)]((burst, now.toNanos))).map(new Throttle(perSecond, burst, _))
+}
+
 private final class Room(
   val pageId: UUID,
-  val topic: Topic[IO, Out],
+  /** このノードでつないでいる接続（接続の ID → 送信待ち） */
+  val subs: Ref[IO, Map[Long, Subscriber]],
   val lock: Semaphore[IO],
   val editors: Ref[IO, Set[Long]],
   val sinceSnapshot: Ref[IO, Int],
@@ -84,7 +155,19 @@ private final class Room(
   /** 前回の版以降に更新を送ったユーザー（版の作者）。 */
   val versionAuthors: Ref[IO, Set[UUID]],
   /** 前回の圧縮以降に更新を送ったユーザー（更新通知の編集者）。 */
-  val recentEditors: Ref[IO, Set[UUID]])
+  val recentEditors: Ref[IO, Set[UUID]]) {
+
+  /**
+   * ルームに配る（target があればその接続だけ、なければ送信者以外の全員）。待たずに各接続の送信待ちへ積み、
+   * あふれた接続（読まない・遅い）はルームから外して切る。
+   */
+  def publish(o: Out): IO[Unit] =
+    subs.get.flatMap(_.values.toList.traverse_ { sub =>
+      if o.target.fold(o.from != sub.id)(_ == sub.id) then
+        sub.offer(o).flatMap(ok => if ok then IO.unit else subs.update(_ - sub.id) *> sub.kick)
+      else IO.unit
+    })
+}
 
 /** 接続中のクライアント。 */
 private final class Conn(
@@ -170,7 +253,7 @@ final class Collab(
 
   private def newRoom(pageId: UUID): IO[Room] =
     (
-      Topic[IO, Out],
+      Ref.of[IO, Map[Long, Subscriber]](Map.empty),
       Semaphore[IO](1),
       Ref.of[IO, Set[Long]](Set.empty),
       Ref.of[IO, Int](0),
@@ -215,7 +298,7 @@ final class Collab(
         docs.appendUpdate(pageId, payload.toArray).flatTap { seq =>
           // 送信者自身は当然その内容を持っている
           from.traverse_(_.delivered.update(_.add(Item.Upd(seq)))) *>
-            r.topic.publish1(Out(from.fold(0L)(_.id), None, Wire.syncUpdate(payload), Some(Item.Upd(seq)))).void
+            r.publish(Out(from.fold(0L)(_.id), None, Wire.syncUpdate(payload), Some(Item.Upd(seq))))
         }
       )
     }.flatTap { seq =>
@@ -258,7 +341,7 @@ final class Collab(
               case Some(target) =>
                 val token = Crypto.randomToken(16)
                 room.pending.set(Some(Pending(token, target))) *>
-                  room.topic.publish1(Out(
+                  room.publish(Out(
                     0L,
                     Some(target),
                     Wire.compactRequest(token),
@@ -277,7 +360,22 @@ final class Collab(
                                 token: String,
                                 update: ByteVector,
                                 json: String,
-                                text: String): IO[Unit] = {
+                                text: String): IO[Unit] =
+    if update.size > cfg.maxCompactBytes || json.length > cfg.maxContentChars || text.length > cfg.maxPlainTextChars
+    then
+      // 大きすぎる応答は保存しない（要求は時間切れで破棄され、次の更新でまた要求する）
+      sbirds.observe.Log.report(
+        ErrorCode.CollabCompactTooLarge,
+        s"client ${c.id} on ${room.pageId}: update ${update.size} bytes, json ${json.length} chars, text ${text.length} chars"
+      )
+    else onCompactResponseChecked(room, c, token, update, json, text)
+
+  private def onCompactResponseChecked(room: Room,
+                                       c: Conn,
+                                       token: String,
+                                       update: ByteVector,
+                                       json: String,
+                                       text: String): IO[Unit] = {
     // 本文の JSON はここで1回だけ読む（壊れていれば応答ごと無視する）
     val content = _root_.io.circe.parser.parse(json).toOption
     room.pending.modify {
@@ -333,10 +431,10 @@ final class Collab(
   private def resync(room: Room): IO[Unit] =
     Telemetry.span("collab.resync", "page.id" -> room.pageId.toString)(docs.load(room.pageId)).flatMap { parts =>
       parts.snapshots.traverse_((id, y) =>
-        room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(y)), Some(Item.Snap(id))))
+        room.publish(Out(0L, None, Wire.syncUpdate(ByteVector(y)), Some(Item.Snap(id))))
       ) *>
         parts.updates.traverse_((seq, u) =>
-          room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(u)), Some(Item.Upd(seq))))
+          room.publish(Out(0L, None, Wire.syncUpdate(ByteVector(u)), Some(Item.Upd(seq))))
         )
     }
 
@@ -349,7 +447,7 @@ final class Collab(
             localRoom(pageId).flatMap(_.traverse_ { room =>
               docs.getUpdate(pageId, seq).flatMap {
                 case Some(u) =>
-                  room.topic.publish1(Out(0L, None, Wire.syncUpdate(ByteVector(u)), Some(Item.Upd(seq)))).void
+                  room.publish(Out(0L, None, Wire.syncUpdate(ByteVector(u)), Some(Item.Upd(seq))))
                 case None => resync(room) // 既に圧縮済み: スナップショットごと流し直す
               }
             })
@@ -451,15 +549,15 @@ final class Collab(
             pid -> (if s.readOnly then Role.View else r)
           })
       }
-      check.attempt.flatMap {
-        case Left(e) =>
+      // 1つのまとまりが止まっても（DB・セッションの引き直しが返らないなど）、ほかの接続の確認を止めない
+      check.flatMap(roles => group.traverse_(c => applyRole(c, roles.get(c.pageId)))).timeout(cfg.revalidateTimeout)
+        .handleErrorWith(e =>
           sbirds.observe.Log.report(
             ErrorCode.CollabRevalidateFailed,
             s"client(s) ${group.map(_.id).mkString(",")}: $e",
             e
           )
-        case Right(roles) => group.traverse_(c => applyRole(c, roles.get(c.pageId)))
-      }
+        )
     })
 
   /** 再検証の結果を接続に反映する。権限を失ったら通知して（少し待ってから）切断する。 */
@@ -469,14 +567,14 @@ final class Collab(
       case Some(room) =>
         newRole match {
           case None =>
-            room.topic.publish1(Out(0L, Some(c.id), Wire.role("none"))) *>
+            room.publish(Out(0L, Some(c.id), Wire.role("none"))) *>
               (IO.sleep(200.millis) *> c.stop.complete(()).void).start.void
           case Some(r) =>
             c.role.getAndSet(r).flatMap { old =>
               if old == r then IO.unit
               else
                 (if r == Role.Edit then room.editors.update(_ + c.id) else room.editors.update(_ - c.id)) *>
-                  room.topic.publish1(Out(0L, Some(c.id), Wire.role(r.asString))).void
+                  room.publish(Out(0L, Some(c.id), Wire.role(r.asString)))
             }
         }
     }
@@ -503,21 +601,35 @@ final class Collab(
       // この接続が名乗った awareness のクライアント（切断時に、ほかの人の画面から消すため）
       aware <- Ref.of[IO, Map[Long, Long]](Map.empty)
       conn = new Conn(id, pageId, s.user.id, reauth, authKey, role, roomD, stop, deliv, capt)
+      sub <- Subscriber.create(
+        id,
+        cfg.sendQueueItems,
+        cfg.sendQueueBytes,
+        sbirds.observe.Log.report(ErrorCode.CollabSlowConsumer, s"client $id on $pageId (user ${s.user.id})") *>
+          stop.complete(()).void
+      )
+      // 受信の頻度の上限（まとめて送る分は少し先まで許す: awareness は3秒分、update は上限の大きさの1通分）
+      awarePace <- Throttle.create(cfg.awarenessPerSecond.toDouble, cfg.awarenessPerSecond * 3.0)
+      updatePace <- Throttle.create(cfg.updateBytesPerSecond.toDouble, cfg.maxUpdateBytes.toDouble)
       send: Stream[IO, WebSocketFrame] =
         (for {
-          _ <- Stream.bracket(conns.update(_ + (id -> conn)) *> Metrics.upDown("skiwi.collab.connections", 1))(_ =>
-            conns.update(_ - id) *> Metrics.upDown("skiwi.collab.connections", -1)
-          )
+          // 接続を登録する。1人の接続が上限に達していれば登録せずに閉じる（接続時の確認と登録の間に増えた分もここで止める）
+          registered <- Stream.bracket(
+            conns.modify { m =>
+              if tooMany(m, s.user.id) then (m, false) else (m + (id -> conn), true)
+            }.flatTap(ok => if ok then Metrics.upDown("skiwi.collab.connections", 1) else IO.unit)
+          )(ok => if ok then conns.update(_ - id) *> Metrics.upDown("skiwi.collab.connections", -1) else IO.unit)
+          _ <- if registered then Stream.emit(()) else Stream.exec(stop.complete(()).void)
           room <- Stream.resource(acquire(pageId)).evalTap(roomD.complete)
           _ <- Stream.bracket(role.get.flatMap(r => if r == Role.Edit then room.editors.update(_ + id) else IO.unit))(
             _ => room.editors.update(_ - id)
           )
           _ <- Stream.bracket(IO.unit)(_ =>
             aware.get.flatMap(m =>
-              if m.isEmpty then IO.unit else room.topic.publish1(Out(id, None, Wire.awarenessRemoval(m))).void
+              if m.isEmpty then IO.unit else room.publish(Out(id, None, Wire.awarenessRemoval(m)))
             )
           )
-          sub <- Stream.resource(room.topic.subscribeAwait(1024))
+          _ <- Stream.bracket(room.subs.update(_ + (id -> sub)))(_ => room.subs.update(_ - id))
           parts <- Stream.eval(docs.load(pageId))
           r0 <- Stream.eval(role.get)
           // 購読開始後に読み込むため、取りこぼしは起きない（重複はCRDTで冪等）
@@ -531,15 +643,14 @@ final class Collab(
               room.sinceSnapshot.set(parts.updates.size) *> requestCompaction(room)
             else IO.unit
           )
-          frame <- Stream.emits(hello) ++ sub.evalMapFilter {
-            case Out(from, target, f, item) if target.fold(from != id)(_ == id) =>
-              // このクライアントへ届けたものを記録する（ストリームの順序どおり）
-              (item match {
-                case Some(Item.CompactReq(tok)) => deliv.get.flatMap(d => capt.update(_ + (tok -> d)))
-                case Some(i) => deliv.update(_.add(i))
-                case None => IO.unit
-              }).as(Some(f))
-            case _ => IO.pure(None)
+          // 宛先の絞り込みは配る側（Room.publish）で済んでいる
+          frame <- Stream.emits(hello) ++ sub.stream.evalMap { out =>
+            // このクライアントへ届けたものを記録する（ストリームの順序どおり）
+            (out.item match {
+              case Some(Item.CompactReq(tok)) => deliv.get.flatMap(d => capt.update(_ + (tok -> d)))
+              case Some(i) => deliv.update(_.add(i))
+              case None => IO.unit
+            }).as(out.frame)
           }
         } yield WebSocketFrame.Binary(frame)).interruptWhen(stop.get.attempt)
       receive: Pipe[IO, WebSocketFrame, Unit] = _.evalMap {
@@ -550,19 +661,20 @@ final class Collab(
               Wire.parse(data) match {
                 case Wire.Inbound.Update(p) =>
                   if canEdit && p.size <= cfg.maxUpdateBytes then
-                    Telemetry.withUser(s.user.id.toString, s.user.name)(onUpdate(room, conn, p))
+                    Telemetry.withUser(s.user.id.toString, s.user.name)(onUpdate(room, conn, p)) *>
+                      updatePace.pace(p.size.toDouble)
                   else IO.unit
                 case Wire.Inbound.Awareness if data.size > cfg.maxAwarenessBytes => IO.unit
                 case Wire.Inbound.Awareness =>
-                  Wire.awarenessAsUser(data, s.user.id.toString, s.user.name) match {
+                  (Wire.awarenessAsUser(data, s.user.id.toString, s.user.name) match {
                     case None => IO.unit
                     case Some(own) =>
                       aware.update(m =>
                         Wire.awarenessClients(own).foldLeft(m) { case (acc, (c, clock, removed)) =>
                           if removed then acc - c else acc + (c -> clock)
                         }
-                      ) *> room.topic.publish1(Out(id, None, own)).void
-                  }
+                      ) *> room.publish(Out(id, None, own))
+                  }) *> awarePace.pace(1)
                 case Wire.Inbound.CompactResponse(tok, upd, json, text) =>
                   if canEdit then
                     Telemetry.withUser(
@@ -580,6 +692,10 @@ final class Collab(
       resp <- wsb.build(send, receive)
     } yield resp
 
+  /** userId の接続が、1人が同時に開ける数に達しているか */
+  private def tooMany(m: Map[Long, Conn], userId: UUID): Boolean =
+    cfg.maxConnectionsPerUser > 0 && m.valuesIterator.count(_.userId == userId) >= cfg.maxConnectionsPerUser
+
   private def serveLocal(req: Request[IO], pageId: UUID, wsb: WebSocketBuilder[IO]): IO[Response[IO]] = {
     // 再検証用: リクエストの認証情報だけを保持して後から引き直す
     val authOnly = Request[IO](method = Method.GET, headers = req.headers)
@@ -592,15 +708,19 @@ final class Collab(
         Telemetry.withUser(s.user.id.toString, s.user.name)(store.pageAccess(pageId, s).flatMap {
           case None => Errors.respond(ErrorCode.PageNotFound)
           case Some((_, role)) =>
-            Metrics.count("skiwi.collab.sessions", "role" -> (if s.readOnly then Role.View else role).asString) *>
-              connection(
-                pageId,
-                if s.readOnly then Role.View else role,
-                s,
-                sessions.fromRequest(authOnly),
-                authKey,
-                wsb
-              )
+            conns.get.map(tooMany(_, s.user.id)).flatMap {
+              case true => Errors.respond(ErrorCode.CollabTooManyConnections)
+              case false =>
+                Metrics.count("skiwi.collab.sessions", "role" -> (if s.readOnly then Role.View else role).asString) *>
+                  connection(
+                    pageId,
+                    if s.readOnly then Role.View else role,
+                    s,
+                    sessions.fromRequest(authOnly),
+                    authKey,
+                    wsb
+                  )
+            }
         })
     })
   }

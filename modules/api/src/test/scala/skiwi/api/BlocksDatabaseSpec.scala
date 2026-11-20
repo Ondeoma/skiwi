@@ -1,5 +1,7 @@
 package skiwi.api
 
+import sbirds.net.NetGuard
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import com.sun.net.httpserver.HttpServer
@@ -31,8 +33,8 @@ class BlocksDatabaseSpec extends DbSuite {
         rate <- Resource.eval(Ref.of[IO, Map[UUID, List[Long]]](Map.empty))
         cache <- Resource.eval(Ref.of[IO, Map[String, (Long, UnfurlDto)]](Map.empty))
         cache2 <- Resource.eval(Ref.of[IO, Map[String, (Long, UnfurlDto)]](Map.empty))
-        guarded <- NetGuard.client(allowPrivate = false)
-        open <- NetGuard.client(allowPrivate = true)
+        guarded <- NetGuard.client(NetGuard.Policy.of(false))
+        open <- NetGuard.client(NetGuard.Policy.of(true))
       } yield {
         val store = new Store(xa)
         val ops = new OpsStore(xa)

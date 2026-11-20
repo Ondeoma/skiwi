@@ -1,5 +1,6 @@
 package skiwi.db
 
+import sbirds.db.*
 import cats.data.NonEmptyList
 import cats.effect.*
 import cats.syntax.all.*

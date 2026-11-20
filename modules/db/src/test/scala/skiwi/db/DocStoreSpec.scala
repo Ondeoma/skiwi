@@ -1,7 +1,10 @@
 package skiwi.db
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
+import doobie.implicits.*
+import doobie.postgres.implicits.*
 import io.circe.Json
 import skiwi.core.*
 
@@ -104,6 +107,55 @@ class DocStoreSpec extends DbSuite {
         v <- got.get.timeout(10.seconds)
         _ <- fib.cancel
       } yield assertEquals(v, "skiwi_test:こんにちは|1")
+    }
+  }
+
+  test("メンション・ToDo の担当は、ページを閲覧できる人だけを記録する（本文に書かれただけの人には通知・ToDo を作らない）") {
+    run {
+      val xa = fixture()
+      val store = new Store(xa)
+      def str(s: String) = Json.fromString(s)
+      def mention(id: UUID) = Json.obj("type" -> str("mention"), "attrs" -> Json.obj("userId" -> str(id.toString)))
+      def people(sql: doobie.Fragment) = sql.query[UUID].to[Set].transact(xa)
+      for {
+        (_, page, user) <- setup
+        viewer <- store.upsertUser(s"doc-v-${UUID.randomUUID()}", None, "閲覧できる人")
+        outsider <- store.upsertUser(s"doc-o-${UUID.randomUUID()}", None, "閲覧できない人")
+        // 閲覧できる人を返す関数（本番は Store.userRoles）
+        docs = new DocStore(xa, (_, us) => IO.pure(us - outsider.id))
+        content = Json.obj(
+          "type" -> str("doc"),
+          "content" -> Json.arr(
+            Json.obj("type" -> str("paragraph"), "content" -> Json.arr(mention(viewer.id), mention(outsider.id))),
+            Json.obj(
+              "type" -> str("taskList"),
+              "content" -> Json.arr(Json.obj(
+                "type" -> str("taskItem"),
+                "attrs" -> Json.obj("checked" -> Json.False),
+                "content" -> Json.arr(Json.obj(
+                  "type" -> str("paragraph"),
+                  "content" -> Json.arr(
+                    Json.obj("type" -> str("text"), "text" -> str("作業 ")),
+                    mention(viewer.id),
+                    mention(outsider.id)
+                  )
+                ))
+              ))
+            )
+          )
+        )
+        r <- docs.saveCompaction(page, b(1), content, "", Set.empty, Set.empty, user)
+        mentioned <- people(sql"select user_id from page_mention where page_id = $page")
+        assignees <- people(sql"select assignee_id from page_task where page_id = $page")
+        // API での本文の変更（saveServerEdit）でも同じ
+        _ <- docs.saveServerEdit(page, b(2), content, "", user, None)
+        assignees2 <- people(sql"select assignee_id from page_task where page_id = $page")
+      } yield {
+        assertEquals(r.newMentions, Set(viewer.id))
+        assertEquals(mentioned, Set(viewer.id))
+        assertEquals(assignees, Set(viewer.id))
+        assertEquals(assignees2, Set(viewer.id))
+      }
     }
   }
 }

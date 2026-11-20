@@ -31,6 +31,8 @@ enum ErrorCode(val code: String, val status: Int, val message: String) extends s
   case RequestTooLarge extends ErrorCode("SKIWI-1019", 413, "リクエストの本文が大きすぎます")
   case CollabOriginNotAllowed extends ErrorCode("SKIWI-1020", 403, "このサイトからは接続できません")
   case McpTokenRequired extends ErrorCode("SKIWI-1021", 401, "API トークン（Authorization: Bearer）が必要です")
+  case CollabTooManyConnections
+    extends ErrorCode("SKIWI-1022", 429, "同時に開いているページが多すぎます。使っていないタブを閉じてください")
   case ApiTokenCannotManageTokens extends ErrorCode("SKIWI-1101", 403, "API トークンでは API トークンを管理できません")
   case ApiTokenParamsInvalid
     extends ErrorCode("SKIWI-1102", 400, "name・scope（read か write）・expiresInDays（1〜3650。省略可）を指定してください")
@@ -149,6 +151,8 @@ enum ErrorCode(val code: String, val status: Int, val message: String) extends s
   case ClusterRefreshFailed extends ErrorCode("SKIWI-9208", 500, "生存ノードの読み込みに失敗しました")
   case BusHandlerFailed extends ErrorCode("SKIWI-9209", 500, "ノード間の通知の処理に失敗しました")
   case BusListenerDisconnected extends ErrorCode("SKIWI-9210", 503, "ノード間の通知の接続が切れました（つなぎ直します）")
+  case CollabCompactTooLarge extends ErrorCode("SKIWI-9211", 413, "圧縮した本文が大きすぎます")
+  case CollabSlowConsumer extends ErrorCode("SKIWI-9212", 408, "同時編集のデータを受け取らない接続を切りました")
   case BackupFailed extends ErrorCode("SKIWI-9301", 500, "バックアップに失敗しました")
   case BackupCheckFailed extends ErrorCode("SKIWI-9302", 500, "バックアップの予定の確認に失敗しました")
   case AutomationFailed extends ErrorCode("SKIWI-9303", 500, "自動化ルールの実行に失敗しました")
@@ -162,4 +166,5 @@ enum ErrorCode(val code: String, val status: Int, val message: String) extends s
   case TrashPurgeFailed extends ErrorCode("SKIWI-9311", 500, "ゴミ箱の削除に失敗しました")
   case AuditRecordFailed extends ErrorCode("SKIWI-9312", 500, "監査ログの記録に失敗しました")
   case IntegrationRequestFailed extends ErrorCode("SKIWI-9313", 500, "連携先との通信に失敗しました")
+  case McpToolFailed extends ErrorCode("SKIWI-9314", 500, "MCP のツールの実行に失敗しました")
 }

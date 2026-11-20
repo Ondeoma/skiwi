@@ -1,57 +1,28 @@
 package skiwi.app
 
+import sbirds.http.Env.*
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import skiwi.api.*
 import sbirds.auth.OidcConfig
-import skiwi.collab.ClusterConfig
-import skiwi.db.DbConfig
+import skiwi.collab.{ClusterConfig, CollabConfig}
 import sbirds.mail.SmtpConfig
 import sbirds.storage.S3Config
 
 /** 設定は環境変数から読む。 */
 object Config {
 
-  /** 空でない値 */
-  private def opt(name: String): Option[String] = sys.env.get(name).map(_.trim).filter(_.nonEmpty)
-  private def int(name: String): Option[Int] = opt(name).flatMap(_.toIntOption)
-
-  /** true と書かれているときだけ有効（既定は無効） */
-  private def enabled(name: String): Boolean = sys.env.get(name).exists(_.trim.equalsIgnoreCase("true"))
-
-  /** false と書かれているときだけ無効（既定は有効） */
-  private def disabled(name: String): Boolean = sys.env.get(name).exists(_.trim.equalsIgnoreCase("false"))
-
-  private def required(name: String): Either[String, String] =
-    opt(name).toRight(s"環境変数 $name を設定してください")
-
   /** OAUTH_CLIENTS（JSON の配列）. 各要素は id・secret（16文字以上）・redirectUri（https:// か http://localhost）・name・scopes（read・write. 省くと read） */
   private def parseOAuthClients: Either[String, List[skiwi.api.OAuthClient]] =
-    opt("OAUTH_CLIENTS").fold(Right(Nil)) { s =>
-      io.circe.parser.parse(s).flatMap(_.as[List[io.circe.Json]]).left.map(_ =>
-        "OAUTH_CLIENTS は JSON の配列で指定してください"
-      ).flatMap(_.traverse { j =>
-        val c = j.hcursor
-        (c.get[String]("id"), c.get[String]("secret"), c.get[String]("redirectUri")).tupled.toOption
-          .filter((id, sec, uri) =>
-            skiwi.api.OAuthProviderRoutes.ClientIdRe.matches(id) && sec.length >= 16 &&
-              (uri.startsWith("https://") || uri.startsWith("http://localhost"))
-          )
-          .map((id, sec, uri) =>
-            skiwi.api.OAuthClient(
-              id,
-              skiwi.api.OAuthProviderRoutes.hashSecret(sec),
-              uri,
-              c.get[String]("name").getOrElse(id),
-              c.get[List[String]]("scopes").toOption.map(_.filter(Set(
-                "read",
-                "write"
-              ))).filter(_.nonEmpty).getOrElse(List("read"))
-            )
-          )
-          .toRight("OAUTH_CLIENTS の各要素には id・secret（16文字以上）・redirectUri（https://）を指定してください")
-      })
-    }
+    sbirds.oauth.OAuthClient.fromEnv().flatMap(_.traverse(c =>
+      // id の形も確かめ、secret はハッシュにして持つ
+      Either.cond(
+        skiwi.api.OAuthProviderRoutes.ClientIdRe.matches(c.id),
+        c.copy(secret = skiwi.api.OAuthProviderRoutes.hashSecret(c.secret)),
+        sbirds.oauth.OAuthClient.ItemError
+      )
+    ))
 
   def load: IO[AppConfig] = IO.fromEither(
     (for {
@@ -83,6 +54,8 @@ object Config {
         case None => Left("APP_SECRET（16文字以上の秘密の値。全ノードで同じ値）を設定してください")
       }
       oauthClients <- parseOAuthClients
+      // RATE_LIMIT_AUTH・RATE_LIMIT_PUBLIC（IP ごとの1分あたりの回数. 0 で制限しない）・TRUSTED_PROXIES
+      rate <- sbirds.http.RateLimitConfig.fromEnv()
     } yield {
       val base = pub.stripSuffix("/")
       // 秘密値: 短いもの・テンプレートのまま（change-me）のものは起動時にエラーにする
@@ -102,6 +75,17 @@ object Config {
             .getOrElse(throw new IllegalArgumentException("NODE_URL を設定したときは CLUSTER_SECRET（16文字以上）も設定してください"))
         )
       }
+      // 同時編集の上限（どれも省ける。0 にするとその制限をしない）
+      val collabDefaults = CollabConfig()
+      val collab = collabDefaults.copy(
+        maxConnectionsPerUser =
+          int("COLLAB_MAX_CONNECTIONS_PER_USER").filter(_ >= 0).getOrElse(collabDefaults.maxConnectionsPerUser),
+        sendQueueItems = int("COLLAB_SEND_QUEUE").filter(_ > 0).getOrElse(collabDefaults.sendQueueItems),
+        awarenessPerSecond =
+          int("COLLAB_AWARENESS_PER_SECOND").filter(_ >= 0).getOrElse(collabDefaults.awarenessPerSecond),
+        updateBytesPerSecond = long("COLLAB_UPDATE_KB_PER_SECOND").filter(_ >= 0).map(_ * 1024)
+          .getOrElse(collabDefaults.updateBytesPerSecond)
+      )
       AppConfig(
         port = int("HTTP_PORT").getOrElse(8080),
         db = DbConfig(dbUrl, dbUser, dbPass, int("DATABASE_POOL_SIZE").getOrElse(10)),
@@ -154,7 +138,9 @@ object Config {
         oauthClients = oauthClients,
         devLogin = devLogin,
         // 開発用のログインは誰でも管理者になれるので、既定ではこの機械の中からだけ受ける
-        httpBind = opt("HTTP_BIND").getOrElse(if devLogin then "127.0.0.1" else "0.0.0.0")
+        httpBind = opt("HTTP_BIND").getOrElse(if devLogin then "127.0.0.1" else "0.0.0.0"),
+        collab = collab,
+        rateLimit = rate
       )
     }).left.map(msg => new IllegalArgumentException(msg))
   )

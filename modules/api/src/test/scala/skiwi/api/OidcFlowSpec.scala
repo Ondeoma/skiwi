@@ -1,5 +1,6 @@
 package skiwi.api
 
+import sbirds.db.*
 import cats.effect.*
 import io.circe.Json
 import io.circe.syntax.*
@@ -87,6 +88,18 @@ class OidcFlowSpec extends DbSuite {
 
           stateCk = login.cookies.find(_.name == "skiwi_login_state").get
           _ = assertEquals(stateCk.content, q("state"))
+          // 2z) IdP の error・error_description の文言は応答に出さない（固定の文言だけ）
+          idpErr <- app.run(Request[IO](
+            Method.GET,
+            uri"/auth/callback".withQueryParams(Map(
+              "error" -> "access_denied_XYZ",
+              "error_description" -> "call 03-0000-0000"
+            ))
+          ))
+          _ = assertEquals(idpErr.status, Status.BadRequest)
+          idpErrBody <- idpErr.bodyText.compile.string
+          _ = assert(idpErrBody.contains(skiwi.core.ErrorCode.LoginIdpError.message), idpErrBody)
+          _ = assert(!idpErrBody.contains("access_denied_XYZ") && !idpErrBody.contains("03-0000-0000"), idpErrBody)
           // 2a) state の Cookie がない（ログインを始めたブラウザと違う）callback は拒否（ログイン CSRF 対策）
           csrf <- app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/auth/callback?code=abc&state=${q("state")}")))
           _ = assertEquals(csrf.status, Status.BadRequest)

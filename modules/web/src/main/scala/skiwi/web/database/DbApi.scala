@@ -294,16 +294,16 @@ object DbApi {
 
   private def valuesJson(values: Map[String, Json]): Json = Json.fromFields(values)
 
-  def get(id: String): Future[Database] = Api.get[Database](s"/api/pages/$id/database")
+  def get(id: String): Future[Database] = Api.get[Database](s"/api/pages/${Api.seg(id)}/database")
 
   /** 列・ビューを保存する（null の項目は送らない） */
   def save(id: String, props: List[DbProp], views: List[DbView]): Future[Database] =
     Api.put[Database](
-      s"/api/pages/$id/database",
+      s"/api/pages/${Api.seg(id)}/database",
       Json.obj("props" -> props.asJson, "views" -> views.asJson).deepDropNullValues
     )
 
-  def remove(id: String): Future[Unit] = Api.del(s"/api/pages/$id/database")
+  def remove(id: String): Future[Unit] = Api.del(s"/api/pages/${Api.seg(id)}/database")
 
   /** ページをデータベースにする（既定の列: 状態・担当者・期限、ビュー: 表・ボード・カレンダー） */
   def createDefault(id: String): Future[Unit] = {
@@ -317,7 +317,7 @@ object DbApi {
              values: Map[String, Json] = Map.empty,
              parentId: Option[String] = None): Future[DbRow] =
     Api.post[DbRow](
-      s"/api/pages/$id/database/rows",
+      s"/api/pages/${Api.seg(id)}/database/rows",
       Json.obj("title" -> title.asJson, "values" -> valuesJson(values)).deepMerge(parentId.fold(Json.obj())(p =>
         Json.obj("parentId" -> p.asJson)
       ))
@@ -326,15 +326,15 @@ object DbApi {
   /** 戻り値: 作った数 */
   def addRows(id: String, rows: List[(String, Map[String, Json])]): Future[Int] =
     Api.post[Json](
-      s"/api/pages/$id/database/rows/bulk",
+      s"/api/pages/${Api.seg(id)}/database/rows/bulk",
       Json.obj("rows" -> Json.arr(rows.map((t, v) => Json.obj("title" -> t.asJson, "values" -> valuesJson(v)))*))
     )
       .map(_.hcursor.get[Int]("created").getOrElse(0))
 
-  def props(id: String): Future[PageProps] = Api.get[PageProps](s"/api/pages/$id/props")
+  def props(id: String): Future[PageProps] = Api.get[PageProps](s"/api/pages/${Api.seg(id)}/props")
 
   /** 値を変える（null は消す） */
   def setValues(id: String, values: Map[String, Json]): Future[PageProps] =
-    Api.patch[PageProps](s"/api/pages/$id/props", Json.obj("values" -> valuesJson(values)))
+    Api.patch[PageProps](s"/api/pages/${Api.seg(id)}/props", Json.obj("values" -> valuesJson(values)))
 
 }

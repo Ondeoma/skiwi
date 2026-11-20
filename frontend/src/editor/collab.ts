@@ -22,7 +22,7 @@ export function connectPage(pageId: string): { ydoc: Y.Doc; provider: WebsocketP
   // ホワイトボードの共有データのルート。同期より前に型を登録しておく（後から登録すると型の付け替えが起きるため）
   ydoc.getMap(BOARDS_ROOT_NAME)
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-  const provider = new WebsocketProvider(`${proto}://${location.host}/ws/pages`, pageId, ydoc, {
+  const provider = new WebsocketProvider(`${proto}://${location.host}/ws/pages`, encodeURIComponent(pageId), ydoc, {
     disableBc: true, // 同一ブラウザ内のタブ間直接同期は使わず、サーバー(認可・永続化)を唯一の経路にする
   })
   return { ydoc, provider }

@@ -1,5 +1,6 @@
 package skiwi.db
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import doobie.*
@@ -28,8 +29,19 @@ final case class CompactionResult(removedUpdates: Int,
  * 圧縮の安全性（複数ノード対応）: 圧縮では「圧縮したクライアントに届けたと分かっているもの（updateのseqとスナップショットのID）」
  * だけを削除し、そのクライアントの全状態を新しいスナップショットとして追加する。Yjsのupdateは冪等なので、
  * 消し残しや重複があっても内容は失われない。同じページが一時的に複数ノードで開かれていても安全。
+ *
+ * viewers: 本文に書かれた人（メンション・ToDo の担当）のうち、そのページを閲覧できる人だけを返す（ページ, 書かれた人）。
+ * 本文は編集者が自由に書けるので、閲覧できない人を担当やメンションにして通知を送らせないために絞る。
+ * 省くと絞らない（テスト用。本番は Main で Store.userRoles を渡す）。
  */
-final class DocStore(xa: Transactor[IO]) extends TxStore(xa) {
+final class DocStore(xa: Transactor[IO], viewers: (UUID, Set[UUID]) => IO[Set[UUID]] = (_, us) => IO.pure(us))
+  extends TxStore(xa) {
+
+  /** 本文に書かれた人のうち、ページを閲覧できる人 */
+  private def visiblePeople(pageId: UUID, content: Json): IO[Set[UUID]] = {
+    val people = LinkExtract.mentions(content) ++ LinkExtract.tasks(content).flatMap(_.assignees)
+    if people.isEmpty then IO.pure(Set.empty) else viewers(pageId, people)
+  }
 
   /** 同じページの書き込みをノードをまたいで直列化する */
   private def lockPageC(pageId: UUID): ConnectionIO[Option[UUID]] =
@@ -65,7 +77,32 @@ final class DocStore(xa: Transactor[IO]) extends TxStore(xa) {
                      deliveredSnapshots: Set[UUID],
                      by: UUID,
                      authors: Set[UUID] = Set.empty,
-                     versionEvery: FiniteDuration = 10.minutes): IO[CompactionResult] = tx {
+                     versionEvery: FiniteDuration = 10.minutes): IO[CompactionResult] =
+    visiblePeople(pageId, content).flatMap(people =>
+      tx(saveCompactionC(
+        pageId,
+        ydoc,
+        content,
+        plainText,
+        deliveredSeqs,
+        deliveredSnapshots,
+        by,
+        authors,
+        versionEvery,
+        people
+      ))
+    )
+
+  private def saveCompactionC(pageId: UUID,
+                              ydoc: Array[Byte],
+                              content: Json,
+                              plainText: String,
+                              deliveredSeqs: Set[Long],
+                              deliveredSnapshots: Set[UUID],
+                              by: UUID,
+                              authors: Set[UUID],
+                              versionEvery: FiniteDuration,
+                              people: Set[UUID]): ConnectionIO[CompactionResult] = {
     val cutoff = Instant.now().minusMillis(versionEvery.toMillis)
     val authorsArr = (authors + by).toArray
     val seqs = deliveredSeqs.toArray
@@ -82,7 +119,7 @@ final class DocStore(xa: Transactor[IO]) extends TxStore(xa) {
         UUID
       ].unique
       n <- sql"delete from page_updates where page_id = $pageId and seq = any($seqs)".update.run
-      added <- refreshDerived(pageId, content)
+      added <- refreshDerived(pageId, content, people)
       // 版履歴: 最新版と本文が同じなら作らない
       last <- sql"""select created_at, plain_text, content::text from page_snapshot
                     where page_id = $pageId and kind = 'version' order by created_at desc limit 1"""
@@ -97,13 +134,16 @@ final class DocStore(xa: Transactor[IO]) extends TxStore(xa) {
     } yield CompactionResult(n, ds, due, id, added.toSet)
   }
 
-  /** 本文から作る付随の記録（被リンク・担当者のいる ToDo・メンション）を作り直す。新しくメンションされた人を返す。 */
-  private def refreshDerived(pageId: UUID, contentJson: Json): ConnectionIO[List[UUID]] = {
+  /**
+   * 本文から作る付随の記録（被リンク・担当者のいる ToDo・メンション）を作り直す。新しくメンションされた人を返す。
+   * people: 担当・メンションとして記録してよい人（ページを閲覧できる人。visiblePeople）。
+   */
+  private def refreshDerived(pageId: UUID, contentJson: Json, people: Set[UUID]): ConnectionIO[List[UUID]] = {
     // 被リンク: 本文中のリンク先を記録し直す（自分自身へのリンクは除く）
     val targets = (LinkExtract.targets(contentJson) - pageId).toArray
-    val mentioned = LinkExtract.mentions(contentJson).toArray
+    val mentioned = LinkExtract.mentions(contentJson).intersect(people).toArray
     // ToDo は（項目, 担当者）ごとの行にして、まとめて入れる。期限なしは空文字
-    val tasks = LinkExtract.tasks(contentJson).flatMap(t => t.assignees.toList.map(t -> _))
+    val tasks = LinkExtract.tasks(contentJson).flatMap(t => t.assignees.intersect(people).toList.map(t -> _))
     val tSeq = tasks.map(_._1.seq).toArray
     val tText = tasks.map(_._1.text).toArray
     val tChecked = tasks.map(_._1.checked.toString).toArray // boolean[] は bit[] として送られるため文字で渡す
@@ -132,14 +172,15 @@ final class DocStore(xa: Transactor[IO]) extends TxStore(xa) {
    * 圧縮済みの本文があればその本文だけを差し替え（Yjs の状態は次の圧縮で揃う）、なければ update を圧縮済みの本文として入れる。
    * before があれば、変える前の本文（JSON・平文・ラベル）を同じトランザクションで版として残す。
    */
-  def saveServerEdit(pageId: UUID,
-                     update: Array[Byte],
-                     content: Json,
-                     plainText: String,
-                     by: UUID,
-                     before: Option[(Json, String, String)]): IO[Unit] = tx {
+  def saveServerEdit(
+    pageId: UUID,
+    update: Array[Byte],
+    content: Json,
+    plainText: String,
+    by: UUID,
+    before: Option[(Json, String, String)]): IO[Unit] = visiblePeople(pageId, content).flatMap { people =>
     val json = content.noSpaces
-    for {
+    tx(for {
       _ <- lockPageC(pageId)
       _ <- before.traverse_((j, t, label) =>
         insertVersionC(pageId, Array.emptyByteArray, j.noSpaces, t, by, Array(by), Some(label))
@@ -149,8 +190,8 @@ final class DocStore(xa: Transactor[IO]) extends TxStore(xa) {
       _ <- if n > 0 then ().pure[ConnectionIO]
       else sql"""insert into page_snapshot (page_id, kind, ydoc, content, plain_text, created_by)
                       values ($pageId, 'compact', $update, $json::jsonb, $plainText, $by)""".update.run.void
-      _ <- refreshDerived(pageId, content)
-    } yield ()
+      _ <- refreshDerived(pageId, content, people)
+    } yield ())
   }
 
   private def insertVersionC(pageId: UUID,

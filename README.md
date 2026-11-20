@@ -102,7 +102,13 @@ java -cp 'dist/lib/*' skiwi.app.Main
 | `TIMEZONE` | ToDo の期限などの「今日」（既定 Asia/Tokyo。前の名前 `TASK_TIMEZONE` も使える） |
 | `SCIM_TOKEN` | SCIM（24文字以上）。設定すると `/scim/v2` が有効になり、グループの所属は SCIM を正とする（ログイン時の groups クレームでは上書きしない） |
 | `PUBLIC_SHARING` | `false` でゲスト向けの公開リンクを使わせない |
+| `RATE_LIMIT_AUTH` / `RATE_LIMIT_PUBLIC` | IP ごとの1分あたりの回数の上限。ログインと OAuth の認可の画面（`/auth/…`・`/oauth/authorize`、既定 20）と、OAuth のトークンの発行・失効（`/oauth/token`・`/oauth/revoke`）・公開リンクの API（`/api/public/…`。添付は数えない）（既定 120）。0 で制限しない。ノードごとに数える。超えたら 429（`SKIWI-1005`）と `Retry-After`。ログインした人・API トークンの API は数えない。フォームの回答・受信の Webhook は、フォーム・Webhook ごとの上限（1分あたり 30・60）が別にある |
+| `TRUSTED_PROXIES` | リバースプロキシの IP か CIDR（カンマ区切り）。そこから来た要求だけ `X-Forwarded-For` から利用者の IP を読んで、上の回数を数える。リバースプロキシの後ろに置くときは必ず設定する（未設定だと全員がプロキシの IP として数えられ、上限にすぐ達する） |
 | `TRASH_RETENTION_DAYS` | ゴミ箱の保存日数（既定 30。過ぎたら添付ファイルを含めて完全に削除） |
+| `COLLAB_MAX_CONNECTIONS_PER_USER` | 同時編集で1人が同時に開ける接続の数（ノードごと。既定 100。0 で制限しない） |
+| `COLLAB_SEND_QUEUE` | 同時編集の接続ごとの送信待ちの件数（既定 1024。受け取らない接続がこれを超えたら、その接続だけを切る） |
+| `COLLAB_AWARENESS_PER_SECOND` | 同時編集の接続ごとに受け取るカーソル・在席の通知の数（1秒あたり。既定 20。0 で制限しない） |
+| `COLLAB_UPDATE_KB_PER_SECOND` | 同時編集の接続ごとに受け取る更新の量（1秒あたりの KB。既定 2048。0 で制限しない） |
 | `WEBHOOK_ALLOW_HTTP` | Webhook の送り先に http:// を許す（開発用。既定は https だけ） |
 | `WEBHOOK_ALLOW_PRIVATE` | Webhook を社内のアドレス（10.x・192.168.x・127.0.0.1 など）にも送る（既定は送らない。編集者にサーバーから社内へ接続させないため） |
 | `UNFURL_ALLOW_PRIVATE` | リンクのカード（`/api/unfurl`）でプライベート・ループバックのアドレスも読み込む（既定は読み込まない） |
@@ -463,7 +469,8 @@ AI エージェントの [skakapo](https://github.com/Ondeoma/skakapo) のよう
 ## MCP（AI のツールから使う）
 `POST /mcp` が MCP（Model Context Protocol）のサーバーになっている（Streamable HTTP。応答は JSON で、SSE は使わない）。
 認証は API トークン（`Authorization: Bearer skiwi_…`）だけで、権限・読み取り専用のトークン・監査ログは REST API と同じ
-（各ツールは REST API をそのトークンで内部から呼ぶ。`modules/api/.../McpRoutes.scala`）。
+（各ツールは REST API をそのトークンで内部から呼ぶ。`modules/api/.../McpRoutes.scala`。JSON-RPC の枠は sbirds-lib の `sbirds.mcp.McpServer`）。
+まとめての呼び出し（バッチ）は 50 件まで（超えたら 400）。
 ```bash
 claude mcp add --transport http skiwi https://skiwi.example.com/mcp --header "Authorization: Bearer skiwi_..."   # Claude Code の例
 ```

@@ -201,25 +201,29 @@ object DialogsApi {
     )
   ).asJson
 
-  def pageAcl(id: String): Future[PageAcl] = get[PageAcl](s"/api/pages/$id/acl")
+  def pageAcl(id: String): Future[PageAcl] = get[PageAcl](s"/api/pages/${Api.seg(id)}/acl")
 
   def setPageAcl(id: String, inherit: Boolean, entries: List[AclEntry]): Future[Unit] =
-    put0(s"/api/pages/$id/acl", Json.obj("inherit" -> inherit.asJson, "entries" -> strip(entries)))
+    put0(s"/api/pages/${Api.seg(id)}/acl", Json.obj("inherit" -> inherit.asJson, "entries" -> strip(entries)))
 
-  def workspaceAcl(id: String): Future[WorkspaceAcl] = get[WorkspaceAcl](s"/api/workspaces/$id/acl")
+  def workspaceAcl(id: String): Future[WorkspaceAcl] = get[WorkspaceAcl](s"/api/workspaces/${Api.seg(id)}/acl")
 
   def setWorkspaceAcl(id: String, defaultRole: Option[String], entries: List[AclEntry]): Future[Unit] =
-    put0(s"/api/workspaces/$id/acl", Json.obj("defaultRole" -> defaultRole.asJson, "entries" -> strip(entries)))
+    put0(
+      s"/api/workspaces/${Api.seg(id)}/acl",
+      Json.obj("defaultRole" -> defaultRole.asJson, "entries" -> strip(entries))
+    )
 
-  def audience(pageId: String): Future[List[AudienceEntry]] = get[List[AudienceEntry]](s"/api/pages/$pageId/audience")
+  def audience(pageId: String): Future[List[AudienceEntry]] =
+    get[List[AudienceEntry]](s"/api/pages/${Api.seg(pageId)}/audience")
 
   def accessRequests(pageId: String): Future[List[AccessRequest]] =
-    get[List[AccessRequest]](s"/api/pages/$pageId/access-requests")
+    get[List[AccessRequest]](s"/api/pages/${Api.seg(pageId)}/access-requests")
 
   /** action: approve / deny */
   def decide(rid: String, action: String, role: Option[String], expiresAt: Option[String]): Future[AccessStatus] =
     post[AccessStatus](
-      s"/api/access-requests/$rid/$action",
+      s"/api/access-requests/${Api.seg(rid)}/${Api.seg(action)}",
       obj("role" -> role.asJson, "expiresAt" -> expiresAt.asJson)
     )
 
@@ -229,27 +233,33 @@ object DialogsApi {
     else Api.directory(q.trim).recover(_ => Nil).map(_.filter(_.principalType == "user"))
 
   // ---- ゲスト向け公開
-  def share(pageId: String): Future[ShareInfo] = get[ShareInfo](s"/api/pages/$pageId/share")
+  def share(pageId: String): Future[ShareInfo] = get[ShareInfo](s"/api/pages/${Api.seg(pageId)}/share")
 
   /** opts: 変える項目だけ（null は解除） */
-  def enableShare(pageId: String, opts: Json): Future[PublicShare] = put[PublicShare](s"/api/pages/$pageId/share", opts)
+  def enableShare(pageId: String, opts: Json): Future[PublicShare] =
+    put[PublicShare](s"/api/pages/${Api.seg(pageId)}/share", opts)
 
-  def disableShare(pageId: String): Future[Unit] = del(s"/api/pages/$pageId/share")
+  def disableShare(pageId: String): Future[Unit] = del(s"/api/pages/${Api.seg(pageId)}/share")
 
   /** 公開版を作り直す（現在の内容を公開する） */
   def publish(pageId: String, note: Option[String]): Future[PublicShare] =
-    post[PublicShare](s"/api/pages/$pageId/share/publish", obj("note" -> note.asJson))
+    post[PublicShare](s"/api/pages/${Api.seg(pageId)}/share/publish", obj("note" -> note.asJson))
 
-  def releases(pageId: String): Future[List[Release]] = get[List[Release]](s"/api/pages/$pageId/share/releases")
+  def releases(pageId: String): Future[List[Release]] =
+    get[List[Release]](s"/api/pages/${Api.seg(pageId)}/share/releases")
 
   def release(pageId: String, rid: String): Future[ReleaseDetail] =
-    get[ReleaseDetail](s"/api/pages/$pageId/share/releases/$rid")
+    get[ReleaseDetail](s"/api/pages/${Api.seg(pageId)}/share/releases/${Api.seg(rid)}")
 
   def setReleaseNote(pageId: String, rid: String, note: Option[String]): Future[Unit] =
-    exec(dom.HttpMethod.PATCH, s"/api/pages/$pageId/share/releases/$rid", Some(Json.obj("note" -> note.asJson)))
+    exec(
+      dom.HttpMethod.PATCH,
+      s"/api/pages/${Api.seg(pageId)}/share/releases/${Api.seg(rid)}",
+      Some(Json.obj("note" -> note.asJson))
+    )
 
   def setPageSlug(pageId: String, slug: Option[String]): Future[SlugResult] =
-    put[SlugResult](s"/api/pages/$pageId/guest-slug", Json.obj("slug" -> slug.asJson))
+    put[SlugResult](s"/api/pages/${Api.seg(pageId)}/guest-slug", Json.obj("slug" -> slug.asJson))
 
   /** key: 公開リンクのトークンまたはURL名、page: ページのURL名またはID */
   def shareUrl(key: String, page: String = ""): String =
@@ -257,16 +267,17 @@ object DialogsApi {
 
   // ---- カスタムCSS・ゲスト向けの表示
   def setPageCss(id: String, css: Option[String], inherit: Boolean): Future[Unit] =
-    put0(s"/api/pages/$id/css", Json.obj("css" -> css.asJson, "inherit" -> inherit.asJson))
+    put0(s"/api/pages/${Api.seg(id)}/css", Json.obj("css" -> css.asJson, "inherit" -> inherit.asJson))
 
-  def workspaceCss(id: String): Future[WorkspaceCss] = get[WorkspaceCss](s"/api/workspaces/$id/css")
+  def workspaceCss(id: String): Future[WorkspaceCss] = get[WorkspaceCss](s"/api/workspaces/${Api.seg(id)}/css")
 
   def setWorkspaceCss(id: String, css: Option[String]): Future[Unit] =
-    put0(s"/api/workspaces/$id/css", Json.obj("css" -> css.asJson))
+    put0(s"/api/workspaces/${Api.seg(id)}/css", Json.obj("css" -> css.asJson))
 
   /** kind: page / workspace */
   def guestHtml(kind: String, id: String): Future[GuestHtml] =
-    get[GuestHtml](if (kind == "page") s"/api/pages/$id/guest-html" else s"/api/workspaces/$id/guest-html")
+    get[GuestHtml](if (kind == "page") s"/api/pages/${Api.seg(id)}/guest-html"
+    else s"/api/workspaces/${Api.seg(id)}/guest-html")
 
   def setGuestHtml(kind: String,
                    id: String,
@@ -274,16 +285,19 @@ object DialogsApi {
                    bottom: Option[String],
                    inherit: Boolean): Future[Unit] =
     if (kind == "page") put0(
-      s"/api/pages/$id/guest-html",
+      s"/api/pages/${Api.seg(id)}/guest-html",
       Json.obj("top" -> top.asJson, "bottom" -> bottom.asJson, "inherit" -> inherit.asJson)
     )
-    else put0(s"/api/workspaces/$id/guest-html", Json.obj("top" -> top.asJson, "bottom" -> bottom.asJson))
+    else put0(s"/api/workspaces/${Api.seg(id)}/guest-html", Json.obj("top" -> top.asJson, "bottom" -> bottom.asJson))
 
   // ---- ページの保護
   def setLock(id: String, reason: Option[String], editors: List[String]): Future[PageLockState] =
-    put[PageLockState](s"/api/pages/$id/lock", Json.obj("reason" -> reason.asJson, "editors" -> editors.asJson))
+    put[PageLockState](
+      s"/api/pages/${Api.seg(id)}/lock",
+      Json.obj("reason" -> reason.asJson, "editors" -> editors.asJson)
+    )
 
-  def unlock(id: String): Future[Unit] = del(s"/api/pages/$id/lock")
+  def unlock(id: String): Future[Unit] = del(s"/api/pages/${Api.seg(id)}/lock")
 
   // ---- Webhook
   val WebhookEvents: List[(String, String)] = List(
@@ -294,66 +308,70 @@ object DialogsApi {
     "page.published" -> "ゲスト向けの公開"
   )
 
-  def webhooks(wsId: String): Future[List[Webhook]] = get[List[Webhook]](s"/api/workspaces/$wsId/webhooks")
+  def webhooks(wsId: String): Future[List[Webhook]] = get[List[Webhook]](s"/api/workspaces/${Api.seg(wsId)}/webhooks")
 
   def createWebhook(wsId: String, name: String, url: String, format: String, events: List[String]): Future[Webhook] =
     post[Webhook](
-      s"/api/workspaces/$wsId/webhooks",
+      s"/api/workspaces/${Api.seg(wsId)}/webhooks",
       Json.obj("name" -> name.asJson, "url" -> url.asJson, "format" -> format.asJson, "events" -> events.asJson)
     )
 
   /** fields: 変える項目だけ */
-  def updateWebhook(id: String, fields: Json): Future[Webhook] = patch[Webhook](s"/api/webhooks/$id", fields)
+  def updateWebhook(id: String, fields: Json): Future[Webhook] = patch[Webhook](s"/api/webhooks/${Api.seg(id)}", fields)
 
-  def removeWebhook(id: String): Future[Unit] = del(s"/api/webhooks/$id")
+  def removeWebhook(id: String): Future[Unit] = del(s"/api/webhooks/${Api.seg(id)}")
 
-  def testWebhook(id: String): Future[WebhookTest] = post[WebhookTest](s"/api/webhooks/$id/test")
+  def testWebhook(id: String): Future[WebhookTest] = post[WebhookTest](s"/api/webhooks/${Api.seg(id)}/test")
 
   // ---- 自動化ルール
-  def automations(wsId: String): Future[List[Automation]] = get[List[Automation]](s"/api/workspaces/$wsId/automations")
+  def automations(wsId: String): Future[List[Automation]] =
+    get[List[Automation]](s"/api/workspaces/${Api.seg(wsId)}/automations")
 
   def createAutomation(wsId: String, body: Json): Future[Automation] =
-    post[Automation](s"/api/workspaces/$wsId/automations", body)
+    post[Automation](s"/api/workspaces/${Api.seg(wsId)}/automations", body)
 
-  def updateAutomation(id: String, body: Json): Future[Automation] = patch[Automation](s"/api/automations/$id", body)
+  def updateAutomation(id: String, body: Json): Future[Automation] =
+    patch[Automation](s"/api/automations/${Api.seg(id)}", body)
 
-  def removeAutomation(id: String): Future[Unit] = del(s"/api/automations/$id")
+  def removeAutomation(id: String): Future[Unit] = del(s"/api/automations/${Api.seg(id)}")
 
-  def dbProps(pageId: String): Future[List[DbProp]] = get[DbProps](s"/api/pages/$pageId/database").map(_.props)
+  def dbProps(pageId: String): Future[List[DbProp]] =
+    get[DbProps](s"/api/pages/${Api.seg(pageId)}/database").map(_.props)
 
   // ---- 受信用の Webhook
   def inboundHooks(wsId: String): Future[List[InboundHook]] =
-    get[List[InboundHook]](s"/api/workspaces/$wsId/inbound-hooks")
+    get[List[InboundHook]](s"/api/workspaces/${Api.seg(wsId)}/inbound-hooks")
 
   def createInbound(wsId: String, name: String, targetPageId: String, mode: String): Future[InboundHook] =
     post[InboundHook](
-      s"/api/workspaces/$wsId/inbound-hooks",
+      s"/api/workspaces/${Api.seg(wsId)}/inbound-hooks",
       Json.obj("name" -> name.asJson, "targetPageId" -> targetPageId.asJson, "mode" -> mode.asJson)
     )
 
   def updateInbound(id: String, enabled: Boolean): Future[InboundHook] =
-    patch[InboundHook](s"/api/inbound-hooks/$id", Json.obj("enabled" -> enabled.asJson))
+    patch[InboundHook](s"/api/inbound-hooks/${Api.seg(id)}", Json.obj("enabled" -> enabled.asJson))
 
-  def rotateInbound(id: String): Future[InboundHook] = post[InboundHook](s"/api/inbound-hooks/$id/rotate")
+  def rotateInbound(id: String): Future[InboundHook] = post[InboundHook](s"/api/inbound-hooks/${Api.seg(id)}/rotate")
 
-  def removeInbound(id: String): Future[Unit] = del(s"/api/inbound-hooks/$id")
+  def removeInbound(id: String): Future[Unit] = del(s"/api/inbound-hooks/${Api.seg(id)}")
 
   // ---- 定期バックアップ（管理者のみ）
-  def backups(wsId: String): Future[BackupList] = get[BackupList](s"/api/admin/workspaces/$wsId/backups")
+  def backups(wsId: String): Future[BackupList] = get[BackupList](s"/api/admin/workspaces/${Api.seg(wsId)}/backups")
 
   def setBackupConfig(wsId: String, c: BackupConfig): Future[BackupConfig] =
-    put[BackupConfig](s"/api/admin/workspaces/$wsId/backups/config", c.asJson)
+    put[BackupConfig](s"/api/admin/workspaces/${Api.seg(wsId)}/backups/config", c.asJson)
 
   def runBackup(wsId: String): Future[Unit] =
-    exec(dom.HttpMethod.POST, s"/api/admin/workspaces/$wsId/backups", Some(Json.obj()))
+    exec(dom.HttpMethod.POST, s"/api/admin/workspaces/${Api.seg(wsId)}/backups", Some(Json.obj()))
 
-  def removeBackup(id: String): Future[Unit] = del(s"/api/admin/backups/$id")
+  def removeBackup(id: String): Future[Unit] = del(s"/api/admin/backups/${Api.seg(id)}")
 
-  def backupDownloadUrl(id: String): String = s"/api/admin/backups/$id/download"
+  def backupDownloadUrl(id: String): String = s"/api/admin/backups/${Api.seg(id)}/download"
 
   // ---- 点検
-  def brokenLinks(wsId: String): Future[List[BrokenLink]] = get[List[BrokenLink]](s"/api/workspaces/$wsId/broken-links")
+  def brokenLinks(wsId: String): Future[List[BrokenLink]] =
+    get[List[BrokenLink]](s"/api/workspaces/${Api.seg(wsId)}/broken-links")
 
-  def health(wsId: String): Future[List[PageHealth]] = get[List[PageHealth]](s"/api/workspaces/$wsId/health")
+  def health(wsId: String): Future[List[PageHealth]] = get[List[PageHealth]](s"/api/workspaces/${Api.seg(wsId)}/health")
 
 }

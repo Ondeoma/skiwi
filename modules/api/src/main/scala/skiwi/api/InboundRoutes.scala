@@ -269,7 +269,7 @@ final class InboundRoutes(protected val store: Store,
   }
 
   private def receive(h: InboundHook, s: AuthSession, target: Page, body: JsonObject): IO[Response[IO]] = {
-    val title = body("title").flatMap(_.asString).map(_.trim.take(500)).getOrElse("")
+    val title = body("title").flatMap(_.asString).map(_.trim.take(MaxPageTitle)).getOrElse("")
     val text = body("text").orElse(body("body")).orElse(body("markdown")).flatMap(_.asString).getOrElse("")
     val values = body("values").flatMap(_.asObject).getOrElse(JsonObject.empty)
     def done = inbound.used(h.id)

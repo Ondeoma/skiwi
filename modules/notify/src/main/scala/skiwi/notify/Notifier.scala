@@ -1,11 +1,12 @@
 package skiwi.notify
 
+import sbirds.db.*
 import skiwi.shared.Titles
 
 import cats.effect.*
 import io.circe.parser.parse
 import skiwi.core.*
-import skiwi.db.{OpsStore, OutboxItem, OutboxResult, Periodic, Store}
+import skiwi.db.{OpsStore, OutboxItem, Store}
 import sbirds.mail.{Mail, Mailer}
 
 import java.util.UUID

@@ -1,5 +1,6 @@
 package skiwi.db
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import doobie.*
@@ -578,7 +579,7 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
             where o.sent_at is null and not o.skipped and o.not_before <= now()
             order by o.not_before limit $limit
             for update of o skip locked""".query[OutboxItem].to[List]
-    Outbox.process(xa, "mail_outbox", claim, _.id, _.attempts, maxAttempts = 10)(f)
+    OutboxTable.process(xa, "mail_outbox", claim, _.id, _.attempts, maxAttempts = 10)(f)
   }
 
   // ---------------------------------------------------------------- directory
@@ -626,12 +627,4 @@ final class OpsStore(xa: Transactor[IO], onNotified: List[Notified] => IO[Unit] 
           _.toSet
         )
       }
-}
-
-enum OutboxResult {
-  case Sent
-  case Skip(
-    reason: String)
-  case Retry(
-    error: String)
 }

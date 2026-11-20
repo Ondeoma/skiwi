@@ -100,7 +100,7 @@ object Export {
         else {
           val init = new dom.RequestInit {}
           init.credentials = dom.RequestCredentials.`same-origin`
-          dom.fetch(s"/api/attachments/$aid", init).toFuture.flatMap { r =>
+          dom.fetch(s"/api/attachments/${skiwi.web.Api.seg(aid)}", init).toFuture.flatMap { r =>
             if (!r.ok) Future.successful(())
             else r.blob().toFuture.flatMap { blob =>
               val disp = Option(r.headers.get("Content-Disposition")).getOrElse("")

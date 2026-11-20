@@ -1,5 +1,6 @@
 package skiwi.db
 
+import sbirds.db.*
 import cats.effect.*
 
 import java.util.UUID

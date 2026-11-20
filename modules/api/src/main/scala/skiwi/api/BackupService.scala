@@ -1,11 +1,12 @@
 package skiwi.api
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax.*
 import skiwi.core.*
-import skiwi.db.{AttachmentStore, BackupStore, DatabaseStore, DocStore, Periodic, Store}
+import skiwi.db.{AttachmentStore, BackupStore, DatabaseStore, DocStore, Store}
 import sbirds.storage.BlobStore
 
 import java.io.{BufferedOutputStream, FileOutputStream}

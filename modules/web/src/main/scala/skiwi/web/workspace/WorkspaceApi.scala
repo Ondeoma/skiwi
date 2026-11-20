@@ -112,23 +112,23 @@ object WorkspaceApi {
   def searchWorkspaces(q: String): Future[List[WorkspaceHit]] =
     get[List[WorkspaceHit]]("/api/search/workspaces" + query("q" -> Some(q)))
 
-  def deleteWorkspace(id: String): Future[Unit] = del(s"/api/workspaces/$id")
+  def deleteWorkspace(id: String): Future[Unit] = del(s"/api/workspaces/${seg(id)}")
 
-  def trash(wid: String): Future[List[TrashedPage]] = get[List[TrashedPage]](s"/api/workspaces/$wid/trash")
+  def trash(wid: String): Future[List[TrashedPage]] = get[List[TrashedPage]](s"/api/workspaces/${seg(wid)}/trash")
 
-  def restorePage(id: String): Future[RestoredPage] = post[RestoredPage](s"/api/trash/pages/$id/restore")
+  def restorePage(id: String): Future[RestoredPage] = post[RestoredPage](s"/api/trash/pages/${seg(id)}/restore")
 
-  def purgePage(id: String): Future[Unit] = del(s"/api/trash/pages/$id")
+  def purgePage(id: String): Future[Unit] = del(s"/api/trash/pages/${seg(id)}")
 
   def trashedWorkspaces(): Future[List[TrashedWorkspace]] = get[List[TrashedWorkspace]]("/api/trash/workspaces")
 
   def restoreWorkspace(id: String): Future[Unit] =
-    exec(dom.HttpMethod.POST, s"/api/trash/workspaces/$id/restore", Some(Json.obj()))
+    exec(dom.HttpMethod.POST, s"/api/trash/workspaces/${seg(id)}/restore", Some(Json.obj()))
 
-  def purgeWorkspace(id: String): Future[Unit] = del(s"/api/trash/workspaces/$id")
+  def purgeWorkspace(id: String): Future[Unit] = del(s"/api/trash/workspaces/${seg(id)}")
 
   /** kind: visited / edited */
-  def recent(kind: String): Future[List[RecentItem]] = get[List[RecentItem]](s"/api/recent?kind=$kind&limit=30")
+  def recent(kind: String): Future[List[RecentItem]] = get[List[RecentItem]](s"/api/recent?kind=${seg(kind)}&limit=30")
 
   def notifications(): Future[NotifList] = get[NotifList]("/api/notifications")
 
@@ -138,7 +138,7 @@ object WorkspaceApi {
 
   /** 権限の申請への返事. action: approve / deny */
   def decide(requestId: String, action: String): Future[AccessDecision] =
-    post[AccessDecision](s"/api/access-requests/$requestId/$action")
+    post[AccessDecision](s"/api/access-requests/${seg(requestId)}/${seg(action)}")
 
   def myTasks(done: Boolean): Future[List[TaskItem]] =
     get[List[TaskItem]](s"/api/tasks${if (done) "?done=true" else ""}")
@@ -148,6 +148,6 @@ object WorkspaceApi {
     post[BulkResult]("/api/pages/bulk", Json.fromJsonObject(action.add("ids", ids.asJson)))
 
   /** ページの移動. body: parentId（null はワークスペースの直下）・afterId・placement・workspaceId */
-  def movePage(id: String, body: Json): Future[Page] = post[Page](s"/api/pages/$id/move", body)
+  def movePage(id: String, body: Json): Future[Page] = post[Page](s"/api/pages/${seg(id)}/move", body)
 
 }

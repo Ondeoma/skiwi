@@ -13,7 +13,7 @@ import java.util.UUID
  * 外部サービス（skea・skawau）との連携: 設定（キーと値）、ユーザーごとの接続（暗号化したトークン）、許可画面へ送り出したときの state、
  * skiwi が認可サーバーとして発行する認可コード。
  */
-final class IntegrationStore(xa: Transactor[IO]) extends TxStore(xa) {
+final class IntegrationStore(xa: Transactor[IO]) extends sbirds.oauth.OAuthCodeStore(xa) {
 
   /** prefix で始まるキーの設定 */
   def settings(prefix: String): IO[Map[String, String]] =
@@ -74,24 +74,20 @@ final class IntegrationStore(xa: Transactor[IO]) extends TxStore(xa) {
   }
 
   // ---------------------------------------------------------------- skiwi が発行する認可コード（OAuth 2.0 の認可サーバー）
+  // 保存（createCode）と使用（consumeCode）は sbirds.oauth.OAuthCodeStore のもの（表は oauth_code）
 
-  /** 認可コードを保存する（ハッシュだけ。期限から1時間たったものは消す） */
-  def createOAuthCode(hash: Array[Byte], c: OAuthCode, expires: Instant): IO[Unit] = tx(
-    sql"""insert into oauth_code (code_hash, client_id, redirect_uri, user_id, code_challenge, scope, expires_at)
-          values ($hash, ${c.clientId}, ${c.redirectUri}, ${c.userId}, ${c.codeChallenge}, ${c.scope}, $expires)""".update.run *>
-      sql"delete from oauth_code where expires_at < now() - interval '1 hour'".update.run.void
-  )
-
-  /** 認可コードを使う（期限内で未使用のものだけ。使ったら使用済みにする） */
-  def consumeOAuthCode(hash: Array[Byte]): IO[Option[OAuthCode]] = tx(
-    sql"""update oauth_code set used_at = now() where code_hash = $hash and used_at is null and expires_at > now()
-          returning client_id, redirect_uri, user_id, code_challenge, scope""".query[OAuthCode].option
-  )
+  /** createCode の、前からの名前（テストが使う） */
+  def createOAuthCode(hash: Array[Byte], c: OAuthCode, expires: Instant): IO[Unit] = createCode(hash, c, expires)
 }
 
-/** 認可コードに結び付けた内容 */
-final case class OAuthCode(clientId: String,
-                           redirectUri: String,
-                           userId: UUID,
-                           codeChallenge: String,
-                           scope: String = "read")
+/** 認可コードに結び付けた内容（sbirds.oauth.OAuthCode. scope を省くと read） */
+type OAuthCode = sbirds.oauth.OAuthCode
+
+object OAuthCode {
+  def apply(clientId: String,
+            redirectUri: String,
+            userId: UUID,
+            codeChallenge: String,
+            scope: String = "read"): OAuthCode =
+    sbirds.oauth.OAuthCode(clientId, redirectUri, userId, codeChallenge, scope)
+}

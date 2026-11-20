@@ -71,36 +71,38 @@ object PageApi {
 
   // ---------------------------------------------------------------- ウォッチ
 
-  def watch(id: String): Future[WatchState] = Api.get[WatchState](s"/api/pages/$id/watch")
+  def watch(id: String): Future[WatchState] = Api.get[WatchState](s"/api/pages/${Api.seg(id)}/watch")
 
   def setWatch(id: String, watching: Boolean): Future[WatchState] =
-    put[WatchState](s"/api/pages/$id/watch", Json.obj("watching" -> watching.asJson))
+    put[WatchState](s"/api/pages/${Api.seg(id)}/watch", Json.obj("watching" -> watching.asJson))
 
   def setWatchOpts(id: String,
                    edits: Option[Boolean] = None,
                    comments: Option[Boolean] = None,
                    subtree: Option[Boolean] = None): Future[WatchState] =
     put[WatchState](
-      s"/api/pages/$id/watch",
+      s"/api/pages/${Api.seg(id)}/watch",
       Api.obj("edits" -> edits.asJson, "comments" -> comments.asJson, "subtree" -> subtree.asJson)
     )
 
   // ---------------------------------------------------------------- 版
 
-  def versions(id: String): Future[List[Version]] = Api.get[List[Version]](s"/api/pages/$id/versions")
+  def versions(id: String): Future[List[Version]] = Api.get[List[Version]](s"/api/pages/${Api.seg(id)}/versions")
 
   def version(id: String, vid: String): Future[VersionContent] =
-    Api.get[VersionContent](s"/api/pages/$id/versions/$vid")
+    Api.get[VersionContent](s"/api/pages/${Api.seg(id)}/versions/${Api.seg(vid)}")
 
   /** state: エディタの getState()（{ydoc, content, text}）を JSON にしたもの. label は任意 */
-  def saveVersion(id: String, state: Json): Future[Version] = Api.post[Version](s"/api/pages/$id/versions", state)
+  def saveVersion(id: String, state: Json): Future[Version] =
+    Api.post[Version](s"/api/pages/${Api.seg(id)}/versions", state)
 
   def restoreVersion(id: String, vid: String, state: Json): Future[VersionContent] =
-    Api.post[VersionContent](s"/api/pages/$id/versions/$vid/restore", state)
+    Api.post[VersionContent](s"/api/pages/${Api.seg(id)}/versions/${Api.seg(vid)}/restore", state)
 
   // ---------------------------------------------------------------- コメント
 
-  def comments(pageId: String): Future[List[PageComment]] = Api.get[List[PageComment]](s"/api/pages/$pageId/comments")
+  def comments(pageId: String): Future[List[PageComment]] =
+    Api.get[List[PageComment]](s"/api/pages/${Api.seg(pageId)}/comments")
 
   def createComment(pageId: String,
                     body: String,
@@ -108,44 +110,45 @@ object PageApi {
                     anchor: Option[String] = None,
                     quote: Option[String] = None): Future[PageComment] =
     Api.post[PageComment](
-      s"/api/pages/$pageId/comments",
+      s"/api/pages/${Api.seg(pageId)}/comments",
       Api.obj("body" -> body.asJson, "threadId" -> threadId.asJson, "anchor" -> anchor.asJson, "quote" -> quote.asJson)
     )
 
   def editComment(id: String, body: String): Future[PageComment] =
-    Api.patch[PageComment](s"/api/comments/$id", Json.obj("body" -> body.asJson))
+    Api.patch[PageComment](s"/api/comments/${Api.seg(id)}", Json.obj("body" -> body.asJson))
 
-  def removeComment(id: String): Future[Unit] = Api.del(s"/api/comments/$id")
+  def removeComment(id: String): Future[Unit] = Api.del(s"/api/comments/${Api.seg(id)}")
 
   def resolveComment(id: String, resolved: Boolean): Future[PageComment] =
-    Api.post[PageComment](s"/api/comments/$id/resolve", Json.obj("resolved" -> resolved.asJson))
+    Api.post[PageComment](s"/api/comments/${Api.seg(id)}/resolve", Json.obj("resolved" -> resolved.asJson))
 
   // ---------------------------------------------------------------- ラベル・被リンク・閲覧の記録
 
-  def backlinks(id: String): Future[List[Page]] = Api.get[List[Page]](s"/api/pages/$id/backlinks")
+  def backlinks(id: String): Future[List[Page]] = Api.get[List[Page]](s"/api/pages/${Api.seg(id)}/backlinks")
 
   def setLabels(id: String, labels: List[String]): Future[List[String]] =
     put[Json](
-      s"/api/pages/$id/labels",
+      s"/api/pages/${Api.seg(id)}/labels",
       Json.obj("labels" -> labels.asJson)
     ).map(_.hcursor.get[List[String]]("labels").getOrElse(Nil))
 
-  def visit(id: String): Future[Unit] = Api.exec(dom.HttpMethod.POST, s"/api/pages/$id/visit")
+  def visit(id: String): Future[Unit] = Api.exec(dom.HttpMethod.POST, s"/api/pages/${Api.seg(id)}/visit")
 
   // ---------------------------------------------------------------- 閲覧権限の申請
 
-  def myRequest(id: String): Future[AccessStatus] = Api.get[AccessStatus](s"/api/pages/$id/access-requests/mine")
+  def myRequest(id: String): Future[AccessStatus] =
+    Api.get[AccessStatus](s"/api/pages/${Api.seg(id)}/access-requests/mine")
 
   def requestAccess(id: String, role: String, message: String): Future[AccessStatus] =
     Api.post[AccessStatus](
-      s"/api/pages/$id/access-requests",
+      s"/api/pages/${Api.seg(id)}/access-requests",
       Json.obj("role" -> role.asJson, "message" -> message.asJson)
     )
 
   // ---------------------------------------------------------------- カスタムCSS・保護・データベース
 
-  def pageStyles(id: String): Future[PageStyles] = Api.get[PageStyles](s"/api/pages/$id/styles")
+  def pageStyles(id: String): Future[PageStyles] = Api.get[PageStyles](s"/api/pages/${Api.seg(id)}/styles")
 
-  def lock(id: String): Future[PageLockState] = Api.get[PageLockState](s"/api/pages/$id/lock")
+  def lock(id: String): Future[PageLockState] = Api.get[PageLockState](s"/api/pages/${Api.seg(id)}/lock")
 
 }

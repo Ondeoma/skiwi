@@ -27,7 +27,7 @@ def initState() = State()
 private val smohua = Integrations.smohua
 
 private def detail(props: Props, kind: String) =
-  Api.request(dom.HttpMethod.GET, s"/api/integrations/smohua/items/${props.formId}/$kind", redirectOn401 = false).map(Api.as[Json])
+  Api.request(dom.HttpMethod.GET, s"/api/integrations/smohua/items/${Api.seg(props.formId)}/${Api.seg(kind)}", redirectOn401 = false).map(Api.as[Json])
 
 /** 回答の値の表示（文字・数・複数の選択） */
 def text(j: Json): String =

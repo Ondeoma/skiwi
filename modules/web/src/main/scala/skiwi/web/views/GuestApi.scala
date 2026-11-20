@@ -86,7 +86,7 @@ object GuestApi {
 
   /** ページの本文（ログインユーザー. PDF 用） */
   def pageContent(id: String): Future[PageContent] =
-    Api.get[PageContent](s"/api/pages/$id/content", redirectOn401 = false)
+    Api.get[PageContent](s"/api/pages/${Api.seg(id)}/content", redirectOn401 = false)
 
   /** ゲスト向けのページの URL（URL 名があればそれ、なければ ID） */
   def guestHref(token: String, p: GuestPage): String = s"/s/$token/${p.slug.filter(_.nonEmpty).getOrElse(p.id)}"

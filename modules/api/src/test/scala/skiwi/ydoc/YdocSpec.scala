@@ -144,4 +144,59 @@ class YdocSpec extends FunSuite {
         else acc.add(k, normalize(v))
       })
   )
+
+  // ---------------------------------------------------------------- 細工した update への歯止め（node は使わない）
+
+  private def para(i: Int): JsonObject =
+    parse(s"""{"type":"paragraph","content":[{"type":"text","text":"段落 $i"}]}""").toOption.get.asObject.get
+
+  test("構造体が上限より多い update は読まない（TooLarge）") {
+    val big = YEdit.newDocument(Vector.tabulate(200)(para))
+    assertEquals(YEdit.load(Seq(big)).blocks.size, 200)
+    intercept[YState.TooLarge](YEdit.load(Seq(big), YState.Limits(maxPieces = 100)))
+  }
+
+  test("削除の範囲が上限より多い update は読まない（TooLarge）") {
+    val base = YEdit.newDocument(Vector.tabulate(3)(para))
+    val deletes = YCodec.encode(Vector.empty, Map(1L -> Vector.tabulate(50)(i => (i.toLong * 2, 1L))))
+    assertEquals(YEdit.load(Seq(base, deletes)).blocks.size, 3)
+    intercept[YState.TooLarge](YEdit.load(Seq(base, deletes), YState.Limits(maxDeleteRanges = 10)))
+  }
+
+  test("読み込みの途中で割り込まれたら、すぐにやめる（IO.interruptible の時間切れ）") {
+    val big = YEdit.newDocument(Vector.tabulate(2000)(para))
+    // 割り込みの印が付いたスレッドで読む（テストのスレッドには印を残さない）
+    @volatile var result: Option[Throwable] = None
+    val t = new Thread(() => {
+      Thread.currentThread().interrupt()
+      try { YEdit.load(Seq(big)); () }
+      catch { case e: Throwable => result = Some(e) }
+    })
+    t.start()
+    t.join(20000)
+    assert(result.exists(_.isInstanceOf[InterruptedException]), result.toString)
+  }
+
+  test("依存の鎖が長くても（後ろの項目に前の項目が依存する並び）、待ち行列で1回ずつ並べる") {
+    val n = 20000
+    val el = YContent.Type(YContent.YXmlElement, Some("paragraph"))
+    // クライアント 9: 順につながった鎖。クライアント 5: それぞれがクライアント 9 の項目に依存する（ID の順では先に来るので、最初は全部待つ）
+    val chain = Vector.tabulate[YStruct.Item](n)(i =>
+      YStruct.Item(
+        YId(9, i),
+        Option.when(i > 0)(YId(9, i - 1)),
+        None,
+        Option.when(i == 0)(YParent.Root(YEdit.Root)),
+        None,
+        el
+      )
+    )
+    val waiters =
+      Vector.tabulate[YStruct.Item](n)(i => YStruct.Item(YId(5, i), Some(YId(9, n - 1 - i)), None, None, None, el))
+    val t0 = System.nanoTime()
+    val doc = YEdit.load(Seq(YCodec.encode(waiters, Map.empty), YCodec.encode(chain, Map.empty)))
+    assertEquals(doc.all.size, 2 * n)
+    assertEquals(doc.all.map(_.id).toSet.size, 2 * n)
+    assert((System.nanoTime() - t0) / 1000000 < 20000, "遅すぎる")
+  }
 }

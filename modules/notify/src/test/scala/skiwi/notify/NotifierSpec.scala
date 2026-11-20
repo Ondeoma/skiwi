@@ -1,5 +1,6 @@
 package skiwi.notify
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import doobie.implicits.*

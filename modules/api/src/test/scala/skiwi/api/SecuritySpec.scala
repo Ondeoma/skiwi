@@ -1,5 +1,6 @@
 package skiwi.api
 
+import sbirds.net.{NetAddress, NetGuard}
 import cats.effect.*
 import cats.syntax.all.*
 import munit.CatsEffectSuite
@@ -18,14 +19,7 @@ class SecuritySpec extends CatsEffectSuite {
     case GET -> Root / "api" / "x" => Ok("ok")
   }
   private val app = Security.headers("https://wiki.example.com")(
-    cats.data.Kleisli((req: Request[IO]) =>
-      Security.bodyLimit(Security.csrf(
-        "https://wiki.example.com",
-        "skiwi_session"
-      )(echo)).orNotFound.run(req).recoverWith {
-        case e: Security.BodyTooLarge => PayloadTooLarge(e.getMessage)
-      }
-    )
+    Security.bodyLimit(Security.csrf("https://wiki.example.com", "skiwi_session")(echo)).orNotFound
   )
 
   private def post(headers: (String, String)*)(cookie: Boolean = true) = {
@@ -143,12 +137,12 @@ class SecuritySpec extends CatsEffectSuite {
       "2002:a00:1::1",
       "::ffff:10.0.0.1"
     )
-    priv.foreach(a => assert(!NetGuard.isPublic(InetAddress.getByName(a)), a))
-    List("8.8.8.8", "2606:4700:4700::1111").foreach(a => assert(NetGuard.isPublic(InetAddress.getByName(a)), a))
+    priv.foreach(a => assert(!NetAddress.isPublic(InetAddress.getByName(a)), a))
+    List("8.8.8.8", "2606:4700:4700::1111").foreach(a => assert(NetAddress.isPublic(InetAddress.getByName(a)), a))
   }
 
   test("外へ接続するクライアントは、名前を引いた先が社内のアドレスなら接続しない（確かめたアドレスにそのまま接続する）") {
-    NetGuard.client(allowPrivate = false).use { c =>
+    NetGuard.client(NetGuard.Policy.of(false)).use { c =>
       List(
         "http://127.0.0.1:9/",
         "http://localhost:9/",
@@ -156,7 +150,7 @@ class SecuritySpec extends CatsEffectSuite {
         "http://169.254.169.254/latest/meta-data/"
       ).traverse_ { u =>
         c.run(Request[IO](Method.GET, Uri.unsafeFromString(u))).use_.attempt.map {
-          case Left(_: NetGuard.Blocked) => ()
+          case Left(_: NetGuard.Rejected.Internal) => ()
           case other => fail(s"$u: $other")
         }
       }

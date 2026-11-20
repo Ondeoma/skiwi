@@ -3,6 +3,8 @@ export DATABASE_URL=jdbc:postgresql://localhost:54329/skiwi DATABASE_USER=skiwi 
 export PUBLIC_URL=${PUBLIC_URL:-http://localhost:5173} HTTP_PORT=${HTTP_PORT:-8080}   # PUBLIC_URL は画面の開発サーバー（/api などは :8080 へ中継）
 # 開発用のログイン（/login で名前を入れるだけ。「管理者として」は ADMIN_GROUPS のグループに入れる）。OIDC は設定しない
 export DEV_LOGIN=true ADMIN_GROUPS=skiwi-admins
+# IP ごとの回数の制限は、開発中（E2E がログインを繰り返す）は緩める
+export RATE_LIMIT_AUTH=${RATE_LIMIT_AUTH:-300} RATE_LIMIT_PUBLIC=${RATE_LIMIT_PUBLIC:-1000}
 export S3_ENDPOINT=http://localhost:3900 S3_BUCKET=skiwi S3_ACCESS_KEY=skiwi S3_SECRET_KEY=skiwiskiwiskiwi
 export SMTP_HOST=localhost SMTP_PORT=1025 SMTP_TLS=none MAIL_FROM=skiwi@localhost   # Mailpit (http://localhost:8025)
 export WEBHOOK_ALLOW_HTTP=true WEBHOOK_ALLOW_PRIVATE=true   # http:// と localhost の Webhook 先を許す

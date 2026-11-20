@@ -166,12 +166,20 @@ final class ApiRoutes(protected val store: Store,
       body[CreatePageReq](req) { b =>
         placement(b.afterId, b.placement) match {
           case Left(m) => err(ErrorCode.InvalidInput, m)
+          case Right(_) if b.icon.exists(_.length > MaxPageIcon) => err(ErrorCode.IconTooLong)
           case Right(pl) =>
             editUnder(s, id, b.parentId) {
               sbirds.observe.Telemetry.span(
                 "page.create",
                 "workspace.id" -> id.toString
-              )(store.createPage(id, b.parentId, pl, b.title.getOrElse(""), b.icon, s.user.id)).flatMap {
+              )(store.createPage(
+                id,
+                b.parentId,
+                pl,
+                b.title.getOrElse("").take(MaxPageTitle),
+                b.icon,
+                s.user.id
+              )).flatMap {
                 case Left(e) => fail(e)
                 case Right(p) =>
                   sbirds.observe.Metrics.count(
@@ -204,7 +212,7 @@ final class ApiRoutes(protected val store: Store,
     withPage(req, id, Role.Edit) {
       (s, p, r) =>
         body[UpdatePageReq](req) {
-          case b if b.icon.flatten.exists(_.length > 32) => err(ErrorCode.IconTooLong)
+          case b if b.icon.flatten.exists(_.length > MaxPageIcon) => err(ErrorCode.IconTooLong)
           case b if b.status.flatten.exists(st => !UpdatePageReq.Statuses(st)) =>
             err(ErrorCode.PageStateInvalid)
           case b =>
@@ -213,7 +221,7 @@ final class ApiRoutes(protected val store: Store,
                 store.setPageMeta(id, b.ownerId, b.status).flatMap {
                   case false => err(ErrorCode.OwnerNotFound)
                   case true =>
-                    store.updatePage(id, b.title, b.icon).flatMap {
+                    store.updatePage(id, b.title.map(_.take(MaxPageTitle)), b.icon).flatMap {
                       case Some(np) =>
                         val changed = Json.obj(
                           "title" -> Option.when(np.title != p.title)(np.title).asJson,

@@ -1,5 +1,6 @@
 package skiwi.api
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import io.circe.{Decoder, Encoder, Json}
@@ -7,7 +8,7 @@ import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 import skiwi.core.*
-import skiwi.db.{Periodic, Store}
+import skiwi.db.Store
 import sbirds.storage.BlobStore
 
 import java.time.Instant

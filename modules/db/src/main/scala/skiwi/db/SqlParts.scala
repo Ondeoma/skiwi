@@ -1,6 +1,5 @@
 package skiwi.db
 
-import cats.effect.IO
 import doobie.*
 import doobie.implicits.*
 import doobie.postgres.implicits.*
@@ -26,9 +25,4 @@ private[db] object SqlParts {
   def groupsOfC(userId: UUID): ConnectionIO[List[Group]] =
     sql"""select g.id, g.external_id, g.name from user_group g
           join group_member m on m.group_id = g.id where m.user_id = $userId""".query[Group].to[List]
-}
-
-/** 各メソッドを1トランザクションで実行するストアの共通部分。 */
-abstract class TxStore(xa: Transactor[IO]) {
-  protected def tx[A](c: ConnectionIO[A]): IO[A] = c.transact(xa)
 }

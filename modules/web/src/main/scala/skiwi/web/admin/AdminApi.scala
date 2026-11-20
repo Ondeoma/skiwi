@@ -42,7 +42,7 @@ object AdminApi {
   def shareUrl(key: String): String = s"${org.scalajs.dom.window.location.origin}/s/$key"
 
   def integrationSettings(svc: String): Future[IntegrationSettings] =
-    Api.get[IntegrationSettings](s"/api/admin/integrations/$svc")
+    Api.get[IntegrationSettings](s"/api/admin/integrations/${Api.seg(svc)}")
 
   /** clientSecret: 空なら今の値のまま. projectKeys: skea だけ */
   def saveIntegrationSettings(svc: String,
@@ -51,7 +51,7 @@ object AdminApi {
                               clientSecret: Option[String],
                               projectKeys: Option[List[String]]): Future[IntegrationSettings] =
     Api.put[IntegrationSettings](
-      s"/api/admin/integrations/$svc",
+      s"/api/admin/integrations/${Api.seg(svc)}",
       Api.obj(
         "url" -> url.asJson,
         "clientId" -> clientId.asJson,
@@ -88,12 +88,13 @@ object AdminApi {
   def createAgent(name: String): Future[AgentDto] = Api.post[AgentDto]("/api/admin/agents", CreateAgentReq(name).asJson)
 
   def updateAgent(id: UUID, req: UpdateAgentReq): Future[AgentDto] =
-    Api.patch[AgentDto](s"/api/admin/agents/$id", req.asJson.dropNullValues)
+    Api.patch[AgentDto](s"/api/admin/agents/${Api.seg(id)}", req.asJson.dropNullValues)
 
   /** 平文のキーはこの応答でのみ返る */
   def createAgentKey(id: UUID, req: CreateTokenReq): Future[CreatedTokenDto] =
-    Api.post[CreatedTokenDto](s"/api/admin/agents/$id/keys", req.asJson)
+    Api.post[CreatedTokenDto](s"/api/admin/agents/${Api.seg(id)}/keys", req.asJson)
 
-  def revokeAgentKey(id: UUID, keyId: UUID): Future[Unit] = Api.del(s"/api/admin/agents/$id/keys/$keyId")
+  def revokeAgentKey(id: UUID, keyId: UUID): Future[Unit] =
+    Api.del(s"/api/admin/agents/${Api.seg(id)}/keys/${Api.seg(keyId)}")
 
 }

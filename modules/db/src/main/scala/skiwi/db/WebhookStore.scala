@@ -1,5 +1,6 @@
 package skiwi.db
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import doobie.*
@@ -176,7 +177,7 @@ final class WebhookStore(xa: Transactor[IO]) extends TxStore(xa) {
             where d.sent_at is null and not d.skipped and d.not_before <= now()
             order by d.not_before limit $limit
             for update of d skip locked""").query[WebhookItem].to[List]
-    Outbox.process(xa, "webhook_delivery", claim, _.id, _.attempts, maxAttempts = 8)(f)
+    OutboxTable.process(xa, "webhook_delivery", claim, _.id, _.attempts, maxAttempts = 8)(f)
   }
 
   /** 送信済み・諦めた古い記録を消す */

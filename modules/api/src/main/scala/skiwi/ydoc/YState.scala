@@ -9,7 +9,25 @@ import scala.collection.mutable
  * いくつかの update から、文書の状態を組み立てる。
  * Yjs の StructStore と Item.integrate（YATA）と同じ規則で項目の並びを再現し、本文を ProseMirror の JSON として読める。
  */
-final class YState private () {
+final class YState private (limits: YState.Limits) {
+
+  // 細工した update で CPU・メモリを使い切らせないための歯止め
+  private var pieceCount = 0
+  private var ticks = 0
+
+  /** かけらを1つ作るたびに数える。上限を超えたら読むのをやめる。 */
+  private def countPiece(): Unit = {
+    pieceCount += 1
+    if pieceCount > limits.maxPieces then
+      throw YState.TooLarge(s"構造体が多すぎます（上限 ${limits.maxPieces}）")
+  }
+
+  /** 長い繰り返しの中で呼ぶ。読み込みが取り消されていたら（IO.interruptible の割り込み）すぐにやめる。 */
+  private def tick(): Unit = {
+    ticks += 1
+    if (ticks & 0x3ff) == 0 && Thread.currentThread().isInterrupted then
+      throw new InterruptedException("本文の読み込みが取り消されました")
+  }
 
   /** 構造体のかけら（Yjs と同じく、必要に応じて分割する）。 */
   final class Piece(var id: YId,
@@ -56,6 +74,8 @@ final class YState private () {
 
   /** かけら p を off の位置で分け、右側を返す（Yjs の splitItem）。並び・親ごとの索引もつなぎ直す。 */
   private def split(p: Piece, off: Int): Piece = {
+    countPiece()
+    tick()
     val (a, b) = if p.gc then (p.content, p.content) else p.content.splitAt(off)
     val r = Piece(p.id + off, p.length - off, Some(p.id + (off - 1)), p.rightOrigin, p.parentRef, p.parentSub, b, p.gc)
     r.deleted = p.deleted
@@ -124,7 +144,11 @@ final class YState private () {
               gc = false
             ))
         }
-        piece.foreach(p => ps.insert(firstEndingAfter(ps, a), p))
+        piece.foreach { p =>
+          countPiece()
+          tick()
+          ps.insert(firstEndingAfter(ps, a), p)
+        }
     }
   }
 
@@ -138,6 +162,7 @@ final class YState private () {
               val end = clock + len
               var k = firstEndingAfter(ps, clock)
               while k < ps.size && ps(k).id.clock < end do {
+                tick()
                 val p0 = ps(k)
                 val p = if p0.id.clock < clock then split(p0, (clock - p0.id.clock).toInt) else p0
                 if p.id.clock + p.length > end then split(p, (end - p.id.clock).toInt)
@@ -173,7 +198,8 @@ final class YState private () {
     val seen = mutable.Set.empty[YId]
     var cur: Option[Piece] = Some(p0)
     var result: Option[Parent] = None
-    while result.isEmpty do
+    while result.isEmpty do {
+      tick()
       cur match {
         case None => result = Some(Parent.Gone)
         case Some(p) if p.gc => result = Some(Parent.Gone)
@@ -196,6 +222,7 @@ final class YState private () {
                 }
           }
       }
+    }
     val r = result.get
     chain.foreach(c => parentMemo(c.id) = r)
     r
@@ -235,6 +262,7 @@ final class YState private () {
             val beforeOrigin = mutable.Set.empty[Piece]
             var continue = true
             while continue && o != null && o != right do {
+              tick()
               beforeOrigin += o; conflicting += o
               if p.origin == o.origin then {
                 if o.id.client < p.id.client then { left = o; conflicting.clear() }
@@ -255,23 +283,28 @@ final class YState private () {
           p.integrated = true
         }
 
-        // origin・rightOrigin のかけらが並びに入ったものから順に入れる（YATA は依存の順を守れば入れる順によらず同じ並びになる）
-        def ready(i: Option[YId]) = i.forall(x => find(x).exists(_.integrated))
-        var pending = group(key).filterNot(_.integrated).sortBy(p => (p.id.client, p.id.clock))
-        var progress = true
-        while pending.nonEmpty && progress do {
-          progress = false
-          pending.foreach { p =>
-            if !p.integrated && ready(p.origin) && ready(p.rightOrigin) then {
-              integrate(p)
-              progress = true
+        // origin・rightOrigin のかけらが並びに入ったものから順に入れる（YATA は依存の順を守れば入れる順によらず同じ並びになる）。
+        // まだ入っていないかけらを待つものは、そのかけらが入ったときに待ち行列へ戻す（毎回全部を集め直すと、依存の鎖が長いときに O(n²) になる）。
+        // 並びに入れるときに分割されるのは、すでに並びに入っているかけらだけなので、待たれているかけらが途中で分かれることはない
+        def blocker(p: Piece): Option[Option[Piece]] =
+          List(p.origin, p.rightOrigin).flatten.map(find).find(!_.exists(_.integrated))
+        val queue = mutable.ArrayDeque.from(group(key).filterNot(_.integrated).sortBy(p => (p.id.client, p.id.clock)))
+        val waiting = mutable.Map.empty[Piece, mutable.ArrayBuffer[Piece]]
+        var stuck = 0
+        while queue.nonEmpty do {
+          tick()
+          val p = queue.removeHead()
+          if !p.integrated then
+            blocker(p) match {
+              case None =>
+                integrate(p)
+                waiting.remove(p).foreach(queue ++= _)
+              case Some(Some(dep)) => waiting.getOrElseUpdate(dep, mutable.ArrayBuffer.empty) += p
+              case Some(None) => stuck += 1 // 依存するかけらが文書にない
             }
-          }
-          // 分割で増えたかけらも含め、まだ入っていないものを集め直す（同じ親の子だけ）
-          pending = group(key).filterNot(_.integrated).sortBy(p => (p.id.client, p.id.clock))
         }
-        if pending.nonEmpty then
-          throw IllegalStateException(s"could not order ${pending.size} item(s): missing dependencies")
+        val left = stuck + waiting.valuesIterator.map(_.size).sum
+        if left > 0 then throw IllegalStateException(s"could not order $left item(s): missing dependencies")
         val out = Vector.newBuilder[Piece]
         var o = start
         while o != null do { out += o; o = o.right }
@@ -359,10 +392,21 @@ final class YState private () {
 
 object YState {
 
+  /**
+   * 読み込む文書の大きさの上限。かけらの挿入・分割は数に対して O(n²) になりうるので、細工した update で CPU を使い続けさせない。
+   * maxPieces: 構造体とその分割でできるかけらの総数。maxDeleteRanges: 削除の範囲の総数。
+   */
+  final case class Limits(maxPieces: Int = 500000, maxDeleteRanges: Int = 500000)
+
+  /** 上限を超えた（本文の API では ContentUnreadable にする）。 */
+  final class TooLarge(msg: String) extends IllegalArgumentException(msg)
+
   /** いくつかの update（スナップショットと更新ログ）から状態を作る。 */
-  def apply(updates: Seq[Array[Byte]]): YState = {
-    val st = new YState()
+  def apply(updates: Seq[Array[Byte]], limits: Limits = Limits()): YState = {
+    val st = new YState(limits)
     val decoded = updates.map(YCodec.decode)
+    val ranges = decoded.iterator.map(_.deletes.valuesIterator.map(_.size.toLong).sum).sum
+    if ranges > limits.maxDeleteRanges then throw TooLarge(s"削除の範囲が多すぎます（上限 ${limits.maxDeleteRanges}）")
     decoded.foreach(_.structs.foreach(st.add))
     decoded.foreach(u => st.applyDeletes(u.deletes))
     st

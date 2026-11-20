@@ -130,49 +130,56 @@ final class DatabaseRoutes(protected val store: Store,
                   parentOk.flatMap {
                     case false => err(ErrorCode.DatabaseParentNotRow)
                     case true =>
-                      store.createPage(
-                        p.workspaceId,
-                        Some(b.parentId.getOrElse(id)),
-                        Placement.Last,
-                        b.title.map(_.trim.take(500)).getOrElse(""),
-                        None,
-                        s.user.id,
-                        Json.fromJsonObject(vals).noSpaces
-                      ).flatMap {
-                        case Left(e) => fail(e)
-                        case Right(np) =>
-                          for {
-                            _ <- dbs.ensureSeq(id)
-                            v <- dbs.values(np.id)
-                            _ <- ops.setWatch(np.id, s.user.id, on = true)
-                            _ <- automations.traverse_(_.fire(AutoEvent(
-                              "page_created",
-                              np.workspaceId,
-                              np.id,
-                              s.user.name
-                            )))
-                            _ <- audit.log(
-                              s,
-                              "page.create",
-                              "page",
-                              np.id,
-                              Json.obj(
-                                "title" -> np.title.asJson,
-                                "workspaceId" -> np.workspaceId.toString.asJson,
-                                "database" -> id.toString.asJson
-                              )
-                            )
-                            resp <- Created(DatabaseRowDto(
-                              PageDto.of(np, Role.Edit),
-                              v.map(parseOrNull).getOrElse(Json.obj()),
-                              Some(RowMetaDto(np.createdAt, Some(s.user.name), np.updatedAt, None, None, None))
-                            ))
-                          } yield resp
-                      }
+                      // サブ項目は親の項目の下に作るので、親の項目も編集できること（保護中・個別に権限を絞った項目の下には作らせない）
+                      b.parentId.fold(IO.pure(true))(pid =>
+                        store.pageAccess(pid, s).map(_.exists(_._2 == Role.Edit))
+                      ).ifM(createRow(s, p, id, b, vals), err(ErrorCode.PermissionDenied))
                   }
               }
           }
         }
+    }
+
+  /** データベース id に項目（parentId があればそのサブ項目）を作る（権限の確認は呼び出し側で行う） */
+  private def createRow(s: AuthSession, p: Page, id: UUID, b: NewRowReq, vals: JsonObject): IO[Response[IO]] =
+    store.createPage(
+      p.workspaceId,
+      Some(b.parentId.getOrElse(id)),
+      Placement.Last,
+      b.title.map(_.trim.take(MaxPageTitle)).getOrElse(""),
+      None,
+      s.user.id,
+      Json.fromJsonObject(vals).noSpaces
+    ).flatMap {
+      case Left(e) => fail(e)
+      case Right(np) =>
+        for {
+          _ <- dbs.ensureSeq(id)
+          v <- dbs.values(np.id)
+          _ <- ops.setWatch(np.id, s.user.id, on = true)
+          _ <- automations.traverse_(_.fire(AutoEvent(
+            "page_created",
+            np.workspaceId,
+            np.id,
+            s.user.name
+          )))
+          _ <- audit.log(
+            s,
+            "page.create",
+            "page",
+            np.id,
+            Json.obj(
+              "title" -> np.title.asJson,
+              "workspaceId" -> np.workspaceId.toString.asJson,
+              "database" -> id.toString.asJson
+            )
+          )
+          resp <- Created(DatabaseRowDto(
+            PageDto.of(np, Role.Edit),
+            v.map(parseOrNull).getOrElse(Json.obj()),
+            Some(RowMetaDto(np.createdAt, Some(s.user.name), np.updatedAt, None, None, None))
+          ))
+        } yield resp
     }
 
   private def postPageDatabaseRowsBulk(req: Request[IO], id: UUID): IO[Response[IO]] =
@@ -191,7 +198,7 @@ final class DatabaseRoutes(protected val store: Store,
                   case Left(m) => err(ErrorCode.InvalidInput, m)
                   case Right(rows) =>
                     val items = rows.map((r, vals) =>
-                      (r.title.map(_.trim.take(500)).getOrElse(""), Json.fromJsonObject(vals).noSpaces)
+                      (r.title.map(_.trim.take(MaxPageTitle)).getOrElse(""), Json.fromJsonObject(vals).noSpaces)
                     )
                     store.createPages(p.workspaceId, id, items, s.user.id).map(_.getOrElse(0)).flatTap(_ =>
                       dbs.ensureSeq(id)
@@ -267,15 +274,8 @@ final class DatabaseRoutes(protected val store: Store,
   }
 
   /** 本文の最初の画像（ギャラリーの表紙） */
-  private def firstImage(content: Option[String]): Option[String] = {
-    def find(j: Json): Option[String] =
-      j.asObject.flatMap { o =>
-        if o("type").flatMap(_.asString).contains("image") then
-          o("attrs").flatMap(_.hcursor.get[String]("src").toOption)
-        else o("content").flatMap(_.asArray).flatMap(_.collectFirstSome(find))
-      }
-    content.flatMap(c => io.circe.parser.parse(c).toOption).flatMap(find)
-  }
+  private def firstImage(content: Option[String]): Option[String] =
+    content.flatMap(c => io.circe.parser.parse(c).toOption).flatMap(firstImageSrc)
 
   /** wsId: データベースのページのワークスペース（項目も同じワークスペースにある） */
   private def full(s: AuthSession, d: DatabaseDef, wsId: UUID, role: Role): IO[DatabaseDto] =
@@ -297,7 +297,7 @@ final class DatabaseRoutes(protected val store: Store,
             )
           )
         )
-        (store.pageMeta(visible.map(_.page.id)), targets(s, d)).flatMapN {
+        (store.pageMeta(visible.map(_.page.id)), targets(s, d, Map(wsId -> vis))).flatMapN {
           (meta, tg) =>
             val withMeta = visible.map(r => r.copy(page = r.page.withMeta(meta.get(r.page.id))))
             userNames(withMeta.map(_.values) ++ tg.values.flatMap(_.rows.map(_.values))).map(us =>
@@ -307,25 +307,32 @@ final class DatabaseRoutes(protected val store: Store,
     }
 
   /** 「関連」の列の先のデータベース（閲覧できるものと、その閲覧できる項目） */
-  private def targets(s: AuthSession, d: DatabaseDef): IO[Map[String, RelatedDbDto]] = {
+  /** known: すでに解決済みの、ワークスペースごとの見えるページ（読み直さない） */
+  private def targets(s: AuthSession,
+                      d: DatabaseDef,
+                      known: Map[UUID, Map[UUID, (Page, Role)]] = Map.empty): IO[Map[String, RelatedDbDto]] = {
     val ids = DatabaseSchema.props(parseOrNull(d.props)).toOption.toList.flatten.flatMap(_.target).distinct.take(10)
-    store.pagesAccess(ids, s).flatMap(acc =>
-      ids.traverse { t =>
-        dbs.get(t).flatMap(td =>
-          (acc.get(t), td) match {
-            case (Some((tp, _)), Some(td)) =>
-              (dbs.rows(t), visibleIn(tp.workspaceId, s)).mapN {
-                (rows, vis) =>
+    store.pagesAccess(ids, s).flatMap { acc =>
+      // 見えるページの解決はワークスペースごとに 1 回だけ（関連先はたいてい同じワークスペースにある）
+      val wsIds = ids.flatMap(acc.get).map(_._1.workspaceId).distinct.filterNot(known.contains)
+      wsIds.traverse(w => visibleIn(w, s).map(w -> _)).map(known ++ _).flatMap { visByWs =>
+        ids.traverse { t =>
+          dbs.get(t).flatMap(td =>
+            (acc.get(t), td) match {
+              case (Some((tp, _)), Some(td)) =>
+                dbs.rows(t).map { rows =>
+                  val vis = visByWs.getOrElse(tp.workspaceId, Map.empty)
                   val rs = rows.take(2000).flatMap(r =>
                     vis.get(r.id).map((p, _) => RelatedRowDto(p.id, p.title, p.icon, parseOrNull(r.values)))
                   )
                   Some(t.toString -> RelatedDbDto(t, tp.title, parseOrNull(td.props), rs))
-              }
-            case _ => IO.pure(None)
-          }
-        )
+                }
+              case _ => IO.pure(None)
+            }
+          )
+        }
       }
-    ).map(_.flatten.toMap)
+    }.map(_.flatten.toMap)
   }
 
 }

@@ -12,6 +12,7 @@ import org.http4s.multipart.Multipart
 import org.typelevel.ci.CIString
 import skiwi.core.*
 import skiwi.db.{Attachment, AttachmentStore, Store}
+import sbirds.http.BodyLimit
 import sbirds.storage.BlobStore
 
 import java.net.URLEncoder
@@ -46,7 +47,7 @@ final class AttachmentRoutes(protected val store: Store,
             if req.contentLength.exists(_ > maxBytes + 64 * 1024) then err(ErrorCode.FileTooLarge)
             else {
               // multipart の解析は全パートを一時ファイルに書き切ってから返すので、Content-Length がなくても受け取る量をここで限る
-              val limited = req.withBodyStream(req.body.through(Security.limitStream(maxBytes + 64 * 1024)))
+              val limited = BodyLimit.request(req, maxBytes + 64 * 1024)(TooLarge)
               EntityDecoder.mixedMultipartResource[IO](
                 maxSizeBeforeWrite = 1024 * 1024,
                 maxParts = 5,
@@ -126,11 +127,10 @@ final class AttachmentRoutes(protected val store: Store,
                   }
                 }
               }.handleErrorWith {
-                // 上限を超えた（解析の途中で limitStream が止めた）
+                // 上限を超えた（解析の途中で BodyLimit が止めた）
                 case e
-                    if Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(10).exists(
-                      _.isInstanceOf[Security.BodyTooLarge]
-                    ) =>
+                    if Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(10).exists(_ eq
+                      TooLarge) =>
                   err(ErrorCode.FileTooLarge)
               }
             }

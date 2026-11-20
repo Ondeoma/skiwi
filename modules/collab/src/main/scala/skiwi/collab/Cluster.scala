@@ -1,8 +1,9 @@
 package skiwi.collab
 
+import sbirds.db.*
 import cats.effect.*
 import skiwi.core.Rendezvous
-import skiwi.db.{ClusterNode, ClusterStore, Periodic}
+import skiwi.db.{ClusterNode, ClusterStore}
 
 import java.util.UUID
 import scala.concurrent.duration.*

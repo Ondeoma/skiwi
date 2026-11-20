@@ -11,13 +11,14 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 /** フォームの API */
 object FormApi {
 
-  def list(dbId: String): Future[List[DbFormDef]] = Api.get[List[DbFormDef]](s"/api/pages/$dbId/forms")
+  def list(dbId: String): Future[List[DbFormDef]] = Api.get[List[DbFormDef]](s"/api/pages/${Api.seg(dbId)}/forms")
 
-  def create(dbId: String, b: SaveForm): Future[DbFormDef] = Api.post[DbFormDef](s"/api/pages/$dbId/forms", b.asJson)
+  def create(dbId: String, b: SaveForm): Future[DbFormDef] =
+    Api.post[DbFormDef](s"/api/pages/${Api.seg(dbId)}/forms", b.asJson)
 
-  def update(id: String, b: SaveForm): Future[DbFormDef] = Api.put[DbFormDef](s"/api/forms/$id", b.asJson)
+  def update(id: String, b: SaveForm): Future[DbFormDef] = Api.put[DbFormDef](s"/api/forms/${Api.seg(id)}", b.asJson)
 
-  def remove(id: String): Future[Unit] = Api.del(s"/api/forms/$id")
+  def remove(id: String): Future[Unit] = Api.del(s"/api/forms/${Api.seg(id)}")
 
   private def publicUrl(token: String) = s"/api/forms/public/${Api.enc(token)}"
 

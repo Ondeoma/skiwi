@@ -1,57 +1,28 @@
 package skiwi.api
 
 import cats.effect.*
-import io.circe.{Decoder, Json}
+import io.circe.Decoder
 import org.http4s.*
-import org.http4s.circe.CirceEntityCodec.*
-import org.typelevel.ci.CIString
-import skiwi.core.AuthVia
-import sbirds.push.{PushService, PushStore, Subscription, WebPush}
-import skiwi.core.ErrorCode
+import skiwi.core.{AuthVia, ErrorCode}
 
-/**
- * プッシュ通知（PWA）の購読.
- *  - `GET /api/push`: VAPID の公開鍵と、自分の購読の数
- *  - `POST /api/push/subscriptions`（PushSubscription.toJSON() の形）: この端末で受け取る（画面のログインのみ. API トークンでは登録しない）
- *  - `DELETE /api/push/subscriptions`（{"endpoint": …}）: この端末で受け取るのをやめる
- */
-final class PushRoutes(store: PushStore, push: PushService, protected val sessions: SessionAuth) extends RouteSupport {
+import java.util.UUID
 
-  val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
-    case req @ GET -> Root / "api" / "push" => getPush(req)
-    case req @ POST -> Root / "api" / "push" / "subscriptions" => postPushSubscriptions(req)
-    case req @ DELETE -> Root / "api" / "push" / "subscriptions" => deletePushSubscriptions(req)
+/** プッシュ通知（PWA）の購読（sbirds.push.PushRoutes）. 端末の登録は画面のログインだけ（API トークンでは登録しない）. */
+final class PushRoutes(store: sbirds.push.PushStore, push: sbirds.push.PushService, protected val sessions: SessionAuth)
+  extends RouteSupport { self =>
+
+  private val host = new sbirds.push.PushRoutes.Host {
+    def authed(req: Request[IO])(f: UUID => IO[Response[IO]]): IO[Response[IO]] = self.authed(req)(s => f(s.user.id))
+    def interactive(req: Request[IO])(f: UUID => IO[Response[IO]]): IO[Response[IO]] =
+      self.authed(req)(s => if s.via != AuthVia.Session then err(ErrorCode.PushSessionOnly) else f(s.user.id))
+    def body[A: Decoder](req: Request[IO])(f: A => IO[Response[IO]]): IO[Response[IO]] = self.body[A](req)(f)
   }
 
-  private def getPush(req: Request[IO]): IO[Response[IO]] =
-    authed(req)(s =>
-      store.count(s.user.id).flatMap(n =>
-        Ok(Json.obj("publicKey" -> Json.fromString(push.publicKey), "subscriptions" -> Json.fromInt(n)))
-      )
-    )
-
-  private def postPushSubscriptions(req: Request[IO]): IO[Response[IO]] =
-    authed(req) { s =>
-      if s.via != AuthVia.Session then err(ErrorCode.PushSessionOnly)
-      else
-        body[SubscribeReq](req) { r =>
-          if !WebPush.allowedEndpoint(r.endpoint) then err(ErrorCode.PushServiceNotAllowed)
-          else if r.keys.p256dh.length > 200 || r.keys.auth.length > 100 || r.endpoint.length > 2000 then
-            err(ErrorCode.PushSubscriptionInvalid)
-          else
-            store.subscribe(
-              s.user.id,
-              Subscription(r.endpoint, r.keys.p256dh, r.keys.auth),
-              req.headers.get(CIString("User-Agent")).map(_.head.value.take(300))
-            ) *> NoContent()
-        }
-    }
-
-  private def deletePushSubscriptions(req: Request[IO]): IO[Response[IO]] =
-    authed(req)(s => body[EndpointReq](req)(r => store.unsubscribe(s.user.id, r.endpoint) *> NoContent()))
-
-  private final case class Keys(p256dh: String, auth: String) derives Decoder
-  private final case class SubscribeReq(endpoint: String, keys: Keys) derives Decoder
-  private final case class EndpointReq(endpoint: String) derives Decoder
-
+  val routes: HttpRoutes[IO] = new sbirds.push.PushRoutes(
+    store,
+    push,
+    host,
+    notAllowed = ErrorCode.PushServiceNotAllowed,
+    invalid = ErrorCode.PushSubscriptionInvalid
+  ).routes
 }

@@ -42,7 +42,7 @@ object Integrations {
     }.toMap)
 
   def connectUrl(name: String, returnTo: String): String =
-    s"/api/integrations/$name/connect?returnTo=${js.URIUtils.encodeURIComponent(returnTo)}"
+    s"/api/integrations/${skiwi.web.Api.seg(name)}/connect?returnTo=${js.URIUtils.encodeURIComponent(returnTo)}"
 
   def disconnect(name: String): Future[Unit] = byName(name).fold(Future.unit)(_.disconnect())
 

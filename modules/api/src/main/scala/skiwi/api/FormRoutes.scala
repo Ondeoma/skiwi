@@ -270,7 +270,9 @@ final class FormRoutes(protected val store: Store,
     val fields = fieldsOf(f)
     // 件名も、フォームの項目にあるときだけ受け付ける
     val title =
-      in("title").filter(_ => fields.exists(_.prop == "title")).flatMap(_.asString).map(_.trim.take(500)).getOrElse("")
+      in(
+        "title"
+      ).filter(_ => fields.exists(_.prop == "title")).flatMap(_.asString).map(_.trim.take(MaxPageTitle)).getOrElse("")
     val missing = fields.filter(_.required).filter { fd =>
       in(fd.prop).forall(v =>
         v.isNull || v.asString.exists(_.trim.isEmpty) || v.asArray.exists(_.isEmpty) || v.asBoolean.contains(false)

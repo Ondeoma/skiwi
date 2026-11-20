@@ -1,12 +1,13 @@
 package skiwi.db
 
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import doobie.*
 import doobie.implicits.*
 
-/** 送信待ちの表（メール・Webhook）を処理する共通の手順。 */
-private[db] object Outbox {
+/** 送信待ちの表（メール・Webhook）を処理する共通の手順（skiwi の表の列に合わせたもの. 結果の型と再試行の間隔は sbirds.db）。 */
+private[db] object OutboxTable {
 
   /**
    * claim で取得・ロックした行（複数ノードで重複送信しないよう SKIP LOCKED で取る）を f で処理し、結果を table に記録する。
@@ -32,7 +33,7 @@ private[db] object Outbox {
               val n = attempts(it)
               val giveUp = n + 1 >= maxAttempts
               (upd ++ fr"""attempts = attempts + 1, last_error = $err, skipped = $giveUp,
-                      not_before = now() + make_interval(secs => ${math.min(3600, 30 * (1 << math.min(n, 7)))})
+                      not_before = now() + make_interval(secs => ${Outbox.backoffSeconds(n)})
                     where id = ${id(it)}""").update.run
           }
         }.map(_.size)

@@ -1,5 +1,6 @@
 package skiwi.api
 
+import sbirds.db.*
 import skiwi.shared.Titles
 
 import cats.effect.*
@@ -7,7 +8,7 @@ import cats.syntax.all.*
 import io.circe.{Decoder, Encoder, Json, JsonObject}
 import io.circe.syntax.*
 import skiwi.core.*
-import skiwi.db.{AutomationRule, AutomationStore, DatabaseStore, OpsStore, Periodic, Store, WebhookStore}
+import skiwi.db.{AutomationRule, AutomationStore, DatabaseStore, OpsStore, Store, WebhookStore}
 
 import java.time.{Instant, LocalDate, ZoneId}
 import java.util.UUID
@@ -41,7 +42,9 @@ final class Automations(rules: AutomationStore,
                         ops: OpsStore,
                         dbs: DatabaseStore,
                         hooks: WebhookStore,
-                        tz: String = "Asia/Tokyo") {
+                        tz: String = "Asia/Tokyo",
+                        /** 管理者とみなすグループ（通知先がページを閲覧できるかの判定に使う） */
+                        adminGroups: Set[String] = Set.empty) {
 
   /** 出来事に合うルールを実行する（失敗してもリクエストは止めない） */
   def fire(ev: AutoEvent): IO[Unit] =
@@ -94,7 +97,11 @@ final class Automations(rules: AutomationStore,
         val message = render(s("message").getOrElse(defaultMessage(ev)), title, ev, r.name)
         a.get[String]("type").toOption match {
           case Some("notify") =>
-            recipients(a, ev, meta.get(ev.pageId).flatMap(_.ownerId)).flatMap { users =>
+            // ルールは見られないページ（個別に権限を絞ったページ）の出来事でも動くので、そのページを閲覧できる人にだけ届ける
+            // （画面内の通知・プッシュ通知にページのタイトルが入る。メンションの通知と同じ絞り方）
+            recipients(a, ev, meta.get(ev.pageId).flatMap(_.ownerId)).flatMap(us =>
+              store.userRoles(ev.pageId, us, adminGroups).map(_.keySet)
+            ).flatMap { users =>
               ops.enqueueNotice(
                 "automation",
                 users,

@@ -6,8 +6,8 @@ import io.circe.Json
 import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
-import org.http4s.headers.Location
-import sbirds.auth.{Crypto, LoginResult, OidcClient}
+import sbirds.auth.{LoginResult, OidcClient}
+import sbirds.http.{Errors, OidcLoginFlow}
 import skiwi.core.{AgentAccounts, ErrorCode}
 import skiwi.db.Store
 
@@ -35,69 +35,85 @@ final class AuthRoutes(oidc: Option[OidcClient],
     case req @ POST -> Root / "auth" / "dev-login" if devLogin && oidc.isEmpty => postAuthDevLogin(req)
   }
 
-  private def getAuthLogin(req: Request[IO]): IO[Response[IO]] = {
-    val state, verifier, nonce = Crypto.randomToken()
-    val back = safeReturnTo(req.uri.query.params.get("returnTo")).filter(_ != "/")
-    oidc match {
-      case Some(o) =>
-        for {
-          _ <- store.saveLoginState(state, verifier, nonce, Instant.now(), back)
-          uri <- o.authorizationUri(state, verifier, nonce)
-        } yield redirect(uri.renderString).addCookie(stateCookie(state, 600))
-      case None if devLogin =>
-        IO.pure(redirect(s"/login?returnTo=${java.net.URLEncoder.encode(back.getOrElse("/"), "UTF-8")}"))
-      case None => err(ErrorCode.OidcNotConfigured)
+  private def getAuthLogin(req: Request[IO]): IO[Response[IO]] = OidcLoginFlow.login(flow)(req)
+
+  private def getAuthCallback(req: Request[IO]): IO[Response[IO]] = OidcLoginFlow.callback(flow)(req)
+
+  /** OIDC のログインの流れ（sbirds.http.OidcLoginFlow）に差し込む、skiwi の部分。 */
+  private val flow = new OidcLoginFlow.Host[LoginResult] {
+    val idp = oidc.map(OidcLoginFlow.Idp(_))
+
+    // ログインを始めたブラウザだけが callback を完了できるよう、state を Cookie にも入れる（ログイン CSRF 対策）
+    val cookie = OidcLoginFlow.StateCookie(
+      "skiwi_login_state",
+      sessions.cookieSecure,
+      clear = OidcLoginFlow.Clear.Always,
+      checkWithoutCode = true
+    )
+    override val idpErrorParam = true
+
+    def returnTo(req: Request[IO]): String = safeReturnTo(req.uri.query.params.get("returnTo")).getOrElse("/")
+    def saveState(state: String, verifier: String, nonce: String, returnTo: String): IO[Unit] =
+      store.saveLoginState(state, verifier, nonce, Instant.now(), Some(returnTo).filter(_ != "/"))
+    def takeState(state: String): IO[Option[(String, String, String)]] =
+      store.takeLoginState(state, Instant.now()).map(_.map((verifier, nonce, back) =>
+        (verifier, nonce, back.flatMap(b => safeReturnTo(Some(b))).getOrElse("/"))
+      ))
+    def redirect(to: String): IO[Response[IO]] = AuthRoutes.this.redirect(to)
+
+    def withoutIdp(req: Request[IO], back: String): IO[Response[IO]] =
+      if devLogin then AuthRoutes.this.redirect(s"/login?returnTo=${java.net.URLEncoder.encode(back, "UTF-8")}")
+      else err(ErrorCode.OidcNotConfigured)
+
+    def failed(req: Request[IO], f: OidcLoginFlow.Failure): IO[Response[IO]] = {
+      import OidcLoginFlow.Failure.*
+      f match {
+        case NotConfigured => err(ErrorCode.OidcNotConfigured)
+        case IdpError(_, _) if oidc.isEmpty => err(ErrorCode.OidcNotConfigured)
+        // IdP の error・error_description は URL で差し替えられるので応答には出さず、ログにだけ残す
+        case IdpError(e, d) => Errors.respondLogged(ErrorCode.LoginIdpError, OidcLoginFlow.idpErrorLog(e, d), Some(req))
+        case ParamsMissing => err(ErrorCode.LoginCodeStateRequired)
+        case BrowserMismatch => err(ErrorCode.LoginBrowserMismatch)
+        case Expired => err(ErrorCode.LoginExpired)
+        // 理由は利用者に見せず、ログにだけ出す
+        case Denied(e) => rejected(req, e.getMessage)
+        case Failed(e) => rejected(req, e.getMessage)
+      }
+    }
+
+    def loggedIn(req: Request[IO], res: LoginResult, back: String): IO[Response[IO]] = res match {
+      // エージェント専用アカウントの sub ではログインさせない（IdP がその形の sub を返しても）
+      case LoginResult(id, _) if AgentAccounts.isAgent(id.sub) => rejected(req, "agent account sub")
+      case LoginResult(id, idToken) =>
+        store.upsertUser(id.sub, id.email, id.name, id.picture).flatMap { user =>
+          store.isActive(user.id).flatMap {
+            case false =>
+              audit.user(user, "session", "auth.login.denied", Json.obj("reason" -> "inactive".asJson)) *>
+                err(ErrorCode.UserDisabled)
+            case true =>
+              for {
+                _ <- if scimManagesGroups then IO.unit else store.syncGroups(user.id, id.groups)
+                cookie <- sessions.issue(user, Some(idToken))
+                _ <- audit.user(user, "session", "auth.login")
+                _ <- sbirds.observe.Metrics.count("skiwi.logins")
+                res <- AuthRoutes.this.redirect(back, Some(cookie))
+              } yield res
+          }
+        }
     }
   }
 
-  private def getAuthCallback(req: Request[IO]): IO[Response[IO]] = {
-    val params = req.uri.query.params
-    (params.get("state"), params.get("code"), params.get("error")) match {
-      case _ if oidc.isEmpty => err(ErrorCode.OidcNotConfigured)
-      case (_, _, Some(e)) => err(ErrorCode.LoginIdpError, s"ログインできませんでした: $e")
-      case (Some(state), _, _)
-          if !req.cookies.find(_.name == StateCookie).exists(c => Crypto.constantTimeEquals(c.content, state)) =>
-        err(ErrorCode.LoginBrowserMismatch)
-      case (Some(state), Some(code), _) =>
-        store.takeLoginState(state, Instant.now()).flatMap {
-          case None => err(ErrorCode.LoginExpired)
-          case Some((verifier, nonce, back)) =>
-            oidc.get.authenticate(code, verifier, nonce, Instant.now()).attempt.flatMap {
-              case Left(e) =>
-                errLogged(ErrorCode.LoginFailed, s"login rejected: ${e.getMessage}")
-              // エージェント専用アカウントの sub ではログインさせない（IdP がその形の sub を返しても）
-              case Right(LoginResult(id, _)) if AgentAccounts.isAgent(id.sub) =>
-                errLogged(ErrorCode.LoginFailed, "login rejected: agent account sub")
-              case Right(LoginResult(id, idToken)) =>
-                store.upsertUser(id.sub, id.email, id.name, id.picture).flatMap { user =>
-                  store.isActive(user.id).flatMap {
-                    case false =>
-                      audit.user(user, "session", "auth.login.denied", Json.obj("reason" -> "inactive".asJson)) *>
-                        err(ErrorCode.UserDisabled)
-                    case true =>
-                      for {
-                        _ <- if scimManagesGroups then IO.unit else store.syncGroups(user.id, id.groups)
-                        cookie <- sessions.issue(user, Some(idToken))
-                        _ <- audit.user(user, "session", "auth.login")
-                        _ <- sbirds.observe.Metrics.count("skiwi.logins")
-                      } yield redirect(back.flatMap(b => safeReturnTo(Some(b))).getOrElse("/")).addCookie(cookie)
-                  }
-                }
-            }
-        }.map(_.addCookie(stateCookie("", 0)))
-      case _ => err(ErrorCode.LoginCodeStateRequired)
-    }
-  }
+  private def rejected(req: Request[IO], why: String): IO[Response[IO]] =
+    Errors.respondLogged(ErrorCode.LoginFailed, s"login rejected: $why", Some(req))
 
   private def postAuthLogout(req: Request[IO]): IO[Response[IO]] =
     sessions.fromRequest(req).attempt.flatMap { who =>
       who.toOption.flatten.traverse_(s => audit.log(s, "auth.logout", "user", s.user.id)) *>
         sessions.revoke(req).flatMap {
           (idToken, c) =>
-            (if publicUrl.isEmpty then IO.pure(None)
-             else oidc.flatTraverse(_.logoutUri(idToken, s"${publicUrl.stripSuffix("/")}/"))).map { idp =>
-              Response[IO](Status.Ok).withEntity(Json.obj("redirect" ->
-                idp.fold("/")(_.renderString).asJson)).addCookie(c)
+            (if publicUrl.isEmpty then IO.pure("/")
+             else OidcLoginFlow.logoutRedirect(oidc, idToken, s"${publicUrl.stripSuffix("/")}/")).map { to =>
+              Response[IO](Status.Ok).withEntity(Json.obj("redirect" -> to.asJson)).addCookie(c)
             }
         }
     }
@@ -130,24 +146,4 @@ final class AuthRoutes(oidc: Option[OidcClient],
           }
         }
     }
-
-  private def redirect(to: String): Response[IO] =
-    Response[IO](Status.Found).putHeaders(Location(Uri.unsafeFromString(to)))
-
-  /**
-   * ログインを始めたブラウザだけが callback を完了できるよう、state を Cookie にも入れる（ログイン CSRF 対策）。
-   * IdP からの戻りはトップレベルの GET なので SameSite=Lax でも送られる。
-   */
-  private val StateCookie = "skiwi_login_state"
-  private def stateCookie(v: String, maxAge: Long) =
-    ResponseCookie(
-      StateCookie,
-      v,
-      maxAge = Some(maxAge),
-      path = Some("/auth"),
-      httpOnly = true,
-      secure = sessions.cookieSecure,
-      sameSite = Some(SameSite.Lax)
-    )
-
 }

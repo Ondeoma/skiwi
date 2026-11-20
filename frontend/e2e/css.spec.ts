@@ -113,3 +113,48 @@ test('ページのCSS: @font-face・@keyframes の名前は自動で区別され
   expect(css).not.toMatch(/@keyframes\s+spin\b/)
   await page.context().close()
 })
+
+test('ページのCSS: 検査をすり抜ける書き方（文字列の中の url(・var() を含む一括指定・入れ子・グループの中の @font-face）も取り除かれる', async ({ browser }) => {
+  const page = await open(browser, `/w/${ws.id}/p/${parent.id}`)
+  const external: string[] = []
+  page.on('request', (r) => { if (r.url().includes('evil.example')) external.push(r.url()) })
+  await page.getByTestId('page-css').click()
+  await page.getByTestId('css-input').fill([
+    // a) 文字列リテラルの中の url( から読ませて、後ろの外部の url() を data: の一部に見せる
+    'p::before { content: "url(data:image/" url("https://evil.example/e"); }',
+    // b) var() を含む一括指定（個別のプロパティの値は空になる）
+    'p { background: var(--z,) url(https://evil.example/a); }',
+    // c) 入れ子のルールの後ろの宣言
+    'p { .y {} background-image: url(https://evil.example/b); position: fixed; }',
+    // d) グループの中の @font-face
+    '@media all { @font-face { font-family: evilfont; src: url(https://evil.example/c); } p { font-family: evilfont; } }',
+    // e) 入れ子の & で表示エリアの外に効かせる
+    'p { html:not(&) [data-testid="side"] { display: none; } }',
+    // 兄弟の指定で表示エリアの外に出る
+    'body:not(.zz) ~ * { display: none; }',
+    // 使える書き方はそのまま効く（グループの中のルールも表示エリアの中に限られる）
+    '@media all { p { color: rgb(0, 0, 255); } body { outline-color: rgb(1, 2, 3); } }',
+    '@supports (display: grid) { p { font-style: italic; } }',
+  ].join('\n'))
+  await expect.poll(() => paraColor(page)).toBe(BLUE)
+  await expect.poll(() => paraStyle(page)).toBe('italic')
+  const css = await page.evaluate(() => document.querySelector('style[data-custom-css]')?.textContent ?? '')
+  expect(css).not.toContain('evil.example')
+  expect(css).not.toMatch(/position:\s*fixed/)
+  expect(css).not.toContain('@font-face')
+  expect(css).not.toContain('data-testid')
+  expect(css).not.toContain('&')
+  expect(css).not.toContain('~')
+  // グループは組み立て直され、中のルールは表示エリアの中に限られる
+  expect(css).toMatch(/@media all \{\s*\.skiwi-page-css p \{/)
+  expect(await page.evaluate(() => getComputedStyle(document.body).outlineColor)).not.toBe('rgb(1, 2, 3)')
+  expect(await page.locator('p').first().evaluate((el) => getComputedStyle(el).position)).not.toBe('fixed')
+  await expect(page.getByTestId('side')).toBeVisible()
+  const warnings = page.getByTestId('css-warnings')
+  await expect(warnings).toContainText('外部の url()')
+  await expect(warnings).toContainText('入れ子のルール')
+  await expect(warnings).toContainText('@font-face')
+  await expect(warnings).toContainText('表示エリアの外に効く指定')
+  expect(external).toEqual([])
+  await page.context().close()
+})

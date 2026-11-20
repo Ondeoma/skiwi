@@ -91,6 +91,14 @@ object Api {
 
   def enc(s: String): String = js.URIUtils.encodeURIComponent(s)
 
+  /**
+   * パスの1区切りに入れる値（ID など）. URL や本文の属性から来た値に「/」「?」「#」が入っていても、ほかの API のパスにならないようにする.
+   * パスに値を入れるときは必ずこれを通す
+   */
+  def seg(s: String): String = enc(s)
+
+  def seg(id: UUID): String = id.toString
+
   /** クエリ文字列（値が None のものは付けない） */
   def query(params: (String, Option[String])*): String = {
     val q = params.collect { case (k, Some(v)) => s"$k=${enc(v)}" }
@@ -120,12 +128,12 @@ object Api {
     post[Workspace]("/api/workspaces", Json.obj("name" -> name.asJson))
 
   def setFavorite(id: String, favorite: Boolean): Future[Unit] =
-    exec(dom.HttpMethod.PUT, s"/api/workspaces/$id/favorite", Some(Json.obj("favorite" -> favorite.asJson)))
+    exec(dom.HttpMethod.PUT, s"/api/workspaces/${Api.seg(id)}/favorite", Some(Json.obj("favorite" -> favorite.asJson)))
 
   def renameWorkspace(id: String, name: String): Future[Unit] =
-    exec(dom.HttpMethod.PATCH, s"/api/workspaces/$id", Some(Json.obj("name" -> name.asJson)))
+    exec(dom.HttpMethod.PATCH, s"/api/workspaces/${Api.seg(id)}", Some(Json.obj("name" -> name.asJson)))
 
-  def pages(wsId: String): Future[List[Page]] = get[List[Page]](s"/api/workspaces/$wsId/pages")
+  def pages(wsId: String): Future[List[Page]] = get[List[Page]](s"/api/workspaces/${Api.seg(wsId)}/pages")
 
   /** placement: afterId のページに対する置き方 */
   def createPage(wsId: String,
@@ -134,7 +142,7 @@ object Api {
                  afterId: Option[String] = None,
                  placement: Option[String] = None): Future[Page] =
     post[Page](
-      s"/api/workspaces/$wsId/pages",
+      s"/api/workspaces/${Api.seg(wsId)}/pages",
       obj(
         "parentId" -> parentId.asJson,
         "title" -> title.asJson,
@@ -144,16 +152,17 @@ object Api {
     )
 
   /** 変える項目だけを渡す（例: Json.obj("title" -> "x".asJson)）. null は「消す」 */
-  def updatePage(id: String, fields: Json): Future[Page] = patch[Page](s"/api/pages/$id", fields)
+  def updatePage(id: String, fields: Json): Future[Page] = patch[Page](s"/api/pages/${Api.seg(id)}", fields)
 
-  def page(id: String, redirectOn401: Boolean = true): Future[Page] = get[Page](s"/api/pages/$id", redirectOn401)
+  def page(id: String, redirectOn401: Boolean = true): Future[Page] =
+    get[Page](s"/api/pages/${Api.seg(id)}", redirectOn401)
 
-  def deletePage(id: String): Future[Unit] = del(s"/api/pages/$id")
+  def deletePage(id: String): Future[Unit] = del(s"/api/pages/${Api.seg(id)}")
 
   def favoritePages(): Future[List[FavoritePage]] = get[List[FavoritePage]]("/api/favorites/pages")
 
   def setPageFavorite(id: String, favorite: Boolean): Future[Unit] =
-    exec(dom.HttpMethod.PUT, s"/api/pages/$id/favorite", Some(Json.obj("favorite" -> favorite.asJson)))
+    exec(dom.HttpMethod.PUT, s"/api/pages/${Api.seg(id)}/favorite", Some(Json.obj("favorite" -> favorite.asJson)))
 
   def directory(q: String): Future[List[DirectoryEntry]] =
     get[List[DirectoryEntry]](s"/api/directory${query("q" -> Some(q))}")
@@ -165,7 +174,7 @@ object Api {
   def createToken(req: CreateTokenReq): Future[CreatedTokenDto] =
     send[CreatedTokenDto](dom.HttpMethod.POST, "/api/tokens", req.asJson)
 
-  def revokeToken(id: UUID): Future[Unit] = del(s"/api/tokens/$id")
+  def revokeToken(id: UUID): Future[Unit] = del(s"/api/tokens/${Api.seg(id)}")
 
   def audit(before: Option[Long], action: Option[String], limit: Int): Future[List[AuditDto]] =
     get[List[AuditDto]](

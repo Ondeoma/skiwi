@@ -1,5 +1,7 @@
 package skiwi.api
 
+import sbirds.net.NetGuard
+import sbirds.db.*
 import skiwi.shared.Titles
 
 import cats.effect.*
@@ -8,7 +10,7 @@ import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax.*
 import org.http4s.*
 import skiwi.core.*
-import skiwi.db.{OutboxResult, Periodic, Store, Webhook, WebhookItem, WebhookStore}
+import skiwi.db.{Store, Webhook, WebhookItem, WebhookStore}
 
 import java.net.URI
 import org.http4s.client.Client
@@ -177,7 +179,7 @@ final class WebhookService(hooks: WebhookStore,
           .map(c => (Some(c), Option.when(c / 100 != 2)(s"HTTP $c")))
           .timeout(15.seconds)
           .handleError {
-            case _: NetGuard.Blocked => (None, Some("社内のアドレスには送れません（WEBHOOK_ALLOW_PRIVATE）"))
+            case _: NetGuard.Rejected.Internal => (None, Some("社内のアドレスには送れません（WEBHOOK_ALLOW_PRIVATE）"))
             case e => (None, Some(Option(e.getMessage).getOrElse(e.getClass.getSimpleName).take(300)))
           }
     }

@@ -110,8 +110,8 @@ object YEdit {
     def json: Vector[Json] = blocks.map(_._2)
   }
 
-  def load(updates: Seq[Array[Byte]]): Doc = {
-    val st = YState(updates)
+  def load(updates: Seq[Array[Byte]], limits: YState.Limits = YState.Limits()): Doc = {
+    val st = YState(updates, limits)
     Doc(st, st.children(YParent.Root(Root)), st.blocks(Root))
   }
 

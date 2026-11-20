@@ -1,6 +1,7 @@
 package skiwi.web
 
 import org.scalajs.dom
+import skiwi.shared.CssGuard
 
 import scala.collection.mutable
 import scala.scalajs.js
@@ -10,7 +11,9 @@ import scala.scalajs.js
  *  - すべてのルールを表示エリア（scope）の中だけに効くよう書き換える（:root / html / body は scope に置き換え）
  *  - 外部の読み込み（@import、http(s) などの url()）、画面全体を覆える position: fixed は取り除く
  *  - url() は添付ファイル（/api/attachments/…）と data:image のみ許す
- * 解析はブラウザ自身のCSSパーサ（CSSStyleSheet）で行う. 正規表現は元の TS と同じ動きにするため JS の RegExp を使う.
+ *  - 使えるルールは、スタイルのルール・@media・@supports・@keyframes・@font-face だけ. 入れ子のルールは使えない
+ * 解析はブラウザ自身のCSSパーサ（CSSStyleSheet）で行い、出力は検査した部品から組み立て直す（processRules）.
+ * 文字列だけで決まる検査（url() の読み取り・セレクタの書き換え）は skiwi.shared.CssGuard にある（JVM のテストで確かめる）.
  */
 object CustomCss {
 
@@ -28,83 +31,49 @@ object CustomCss {
 
   private def jsTrim(s: String): String = s.asInstanceOf[js.Dynamic].trim().asInstanceOf[String]
 
-  private val UrlSrc = """url\(\s*(['"]?)(.*?)\1\s*\)"""
-
-  /** 値の中の url(...) の中身 */
-  private def urls(value: String): List[String] = {
-    val r = re(UrlSrc, "gi")
-    val out = mutable.ListBuffer.empty[String]
-    var m = r.exec(value)
-    while (m != null) {
-      out += m(2).getOrElse("")
-      if (m(0).forall(_.isEmpty)) r.lastIndex += 1
-      m = r.exec(value)
-    }
-    out.toList
-  }
-
-  /** url(...) の中身を f で読み替える */
-  private def replaceUrls(value: String, f: String => String): String =
-    value.asInstanceOf[js.Dynamic].replace(
-      re(UrlSrc, "gi"),
-      (
-        (_: String, q: String, u: String) => s"url($q${f(u)}$q)"): js.Function3[String, String, String, String]
-    ).asInstanceOf[String]
-
   private def urlAllowed(u: String): Boolean = {
     val s = jsTrim(u)
     skiwi.web.editor.SafeUrl.isAttachmentPath(s) || test("""^data:image\/""", "i", s)
   }
 
-  /** 括弧の中の , では区切らない */
-  private def splitSelectors(sel: String): List[String] = {
-    val out = mutable.ListBuffer.empty[String]
-    var depth = 0
-    val cur = new StringBuilder
-    sel.foreach { ch =>
-      if (ch == '(' || ch == '[') depth += 1
-      else if (ch == ')' || ch == ']') depth -= 1
-      if (ch == ',' && depth == 0) { out += cur.toString; cur.clear() }
-      else cur += ch
-    }
-    out += cur.toString
-    out.toList.map(jsTrim).filter(_.nonEmpty)
+  private def problemText(p: CssGuard.Problem): String = p match {
+    case CssGuard.Problem.ExternalUrl => "外部の url() は使えません（添付ファイルと data:image のみ）"
+    case CssGuard.Problem.UrlFunction => "image-set() と src() は使えません（url() で添付ファイルを指定してください）"
+    case CssGuard.Problem.FixedPosition => "position: fixed は使えません（画面全体を覆えるため）"
   }
 
-  /** 範囲の外に効くセレクタ（「body ~ *」のような兄弟の指定）は取り除く. 全部取り除いたら None */
+  /** 範囲の外に効くセレクタ（「body ~ *」のような兄弟の指定、入れ子の &）は取り除く. 全部取り除いたら None */
   private def scopeSelector(sel: String, scope: String, warn: Warn): Option[String] = {
-    val out = splitSelectors(sel).flatMap { s =>
-      val m = re("""^(:root|html|body)(?![\w-])""", "i").exec(s)
-      if (m == null) List(s"$scope $s")
-      else {
-        val rest = s.substring(m(0).fold(0)(_.length))
-        if (test("""^\s*[~+]""", "", rest)) { warn(s"$s: 表示エリアの外に効く指定は使えません"); Nil }
-        else List(jsTrim(scope + rest))
-      }
-    }
-    if (out.isEmpty) None else Some(out.mkString(", "))
+    val (out, rejected) = CssGuard.scopeSelector(sel, scope)
+    rejected.foreach(s => warn(s"$s: 表示エリアの外に効く指定は使えません"))
+    out
   }
 
-  private def sanitizeStyle(style: js.Dynamic, warn: Warn, mapUrl: MapUrl): Unit = {
+  /**
+   * 宣言のまとまりを安全にして、出力する文字列（宣言の並び）を返す. まとまりごと使えなければ None.
+   * まずプロパティごとに使えないものを取り除き、そのあと全体（cssText）をもう一度検査する:
+   * var() を含む一括指定（background: var(--z,) url(…) など）は、個別のプロパティの値が空になって最初の検査にかからないため
+   */
+  private def sanitizeStyle(style: js.Dynamic, warn: Warn, mapUrl: MapUrl): Option[String] = {
     val n = style.length.asInstanceOf[Int]
     val props = (0 until n).map(i => style.item(i).asInstanceOf[String]).toList
     props.foreach { prop =>
       val value = style.getPropertyValue(prop).asInstanceOf[String]
       // var() で値を後から入れられると検査をすり抜けるので、position には使わせない
-      if (prop == "position" && test("""fixed|var\(""", "i", value)) {
+      val problem =
+        if (prop == "position" && CssGuard.fixedPosition(value)) Some(CssGuard.Problem.FixedPosition)
+        else CssGuard.problem(value, urlAllowed)
+      problem.foreach { p =>
         style.removeProperty(prop)
-        warn("position: fixed は使えません（画面全体を覆えるため）")
+        warn(if (p == CssGuard.Problem.FixedPosition) problemText(p) else s"$prop: ${problemText(p)}")
       }
-      // image-set("https://…") や src("…") は url() を書かずに外部を読み込めるので使わせない
-      else if (test("""image-set\(|(^|[^\w-])src\(""", "i", value)) {
-        style.removeProperty(prop)
-        warn(s"$prop: image-set() と src() は使えません（url() で添付ファイルを指定してください）")
-      } else if (test("""url\(""", "i", value)) {
-        if (urls(value).exists(u => !urlAllowed(u))) {
-          style.removeProperty(prop)
-          warn(s"$prop: 外部の url() は使えません（添付ファイルと data:image のみ）")
-        } else mapUrl.foreach(f => style.setProperty(prop, replaceUrls(value, f), style.getPropertyPriority(prop)))
-      }
+    }
+    val text = style.cssText.asInstanceOf[String]
+    CssGuard.problem(text, urlAllowed) match {
+      case Some(p) =>
+        warn(s"${problemText(p)}（この { } の中の指定は、すべて適用されません）")
+        None
+      case None => Some(mapUrl.fold(text)(f => CssGuard.mapUrls(text, f)))
     }
   }
 
@@ -117,42 +86,52 @@ object CustomCss {
     if (js.isUndefined(rules) || rules == null) Nil
     else (0 until rules.length.asInstanceOf[Int]).map(i => rules.item(i).asInstanceOf[js.Dynamic]).toList
 
-  private def processRules(rules: js.Dynamic,
-                           scope: String,
-                           out: mutable.ListBuffer[String],
-                           warn: Warn,
-                           mapUrl: MapUrl,
-                           nested: Boolean = false): Unit =
-    ruleList(rules).foreach { rule =>
+  private def cssEscape(name: String): String = js.Dynamic.global.CSS.escape(name).asInstanceOf[String]
+
+  /**
+   * 使えるルールだけを、検査した部品から組み立て直して返す（許可したもの以外は出力しない）.
+   * ブラウザの rule.cssText をそのまま出すと、検査していない部分（入れ子のルール、その後ろの宣言、グループの中の別の種類のルール）が
+   * 一緒に出てしまうので、使わない.
+   *  - スタイルのルール: セレクタを範囲の中に書き換え、先頭の宣言だけを出す. 入れ子のルール（& で範囲の外に効かせられる）は出さない
+   *  - @media / @supports: 条件はそのまま、中身は同じ規則で組み立て直す
+   *  - @keyframes / @font-face: 宣言を検査して出す
+   */
+  private def processRules(rules: js.Dynamic, scope: String, warn: Warn, mapUrl: MapUrl): List[String] =
+    ruleList(rules).flatMap { rule =>
       if (is(rule, "CSSStyleRule")) {
-        sanitizeStyle(rule.style, warn, mapUrl)
-        // 入れ子のルールは中身だけ安全にする
-        if (ruleList(rule.cssRules).nonEmpty)
-          processRules(rule.cssRules, scope, mutable.ListBuffer.empty, warn, mapUrl, nested = true)
-        if (!nested) scopeSelector(rule.selectorText.asInstanceOf[String], scope, warn).foreach { sel =>
-          rule.selectorText = sel
-          out += rule.cssText.asInstanceOf[String]
+        if (ruleList(rule.cssRules).nonEmpty) warn("入れ子のルール（{ } の中の { }）は使えません（外側の指定だけが適用されます）")
+        for {
+          body <- sanitizeStyle(rule.style, warn, mapUrl).toList
+          if jsTrim(body).nonEmpty
+          sel <- scopeSelector(rule.selectorText.asInstanceOf[String], scope, warn).toList
+        } yield s"$sel { $body }"
+      } else if (is(rule, "CSSMediaRule")) group(s"@media ${rule.media.mediaText}", rule, scope, warn, mapUrl)
+      else if (is(rule, "CSSSupportsRule")) group(s"@supports ${rule.conditionText}", rule, scope, warn, mapUrl)
+      else if (is(rule, "CSSKeyframesRule")) {
+        val frames = ruleList(rule.cssRules).filter(is(_, "CSSKeyframeRule")).flatMap { kf =>
+          sanitizeStyle(kf.style, warn, mapUrl).map(body => s"${kf.keyText} { $body }")
         }
-      } else if (is(rule, "CSSGroupingRule")) {
-        // @media / @supports / @container / @layer { … }
-        processRules(rule.cssRules, scope, mutable.ListBuffer.empty, warn, mapUrl, nested)
-        out += rule.cssText.asInstanceOf[String]
-      } else if (is(rule, "CSSKeyframesRule")) {
-        ruleList(rule.cssRules).foreach(kf => sanitizeStyle(kf.style, warn, mapUrl))
-        out += rule.cssText.asInstanceOf[String]
+        List(s"@keyframes ${cssEscape(rule.name.asInstanceOf[String])} { ${frames.mkString(" ")} }")
       } else if (is(rule, "CSSFontFaceRule")) {
-        val src = rule.style.getPropertyValue("src").asInstanceOf[String]
-        if (urls(src).exists(u => !urlAllowed(u))) warn("@font-face: 外部のフォントは使えません（添付ファイルのみ）")
-        else {
-          val text = rule.cssText.asInstanceOf[String]
-          out += mapUrl.fold(text)(f => replaceUrls(text, f))
+        val text = rule.style.cssText.asInstanceOf[String]
+        CssGuard.problem(text, urlAllowed) match {
+          case Some(_) => warn("@font-face: 外部のフォントは使えません（添付ファイルのみ）"); Nil
+          case None => List(s"@font-face { ${mapUrl.fold(text)(f => CssGuard.mapUrls(text, f))} }")
         }
       } else {
         val text = rule.cssText.asInstanceOf[String]
         val head = text.asInstanceOf[js.Dynamic].split(re("""[\s{]""")).asInstanceOf[js.Array[String]](0)
-        warn(s"$head は使えません")
+        // 入れ子のルールの後ろに書いた宣言（CSSNestedDeclarations）などは名前がない
+        warn(if (head.startsWith("@")) s"$head は使えません" else "この位置の指定は使えません")
+        Nil
       }
     }
+
+  /** @media / @supports: 中身を組み立て直す（中身が全部使えなければ出さない） */
+  private def group(head: String, rule: js.Dynamic, scope: String, warn: Warn, mapUrl: MapUrl): List[String] = {
+    val inner = processRules(rule.cssRules, scope, warn, mapUrl)
+    if (inner.isEmpty) Nil else List(s"$head {\n${inner.mkString("\n")}\n}")
+  }
 
   /**
    * 利用者が @font-face・@keyframes で定義した名前に付ける接頭辞.
@@ -205,9 +184,8 @@ object CustomCss {
       catch { case _: Throwable => false }
       if (!parsed) Scoped("", List("CSS を解析できませんでした"))
       else {
-        val out = mutable.ListBuffer.empty[String]
         renameDefinitions(sheet.cssRules)
-        processRules(sheet.cssRules, scope, out, warn, mapUrl)
+        val out = processRules(sheet.cssRules, scope, warn, mapUrl)
         Scoped(out.mkString("\n"), warnings.toList)
       }
     }

@@ -7,7 +7,7 @@ import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.client.Client
-import org.http4s.headers.{Accept, Authorization, Location}
+import org.http4s.headers.{Accept, Authorization}
 import sbirds.auth.Crypto
 import skiwi.auth.SecretBox
 import skiwi.db.IntegrationStore
@@ -327,9 +327,6 @@ final class IntegrationRoutes(services: List[LinkedService],
   /** 本人のトークン（復号できなければ None） */
   private def token(svc: LinkedService, b: SecretBox, uid: UUID): IO[Option[String]] =
     st.token(svc.name, uid).map(_.flatMap(b.decrypt(_, tokenCtx(svc, uid))))
-
-  private def redirect(to: String): IO[Response[IO]] =
-    Response[IO](Status.Found).putHeaders(Location(Uri.unsafeFromString(to))).pure[IO]
 
   private def endpoint(s: IntegrationSettings, path: String) = Uri.unsafeFromString(s.url + path)
 

@@ -1,5 +1,7 @@
 package skiwi.app
 
+import sbirds.net.NetGuard
+import sbirds.db.*
 import cats.effect.*
 import cats.syntax.all.*
 import com.comcast.ip4s.*
@@ -15,18 +17,15 @@ import sbirds.auth.{OidcClient, OidcConfig}
 import skiwi.collab.{ClusterConfig, ClusterManager, Collab, CollabConfig}
 import doobie.implicits.*
 import skiwi.db.{
-  DbConfig, Periodic, AccessRequestStore, AttachmentStore, ClusterStore, Database, DocStore, OpsStore, CommentStore,
-  PgBus, ScimStore, SearchStore, ShareStore, Store, WebhookStore, DatabaseStore, AutomationStore, InboundStore,
-  BackupStore, IntegrationStore
+  AccessRequestStore, AttachmentStore, ClusterStore, DocStore, OpsStore, CommentStore, PgBus, ScimStore, SearchStore,
+  ShareStore, Store, WebhookStore, DatabaseStore, AutomationStore, InboundStore, BackupStore, IntegrationStore
 }
 import skiwi.notify.Notifier
 import sbirds.mail.{SmtpConfig, SmtpMailer}
 import sbirds.observe.{HttpClientTelemetry, HttpTelemetry, Metrics, RumRoutes, Telemetry}
 import sbirds.push.{PushService, PushStore}
 import sbirds.storage.{S3BlobStore, S3Config}
-import sbirds.http.Errors
-import sbirds.shared.AppError
-import cats.data.Kleisli
+import sbirds.http.{Errors, Spa}
 
 import scala.concurrent.duration.*
 import skiwi.core.ErrorCode
@@ -70,7 +69,11 @@ final case class AppConfig(
   /** DEV_LOGIN: 開発用のログイン（名前だけでログインできる。OIDC を設定しないときだけ） */
   devLogin: Boolean = false,
   /** 待ち受けるアドレス（HTTP_BIND. 既定は 0.0.0.0、DEV_LOGIN のときは 127.0.0.1） */
-  httpBind: String = "0.0.0.0")
+  httpBind: String = "0.0.0.0",
+  /** 同時編集の上限（COLLAB_…. 接続の数・送信待ち・受信の頻度） */
+  collab: CollabConfig = CollabConfig(),
+  /** IP ごとの回数の制限（RATE_LIMIT_AUTH・RATE_LIMIT_PUBLIC・TRUSTED_PROXIES. 数え方は skiwi.api.RateLimit） */
+  rateLimit: sbirds.http.RateLimitConfig = sbirds.http.RateLimitConfig())
 object AppConfig {
   val DefaultTrashRetentionDays = 30
   val DefaultTimezone = "Asia/Tokyo"
@@ -103,10 +106,11 @@ object Main extends IOApp.Simple {
         // 外への呼び出しもトレースに出す（traceparent を付けて送る）
         http <- EmberClientBuilder.default[IO].build.map(HttpClientTelemetry(_))
         // 利用者が指定した URL へ接続するもの（社内のアドレスへの接続を断る。NetGuard）
-        hookHttp <- NetGuard.client(cfg.webhookAllowPrivate)
-        unfurlHttp <- NetGuard.client(cfg.unfurlAllowPrivate)
+        hookHttp <- NetGuard.client(NetGuard.Policy.of(cfg.webhookAllowPrivate))
+        unfurlHttp <- NetGuard.client(NetGuard.Policy.of(cfg.unfurlAllowPrivate))
         store = new Store(xa)
-        docs = new DocStore(xa)
+        // 本文のメンション・ToDo の担当は、そのページを閲覧できる人だけを記録する
+        docs = new DocStore(xa, (pid, us) => store.userRoles(pid, us, cfg.api.adminGroups).map(_.keySet))
         pushSt = new PushStore(xa)
         push <- Resource.eval(PushService.create(pushSt, http, cfg.publicUrl, "skiwi"))
         // 画面内の通知を作ったら、同じ内容をプッシュ通知でも送る
@@ -123,7 +127,7 @@ object Main extends IOApp.Simple {
           docs,
           sess,
           Some(ops),
-          CollabConfig(),
+          cfg.collab,
           Some(bus),
           cluster,
           wsc,
@@ -147,7 +151,7 @@ object Main extends IOApp.Simple {
         hookSt = new WebhookStore(xa)
         dbSt = new DatabaseStore(xa)
         autoSt = new AutomationStore(xa)
-        autos = new Automations(autoSt, store, ops, dbSt, hookSt, cfg.taskTimezone)
+        autos = new Automations(autoSt, store, ops, dbSt, hookSt, cfg.taskTimezone, cfg.api.adminGroups)
         autoR = new AutomationRoutes(store, autoSt, sess, audit)
         dbR = new DatabaseRoutes(store, dbSt, ops, sess, audit, Some(autos))
         hooks = new WebhookService(hookSt, store, cfg.publicUrl, hookHttp, cfg.webhookAllowHttp)
@@ -274,7 +278,7 @@ object Main extends IOApp.Simple {
               cfg.publicUrl,
               cfg.api.cookieName,
               cfg.devLogin
-            )(all)).orNotFound)))
+            )(RateLimit(all, cfg.rateLimit))).orNotFound)))
           }
           .build
         _ <- Resource.eval(
@@ -341,7 +345,7 @@ object Main extends IOApp.Simple {
   /** ロードバランサー(HAProxy)用のヘルスチェック。DB(プライマリ)に書けない状態なら 503。 */
   private def healthRoutes(xa: doobie.Transactor[IO], node: Option[String]): HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "healthz" =>
-      sql"select not pg_is_in_recovery()".query[Boolean].unique.transact(xa).timeout(3.seconds).attempt.flatMap {
+      Database.isPrimary(xa).timeout(3.seconds).attempt.flatMap {
         case Right(true) => Ok(s"ok ${node.getOrElse("")}".trim)
         case Right(false) => Errors.respond(ErrorCode.HealthNotPrimary)
         // 例外の内容（接続先など）は外に出さず、ログにだけ残す
@@ -368,14 +372,8 @@ object Main extends IOApp.Simple {
         cfg.oidc.isEmpty
       )(sbirds.observe.Log.println("[skiwi] WARNING: OIDC が未設定です。開発用のログイン（DEV_LOGIN）を使います。本番では使わないでください"))
 
-  /** 例外をコード付きのエラーの応答にする（大きすぎる本文は 413、予期しない例外は 500）. */
-  private def errors(app: HttpApp[IO]): HttpApp[IO] =
-    Errors.handle(
-      Kleisli(req =>
-        app.run(req).adaptError { case e: Security.BodyTooLarge => AppError(ErrorCode.RequestTooLarge, e.getMessage) }
-      ),
-      ErrorCode.Unexpected
-    )
+  /** 例外をコード付きのエラーの応答にする（大きすぎる本文は Security.bodyLimit の AppError で 413、予期しない例外は 500）. */
+  private def errors(app: HttpApp[IO]): HttpApp[IO] = Errors.handle(app, ErrorCode.Unexpected)
 
   /** /s/{key} または /s/{key}/{pageKey} */
   private object GuestPath {
@@ -390,17 +388,14 @@ object Main extends IOApp.Simple {
   /** ビルド済みフロントエンドの配信。存在しないパスは index.html にフォールバック（SPA）。 */
   /**
    * 画面（index.html）の CSP. スクリプトは自分のオリジン（/assets）・index.html の中のインラインのもの（ハッシュ）・RUM の送り先だけ.
-   * wasm-unsafe-eval: ホワイトボード（Excalidraw）がフォントの書き出しに WebAssembly を使う。ほかの読み込み先は制限しない（埋め込み・画像・draw.io）
+   * wasm-unsafe-eval: ホワイトボード（Excalidraw）がフォントの書き出しに WebAssembly を使う。
+   * font-src: フォントは自分のオリジン（画面のフォント・Excalidraw のフォント・添付ファイル）と data: だけ。
+   * カスタム CSS の検査（画面の CustomCss）をすり抜けた @font-face があっても、外部へ読みに行かせない。
+   * ほかの読み込み先は制限しない（埋め込み・外部の画像・draw.io）
    */
   private def spaCsp(html: String): String = {
-    val inline = "(?s)<script>(.*?)</script>".r.findAllMatchIn(html).map { m =>
-      val d = java.security.MessageDigest.getInstance(
-        "SHA-256"
-      ).digest(m.group(1).getBytes(java.nio.charset.StandardCharsets.UTF_8))
-      s"'sha256-${java.util.Base64.getEncoder.encodeToString(d)}'"
-    }.toList
-    val scripts = ("'self'" :: inline) ++ RumRoutes.origin.toList :+ "'wasm-unsafe-eval'"
-    s"script-src ${scripts.mkString(" ")}; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+    val scripts = ("'self'" :: Spa.inlineScriptHashes(html)) ++ RumRoutes.origin.toList :+ "'wasm-unsafe-eval'"
+    s"script-src ${scripts.mkString(" ")}; object-src 'none'; base-uri 'self'; font-src 'self' data:; frame-ancestors 'self'"
   }
 
   private val SandboxCsp =

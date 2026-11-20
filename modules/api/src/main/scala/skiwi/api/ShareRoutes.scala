@@ -667,14 +667,6 @@ final class ShareRoutes(protected val store: Store,
 
   // --- 公開ページのHTML（OGP・検索エンジン） ------------------------------------------------
 
-  private def firstImage(j: Json): Option[String] =
-    j.asObject.flatMap { o =>
-      val own = Option.when(
-        o("type").flatMap(_.asString).contains("image")
-      )(o("attrs").flatMap(_.hcursor.get[String]("src").toOption)).flatten
-      own.orElse(o("content").flatMap(_.asArray).flatMap(_.view.flatMap(firstImage).headOption))
-    }.orElse(j.asArray.flatMap(_.view.flatMap(firstImage).headOption))
-
   private def summary(text: String): Option[String] = {
     val t = text.replaceAll("\\s+", " ").trim
     Option.when(t.nonEmpty)(if t.length > 120 then t.take(119) + "…" else t)
@@ -695,7 +687,8 @@ final class ShareRoutes(protected val store: Store,
                   // 説明文は本文の JSON から作る（公開範囲外のページへのリンクのタイトルを出さない）
                   val desc = (if isRoot then s.description else None).orElse(summary(guestText(content)))
                   val img =
-                    firstImage(forGuest(v.key, Set.empty)(content)).filter(_.startsWith("/api/public/")).map(base + _)
+                    firstImageSrc(forGuest(v.key, Set.empty)(content)).filter(_.startsWith("/api/public/")).map(base +
+                      _)
                   val url = s"$base/s/${v.key}" + (if isRoot then "" else s"/${p.slug.getOrElse(p.id.toString)}")
                   Some(GuestHead(Titles.display(p.title), desc, img, url, s.indexable))
                 }
