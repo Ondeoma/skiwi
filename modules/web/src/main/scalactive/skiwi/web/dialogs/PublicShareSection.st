@@ -1,4 +1,5 @@
 <script lang="scala">
+import sbirds.web.Dom
 import io.circe.Json
 import io.circe.syntax.*
 import org.scalajs.dom
@@ -67,7 +68,7 @@ def run(s: State, p: Props)(f: => Future[Unit]): Future[Unit] = {
 def setShare(p: Props, x: Option[PublicShare]): Unit = p.pub := p.pub.v.map(_.copy(share = x))
 
 def setPublic(s: State, p: Props, e: dom.Event): Unit = {
-  val on = Dlg.checked(e)
+  val on = Dom.checked(e)
   val el = e.target.asInstanceOf[dom.HTMLInputElement]
   if (on) run(s, p) {
     DialogsApi.enableShare(p.pageId, Json.obj("includeChildren" -> p.pub.v.flatMap(_.share).forall(_.includeChildren).asJson))
@@ -153,7 +154,7 @@ def hasInheritedToken(p: Props): Boolean = inherited(p).exists(_.token.exists(_.
       <p v-if="sh(props).expired" class="error" data-testid="public-state">⛔ 公開期間が終わりました。ゲストは閲覧できません。</p>
       <p v-else-if="sh(props).notStarted" class="warn" data-testid="public-state">⏳ 公開前です。{{ sh(props).startsAt.fold("")(Ui.date) }} からゲストが閲覧できます。</p>
       <label class="row">
-        <input type="checkbox" :checked="sh(props).includeChildren" :disabled="s.busy.v" data-testid="public-children" @change='set(s, props, "includeChildren", Dlg.checked(event).asJson)'>
+        <input type="checkbox" :checked="sh(props).includeChildren" :disabled="s.busy.v" data-testid="public-children" @change='set(s, props, "includeChildren", Dom.checked(event).asJson)'>
         子ページも公開する
       </label>
 
@@ -180,7 +181,7 @@ def hasInheritedToken(p: Props): Boolean = inherited(p).exists(_.token.exists(_.
           <textarea v-model="s.releaseNote" rows="2" maxlength="2000" placeholder="例: インストール手順に Windows 版を追加しました" :disabled="s.busy.v" data-testid="public-release-note"></textarea>
         </label>
         <label class="row">
-          <input type="checkbox" :checked="sh(props).showReleases" :disabled="s.busy.v" data-testid="public-show-releases" @change='set(s, props, "showReleases", Dlg.checked(event).asJson)'>
+          <input type="checkbox" :checked="sh(props).showReleases" :disabled="s.busy.v" data-testid="public-show-releases" @change='set(s, props, "showReleases", Dom.checked(event).asJson)'>
           ゲストの画面に「更新履歴」（公開日時と変更点のメモ）を出す
         </label>
         <ReleaseHistory :page-id="props.pageId" :reload="s.releaseReload" />
@@ -189,13 +190,13 @@ def hasInheritedToken(p: Props): Boolean = inherited(p).exists(_.token.exists(_.
       <h4>公開期間</h4>
       <div class="row">
         <span class="lbl-w">開始:</span>
-        <input type="datetime-local" :value="Dlg.toLocal(sh(props).startsAt)" :disabled="s.busy.v" data-testid="public-starts" @change="setStarts(s, props, Dlg.value(event))">
+        <input type="datetime-local" :value="Dlg.toLocal(sh(props).startsAt)" :disabled="s.busy.v" data-testid="public-starts" @change="setStarts(s, props, Dom.value(event))">
         <span v-if="sh(props).startsAt.isEmpty" class="muted">すぐに公開</span>
         <button v-else class="link" :disabled="s.busy.v" @click='setStarts(s, props, "")'>解除</button>
       </div>
       <div class="row">
         <span class="lbl-w">終了:</span>
-        <input type="datetime-local" :value="Dlg.toLocal(sh(props).expiresAt)" :disabled="s.busy.v" data-testid="public-expiry" @change="setExpiry(s, props, Dlg.value(event))">
+        <input type="datetime-local" :value="Dlg.toLocal(sh(props).expiresAt)" :disabled="s.busy.v" data-testid="public-expiry" @change="setExpiry(s, props, Dom.value(event))">
         <span v-if="sh(props).expiresAt.isEmpty" class="muted">なし（無期限）</span>
         <button v-else class="link" :disabled="s.busy.v" @click='setExpiry(s, props, "")'>期限なしにする</button>
       </div>
@@ -209,7 +210,7 @@ def hasInheritedToken(p: Props): Boolean = inherited(p).exists(_.token.exists(_.
       </div>
       <p class="note">URL名を付けると、わかりやすいURLで開けます（トークンのURLもそのまま使えます）。子ページのURL名は、それぞれのページの共有画面で付けられます。</p>
       <label class="row">
-        <input type="checkbox" :checked="sh(props).indexable" :disabled="s.busy.v || sh(props).hasPassword" data-testid="public-indexable" @change='set(s, props, "indexable", Dlg.checked(event).asJson)'>
+        <input type="checkbox" :checked="sh(props).indexable" :disabled="s.busy.v || sh(props).hasPassword" data-testid="public-indexable" @change='set(s, props, "indexable", Dom.checked(event).asJson)'>
         検索エンジンに載せる<span v-if="sh(props).hasPassword" class="muted">（パスワード付きのリンクは載りません）</span>
       </label>
       <label class="col">
@@ -220,14 +221,14 @@ def hasInheritedToken(p: Props): Boolean = inherited(p).exists(_.token.exists(_.
       <h4>表示</h4>
       <div class="row">
         サイドメニュー（ページ一覧）:
-        <select :disabled="s.busy.v" data-testid="public-sidebar" @change='set(s, props, "sidebar", Dlg.value(event).asJson)'>
+        <select :disabled="s.busy.v" data-testid="public-sidebar" @change='set(s, props, "sidebar", Dom.value(event).asJson)'>
           <option value="auto" :selected='sh(props).sidebar == "auto"'>自動（公開するページが2つ以上なら表示）</option>
           <option value="show" :selected='sh(props).sidebar == "show"'>常に表示</option>
           <option value="hide" :selected='sh(props).sidebar == "hide"'>表示しない</option>
         </select>
       </div>
       <label class="row">
-        <input type="checkbox" :checked="sh(props).hideHeader" :disabled="s.busy.v" data-testid="public-hide-header" @change='set(s, props, "hideHeader", Dlg.checked(event).asJson)'>
+        <input type="checkbox" :checked="sh(props).hideHeader" :disabled="s.busy.v" data-testid="public-hide-header" @change='set(s, props, "hideHeader", Dom.checked(event).asJson)'>
         ゲストの画面に上部のヘッダー（「公開ページ」「ログイン」）を出さない
       </label>
       <div class="row">

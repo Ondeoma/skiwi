@@ -10,7 +10,7 @@ def initState() = State()
 
 def mounted(s: State): Unit =
   Store.init().onComplete { _ =>
-    Store.workspaces.v.headOption.foreach(w => Nav.replace(s"/w/${w.id}"))
+    Store.workspaces.v.headOption.foreach(w => Router.replace(s"/w/${w.id}"))
     s.loading := false
   }
 

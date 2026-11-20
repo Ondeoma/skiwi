@@ -112,20 +112,20 @@ object WorkspaceApi {
   def searchWorkspaces(q: String): Future[List[WorkspaceHit]] =
     get[List[WorkspaceHit]]("/api/search/workspaces" + query("q" -> Some(q)))
 
-  def deleteWorkspace(id: String): Future[Unit] = del(s"/api/workspaces/${seg(id)}")
+  def deleteWorkspace(id: String): Future[Unit] = delete(s"/api/workspaces/${seg(id)}")
 
   def trash(wid: String): Future[List[TrashedPage]] = get[List[TrashedPage]](s"/api/workspaces/${seg(wid)}/trash")
 
   def restorePage(id: String): Future[RestoredPage] = post[RestoredPage](s"/api/trash/pages/${seg(id)}/restore")
 
-  def purgePage(id: String): Future[Unit] = del(s"/api/trash/pages/${seg(id)}")
+  def purgePage(id: String): Future[Unit] = delete(s"/api/trash/pages/${seg(id)}")
 
   def trashedWorkspaces(): Future[List[TrashedWorkspace]] = get[List[TrashedWorkspace]]("/api/trash/workspaces")
 
   def restoreWorkspace(id: String): Future[Unit] =
-    exec(dom.HttpMethod.POST, s"/api/trash/workspaces/${seg(id)}/restore", Some(Json.obj()))
+    send(dom.HttpMethod.POST, s"/api/trash/workspaces/${seg(id)}/restore", Some(Json.obj()))
 
-  def purgeWorkspace(id: String): Future[Unit] = del(s"/api/trash/workspaces/${seg(id)}")
+  def purgeWorkspace(id: String): Future[Unit] = delete(s"/api/trash/workspaces/${seg(id)}")
 
   /** kind: visited / edited */
   def recent(kind: String): Future[List[RecentItem]] = get[List[RecentItem]](s"/api/recent?kind=${seg(kind)}&limit=30")

@@ -2,8 +2,7 @@
 import org.scalajs.dom
 import skiwi.web.{Nav, Store, Ui}
 import skiwi.web.model.*
-import skiwi.web.workspace.{Listeners, RecentItem, WorkspaceApi, WsCommand, WsRoute}
-import skiwi.web.Debounced
+import skiwi.web.workspace.{RecentItem, WorkspaceApi, WsCommand, WsRoute}
 
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
@@ -15,13 +14,11 @@ final case class Item(key: String, group: String, icon: String, title: String, s
 case class State(open: RV[Boolean] = RV(false),
                  q: RV[String] = RV(""),
                  selected: RV[Int] = RV(0),
-                 input: ElementRef[dom.HTMLInputElement] = ElementRef(),
-                 list: ElementRef[dom.HTMLElement] = ElementRef(),
                  recent: RV[List[RecentItem]] = RV(Nil),
                  found: RV[List[Item]] = RV(Nil),
                  loading: RV[Boolean] = RV(false),
-                 search: Debounced = new Debounced(150),
-                 ls: Listeners = new Listeners)
+                 search: DebouncedFn[() => Unit] = useDebounce[() => Unit](150)(_()),
+                 latest: LatestFn = useLatest())
 
 def initState() = State()
 
@@ -77,7 +74,7 @@ def groups(s: State): List[(String, List[(Item, Int)])] =
 
 def mounted(s: State): Unit = {
   watch(s.q)((_, v) => onQuery(s, v))
-  s.ls.on[dom.KeyboardEvent](dom.document, "keydown", capture = true) { e =>
+  useEventListener[dom.KeyboardEvent](dom.document, "keydown", capture = true) { e =>
     if ((if (Ui.isMac) e.metaKey else e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase == "k") {
       // ゲスト表示（ログインなし）では使わない
       if (!dom.window.location.pathname.startsWith("/s/")) {
@@ -87,11 +84,10 @@ def mounted(s: State): Unit = {
       }
     }
   }
-  s.ls.on[dom.Event](dom.window, "skiwi:palette")(_ => show(s))
+  useEventListener[dom.Event](dom.window, "skiwi:palette")(_ => show(s))
 }
 
 def unmounted(s: State): Unit = {
-  s.ls.clear()
   s.search.cancel()
 }
 
@@ -100,18 +96,17 @@ def onQuery(s: State, v: String): Unit = {
   val query = v.trim
   if (query.isEmpty) {
     s.search.cancel()
+    s.latest.cancel()
     s.found := Nil
     s.loading := false
   } else {
     s.loading := true
-    s.search.run { latest =>
-      WorkspaceApi.searchPages(query).zip(WorkspaceApi.searchWorkspaces(query)).map { case (pages, wss) =>
-        if (latest()) {
-          def wsName(id: String) = Store.workspaces.v.find(_.id == id).map(_.name)
-          s.found := pages.take(12).map(r => pageItem(r.page, "ページ", wsName(r.page.workspaceId))) ++
-            wss.take(5).map(w => Item(s"w:${w.id}", "ワークスペース", "🗂", w.name, None, () => go(s"/w/${w.id}")))
-        }
-      }.recover { case _ => if (latest()) s.found := Nil }.foreach(_ => if (latest()) s.loading := false)
+    s.search { () =>
+      s.latest(WorkspaceApi.searchPages(query).zip(WorkspaceApi.searchWorkspaces(query))).map { case (pages, wss) =>
+        def wsName(id: String) = Store.workspaces.v.find(_.id == id).map(_.name)
+        s.found := pages.take(12).map(r => pageItem(r.page, "ページ", wsName(r.page.workspaceId))) ++
+          wss.take(5).map(w => Item(s"w:${w.id}", "ワークスペース", "🗂", w.name, None, () => go(s"/w/${w.id}")))
+      }.recover { case _ => s.found := Nil }.foreach(_ => s.loading := false)
     }
   }
 }
@@ -121,7 +116,6 @@ def show(s: State): Unit = {
   s.q := ""
   s.found := Nil
   s.selected := 0
-  nextTick().foreach(_ => s.input.foreach(_.focus()))
   WorkspaceApi.recent("visited").foreach(s.recent := _)
 }
 
@@ -134,10 +128,7 @@ def pick(s: State, i: Int): Unit = items(s).lift(i).foreach { it =>
 
 def move(s: State, d: Int): Unit = {
   val n = items(s).size
-  if (n > 0) {
-    s.selected := (s.selected.v + d + n) % n
-    nextTick().foreach(_ => s.list.foreach(l => Option(l.querySelector(".active")).foreach(_.asInstanceOf[js.Dynamic].scrollIntoView(js.Dynamic.literal(block = "nearest")))))
-  }
+  if (n > 0) s.selected := (s.selected.v + d + n) % n
 }
 
 def onInputKey(s: State, e: dom.Event): Unit = {
@@ -159,14 +150,14 @@ def empty(s: State): Boolean = s.q.v.trim.nonEmpty && !s.loading.v && items(s).i
     <div class="palette" role="dialog" aria-modal="true" aria-label="クイック切り替え" data-testid="palette">
       <div class="head">
         <span class="k">🔍</span>
-        <input ref="s.input" v-model="s.q" placeholder="ページ・ワークスペースへ移動、操作を実行…" data-testid="palette-input" @keydown="onInputKey(s, event)">
+        <input v-model="s.q" v-focus placeholder="ページ・ワークスペースへ移動、操作を実行…" data-testid="palette-input" @keydown="onInputKey(s, event)">
         <kbd>Esc</kbd>
       </div>
-      <div ref="s.list" class="list">
+      <div class="list">
         <template v-for="g in groups(s)" :key="g._1">
           <div class="group">{{ g._1 }}</div>
           <div v-for="it in g._2" :key="it._1.key" :class='Map("item" -> true, "active" -> (it._2 == s.selected.v))' data-testid="palette-item"
-               @mouseenter="s.selected := it._2" @click="pick(s, it._2)">
+               v-scroll-into-view="it._2 == s.selected.v" @mouseenter="s.selected := it._2" @click="pick(s, it._2)">
             <span class="icon">{{ it._1.icon }}</span>
             <span class="title">{{ it._1.title }}</span>
             <span v-if="it._1.sub.isDefined" class="sub">🗂 {{ it._1.sub.getOrElse("") }}</span>

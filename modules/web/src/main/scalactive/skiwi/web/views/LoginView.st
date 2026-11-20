@@ -34,7 +34,7 @@ def mounted(): Unit = dom.document.title = "ログイン - skiwi"
     <h1>skiwi にログイン</h1>
     <p class="muted">開発用のログインです（IdP が設定されていない環境だけで使えます）。</p>
     <form @submit.prevent="login(s)">
-      <label class="field"><span>名前</span><input type="text" v-model="s.name" placeholder="山田 太郎" autofocus data-testid="dev-login-name"></label>
+      <label class="field"><span>名前</span><input type="text" v-model="s.name" placeholder="山田 太郎" v-focus data-testid="dev-login-name"></label>
       <label class="field"><span>メールアドレス（任意）</span><input type="email" v-model="s.email"></label>
       <label class="check"><input type="checkbox" v-model="s.admin"> 管理者としてログイン</label>
       <p v-if="s.error.mapC(_.nonEmpty)" class="error">{{ s.error }}</p>

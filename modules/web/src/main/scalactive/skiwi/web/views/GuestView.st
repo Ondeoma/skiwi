@@ -4,7 +4,7 @@ import skiwi.web.Nav
 import io.circe.parser.parse
 import io.circe.syntax.*
 import org.scalajs.dom
-import skiwi.web.{ApiError, CustomCss, Debounced, JsModule, Prefs, Theme, Ui}
+import skiwi.web.{ApiError, CustomCss, JsModule, Prefs, Theme, Ui}
 import skiwi.web.editor.PageLinks
 import skiwi.web.parts.SandboxedHtml
 
@@ -34,7 +34,8 @@ case class State(pages: RV[List[GuestPage]] = RV(Nil),
                  collapsed: RV[Set[String]] = RV(Set.empty),
                  filter: RV[String] = RV(""),
                  hits: RV[Option[List[GuestSearchHit]]] = RV(None),
-                 search: Debounced = new Debounced(250),
+                 search: DebouncedFn[() => Unit] = useDebounce[() => Unit](250)(_()),
+                 latest: LatestFn = useLatest(),
                  // メニューの開閉. 広い画面では横に置き（開閉をこのブラウザに保存）、狭い画面では本文に重ねて開く
                  narrow: RV[Boolean] = RV(false),
                  sideOpen: RV[Boolean] = RV(false),
@@ -50,8 +51,7 @@ case class State(pages: RV[List[GuestPage]] = RV(Nil),
                  // 本文（JS の renderStatic）とカスタムCSS
                  area: ElementRef[dom.HTMLElement] = ElementRef(),
                  doc: RV[Option[(dom.HTMLElement, js.Dynamic)]] = RV(None),
-                 css: RV[Option[CustomCss.Applier]] = RV(None),
-                 mq: RV[Option[(dom.MediaQueryList, js.Function1[dom.Event, Unit])]] = RV(None))
+                 css: RV[Option[CustomCss.Applier]] = RV(None))
 
 def initState() = State()
 
@@ -65,20 +65,18 @@ def mounted(s: State, props: Props): Unit = {
   val mq = dom.window.matchMedia("(max-width: 720px)")
   s.narrow := mq.matches
   s.sideOpen := !mq.matches && !Prefs.get(SideKey).contains("0")
-  val onMq: js.Function1[dom.Event, Unit] = _ => {
+  useEventListener[dom.Event](mq, "change") { _ =>
     s.narrow := mq.matches
     if (mq.matches) s.sideOpen := false
   }
-  mq.addEventListener("change", onMq)
-  s.mq := Some((mq, onMq))
   s.collapsed := Prefs.get(collapsedKey(props)).flatMap(r => parse(r).flatMap(_.as[List[String]]).toOption).fold(Set.empty[String])(_.toSet)
   // 本文の検索（公開範囲のページだけ。サーバーで照合し、一致箇所を含む抜粋を返す）
   watch(s.filter, false) { (_, q) =>
-    if (q.trim.isEmpty) { s.search.cancel(); s.hits := None }
-    else s.search.run { latest =>
-      GuestApi.search(props.token, q.trim).onComplete {
-        case Success(r) => if (latest()) s.hits := Some(r.filter(h => !h.titleHit || h.snippet.isDefined))
-        case Failure(_) => if (latest()) s.hits := Some(Nil)
+    if (q.trim.isEmpty) { s.search.cancel(); s.latest.cancel(); s.hits := None }
+    else s.search { () =>
+      s.latest(GuestApi.search(props.token, q.trim)).onComplete {
+        case Success(r) => s.hits := Some(r.filter(h => !h.titleHit || h.snippet.isDefined))
+        case Failure(_) => s.hits := Some(Nil)
       }
     }
   }
@@ -89,7 +87,7 @@ def mounted(s: State, props: Props): Unit = {
 
 def unmounted(s: State): Unit = {
   s.search.cancel()
-  s.mq.v.foreach((mq, f) => mq.removeEventListener("change", f))
+  s.latest.cancel()
   s.doc.v.foreach(_._2.destroy())
   s.css.v.foreach(_.destroy())
   PageLinks.setGuest(None)
@@ -113,13 +111,12 @@ def loadTree(s: State, props: Props): Unit = {
       s.hasReleases := t.releases.contains(true)
       PageLinks.setGuest(Some((props.token, t.pages)))
       pageId(s, props).foreach(id => loadPage(s, props, id))
+    case Failure(NotStarted(at)) =>
+      s.error := at.fold("このページはまだ公開されていません。")(a => s"このページは ${Ui.date(a)} から公開されます。")
+      s.loading := false
     case Failure(e) =>
       val st = e match { case a: ApiError => a.status; case _ => 0 }
       if (st == 401) s.needPassword := true
-      else if (st == 403 && e.getMessage == "not_started") {
-        val at = e.asInstanceOf[ApiError].body.flatMap(_.hcursor.get[String]("startsAt").toOption)
-        s.error := at.fold("このページはまだ公開されていません。")(a => s"このページは ${Ui.date(a)} から公開されます。")
-      }
       else s.error := (if (st == 410) "このリンクは公開期間が終わりました。" else "このリンクは無効です。公開が停止されたか、URLが間違っています。")
       s.loading := false
   }
@@ -331,7 +328,7 @@ def themeLabel: String = s"表示の明暗: ${Theme.labels(Theme.mode.v)}"
           <h1>🔒 パスワードが必要です</h1>
           <p class="muted">このページを閲覧するには、公開した人から伝えられたパスワードを入力してください。</p>
           <div class="pw-row">
-            <input v-model="s.password" type="password" autocomplete="off" placeholder="パスワード" autofocus>
+            <input v-model="s.password" type="password" autocomplete="off" placeholder="パスワード" v-focus>
             <button type="submit" :disabled="s.password.v.isEmpty">表示する</button>
           </div>
           <p v-if="s.pwError.v.nonEmpty" class="pw-error">{{ s.pwError }}</p>

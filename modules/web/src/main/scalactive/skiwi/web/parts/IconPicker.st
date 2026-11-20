@@ -1,7 +1,6 @@
 <script lang="scala">
 import org.scalajs.dom
 import skiwi.web.Palette
-import skiwi.web.workspace.Listeners
 
 import scala.scalajs.js
 
@@ -10,8 +9,7 @@ import scala.scalajs.js
 case class Props(onSelect: Option[String] => Unit, onClose: Unit => Unit, allowNone: Boolean = true, noneLabel: String = "アイコンなし", at: Option[(Double, Double)] = None,
                  head: Slot = Slot.empty, headEl: Option[dom.Element] = None)
 
-case class State(custom: RV[String] = RV(""), root: ElementRef[dom.HTMLElement] = ElementRef(), headBox: ElementRef[dom.HTMLElement] = ElementRef(),
-                 ls: Listeners = new Listeners)
+case class State(custom: RV[String] = RV(""), headBox: ElementRef[dom.HTMLElement] = ElementRef())
 
 def initState() = State()
 
@@ -19,14 +17,8 @@ def Emojis: List[String] = Palette.Emojis
 
 def mounted(s: State, props: Props): Unit = {
   props.headEl.foreach(h => s.headBox.foreach(_.appendChild(h)))
-  // 開いたクリック自体で閉じないよう、次のタスクで登録する
-  dom.window.setTimeout(() => s.ls.on[dom.MouseEvent](dom.document, "mousedown") { e =>
-    if (!s.root.get.exists(_.contains(e.target.asInstanceOf[dom.Node]))) props.onClose(())
-  }, 0)
-  s.ls.on[dom.KeyboardEvent](dom.document, "keydown")(e => if (e.key == "Escape") props.onClose(()))
+  useEventListener[dom.KeyboardEvent](dom.document, "keydown")(e => if (e.key == "Escape") props.onClose(()))
 }
-
-def unmounted(s: State): Unit = s.ls.clear()
 
 def fixedStyle(p: Props): String = p.at.fold("") { case (x, y) =>
   val l = math.max(8, math.min(x, dom.window.innerWidth - 344))
@@ -49,7 +41,7 @@ def onCustomKey(s: State, p: Props, e: dom.Event): Unit = {
 </script>
 
 <template>
-  <div ref="s.root" class="picker" :style="fixedStyle(props)" data-testid="icon-picker" @mousedown="event.stopPropagation()">
+  <div class="picker" v-click-outside="props.onClose(())" :style="fixedStyle(props)" data-testid="icon-picker" @mousedown="event.stopPropagation()">
     <slot name="head"></slot>
     <div v-if="props.headEl.isDefined" ref="s.headBox"></div>
     <div class="grid">

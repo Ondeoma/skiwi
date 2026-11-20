@@ -2,23 +2,17 @@
 import org.scalajs.dom
 import skiwi.web.editor.Blocks
 
-import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
 
 // ブロックの一覧（分類ごとの表）のモーダル. エディタの「/」→「すべてのブロックを表示…」から開く（editor.Blocks.openPicker）.
 // 検索・矢印キー・Enter で選んで挿入する. items はエディタ（JS）のスラッシュコマンドの項目（選んだ項目をそのまま返す）
 case class Props(items: js.Array[js.Dynamic], query: String, onDone: Option[js.Dynamic] => Unit)
 
-case class State(q: RV[String] = RV(""), selected: RV[Int] = RV(0), input: ElementRef[dom.HTMLInputElement] = ElementRef(),
-                 body: ElementRef[dom.HTMLElement] = ElementRef())
+case class State(q: RV[String], selected: RV[Int] = RV(0))
 
-def initState() = State()
+def initState(props: Props) = State(RV(props.query))
 
-def mounted(s: State, props: Props): Unit = {
-  s.q := props.query
-  watch(s.q)((_, _) => s.selected := 0)
-  nextTick().foreach(_ => s.input.foreach { i => i.focus(); i.select() })
-}
+def mounted(s: State, props: Props): Unit = watch(s.q)((_, _) => s.selected := 0)
 
 /** 分類ごとの表示. 各項目は矢印キーで移動する順序（表示順）での位置と組にする */
 def groups(s: State, props: Props): List[(String, List[(js.Dynamic, Int)])] = {
@@ -39,10 +33,7 @@ def rowClass(s: State, i: Int): String = if (i == s.selected.v) "active" else ""
 
 def move(s: State, props: Props, d: Int): Unit = {
   val n = flat(s, props).size
-  if (n > 0) {
-    s.selected := (s.selected.v + d + n) % n
-    nextTick().foreach(_ => s.body.foreach(b => Option(b.querySelector("tr.active")).foreach(_.asInstanceOf[js.Dynamic].scrollIntoView(js.Dynamic.literal(block = "nearest")))))
-  }
+  if (n > 0) s.selected := (s.selected.v + d + n) % n
 }
 
 def onKey(s: State, props: Props, e: dom.Event): Unit = {
@@ -62,16 +53,16 @@ def onKey(s: State, props: Props, e: dom.Event): Unit = {
     <div class="modal" role="dialog" aria-modal="true" aria-label="ブロックを挿入" data-testid="block-picker">
       <header>
         <h2>ブロックを挿入</h2>
-        <input ref="s.input" v-model="s.q" type="search" placeholder="名前・説明・キーワードで絞り込み" data-testid="block-picker-search">
+        <input v-model="s.q" type="search" v-focus.select placeholder="名前・説明・キーワードで絞り込み" data-testid="block-picker-search">
         <button class="close" title="閉じる（Esc）" @click="props.onDone(None)">✕</button>
       </header>
-      <div ref="s.body" class="body">
+      <div class="body">
         <p v-if="flat(s, props).isEmpty" class="empty">「{{ s.q.v }}」に一致するブロックはありません。</p>
         <table v-else>
           <thead><tr><th class="c-icon"></th><th>ブロック</th><th>説明</th><th class="c-kw">「/」のあとに入力して呼び出せる語</th></tr></thead>
           <tbody v-for="g in groups(s, props)" :key="g._1">
             <tr class="cat"><th colspan="4">{{ g._1 }}</th></tr>
-            <tr v-for="it in g._2" :key="it._2" :class="rowClass(s, it._2)" @mouseenter="s.selected := it._2" @click="props.onDone(Some(it._1))">
+            <tr v-for="it in g._2" :key="it._2" :class="rowClass(s, it._2)" v-scroll-into-view="it._2 == s.selected.v" @mouseenter="s.selected := it._2" @click="props.onDone(Some(it._1))">
               <td class="c-icon"><span class="icon"><span v-if="iconClass(it._1).nonEmpty" :class="iconClass(it._1)" aria-hidden="true"></span><template v-else>{{ Blocks.str(it._1, "icon") }}</template></span></td>
               <td class="name">{{ Blocks.str(it._1, "title") }}</td>
               <td class="desc">{{ Blocks.str(it._1, "description") }}</td>

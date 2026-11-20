@@ -303,7 +303,7 @@ object DbApi {
       Json.obj("props" -> props.asJson, "views" -> views.asJson).deepDropNullValues
     )
 
-  def remove(id: String): Future[Unit] = Api.del(s"/api/pages/${Api.seg(id)}/database")
+  def remove(id: String): Future[Unit] = Api.delete(s"/api/pages/${Api.seg(id)}/database")
 
   /** ページをデータベースにする（既定の列: 状態・担当者・期限、ビュー: 表・ボード・カレンダー） */
   def createDefault(id: String): Future[Unit] = {

@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.Nav
 import io.circe.Json
 
 import scala.scalajs.js
@@ -71,7 +72,7 @@ def dropOnDay(s: State, props: Props, e: org.scalajs.dom.Event, day: String): Un
 
 def add(props: Props, day: String): Unit = props.dateProp.foreach(p => props.onAdd(Map(p.id -> Json.fromString(day)), day))
 
-def href(props: Props, r: DbRow): String = DbDom.pageHref(props.wid, r.page.id)
+def href(props: Props, r: DbRow): String = Nav.pageHref(props.wid, r.page.id)
 
 
 def draggable(r: DbRow): String = if (r.page.canEdit) "true" else "false"
@@ -93,13 +94,13 @@ def draggable(r: DbRow): String = if (r.page.canEdit) "true" else "false"
           @dragover="over(s, event, Db.ymd(d))" @dragleave="s.dropDay := None" @drop="dropOnDay(s, props, event, Db.ymd(d))">
           <div class="dnum">{{ d.getDate().toInt }}<button v-if="props.canEdit" class="ghost dadd" title="この日に追加" @click="add(props, Db.ymd(d))">＋</button></div>
           <a v-for="r in byDay(props, Db.ymd(d))" :key="r.page.id" :href="href(props, r)" class="ev" :draggable="draggable(r)" data-testid="db-event"
-            @click="DbDom.link(event, href(props, r))" @dragstart="s.dragRow := Some(r.page.id)" @dragend="s.dragRow := None">{{ r.page.displayTitle }}</a>
+            @click="Nav.link(event, href(props, r))" @dragstart="s.dragRow := Some(r.page.id)" @dragend="s.dragRow := None">{{ r.page.displayTitle }}</a>
         </div>
       </div>
       <details v-if="undated(props).nonEmpty" class="undated">
         <summary>日付のない項目（{{ undated(props).size }}）</summary>
         <a v-for="r in undated(props)" :key="r.page.id" :href="href(props, r)" class="ev" :draggable="draggable(r)"
-          @click="DbDom.link(event, href(props, r))" @dragstart="s.dragRow := Some(r.page.id)" @dragend="s.dragRow := None">{{ r.page.displayTitle }}</a>
+          @click="Nav.link(event, href(props, r))" @dragstart="s.dragRow := Some(r.page.id)" @dragend="s.dragRow := None">{{ r.page.displayTitle }}</a>
       </details>
     </template>
   </div>

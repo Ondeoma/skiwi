@@ -7,12 +7,6 @@ import skiwi.shared.Titles
 /** ダイアログで共通の小さな補助 */
 object Dlg {
 
-  /** 入力欄・選択の値 */
-  def value(e: dom.Event): String = e.target.asInstanceOf[js.Dynamic].value.asInstanceOf[String]
-
-  /** チェックボックスの状態 */
-  def checked(e: dom.Event): Boolean = e.target.asInstanceOf[dom.HTMLInputElement].checked
-
   /** 入力欄の文字を選ぶ */
   def select(e: dom.Event): Unit = e.target.asInstanceOf[js.Dynamic].select()
 

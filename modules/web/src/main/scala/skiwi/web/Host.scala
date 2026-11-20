@@ -76,7 +76,7 @@ object Host {
   def exposeToJs(): Unit = {
     val h = js.Dynamic.literal(
       navigate = (path: String) => Nav.go(path),
-      replace = (path: String) => Nav.replace(path),
+      replace = (path: String) => { Router.replace(path); () },
       confirm = (message: String, opts: js.Dynamic) =>
         Dialog.confirm(message, str(opts, "okLabel", "OK"), bool(opts, "danger")).toJSPromise,
       prompt = (message: String, value: String, opts: js.Dynamic) =>

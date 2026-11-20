@@ -167,9 +167,12 @@ object Export {
       Importer.sequentially(ids)(onePage)
         .flatMap(_ => Io.zip(files.toList))
         .map(z =>
-          Ui.download(
-            s"${safeName(root.title)}.zip",
-            new dom.Blob(js.Array(z.asInstanceOf[dom.BlobPart]), new dom.BlobPropertyBag { `type` = "application/zip" })
+          sbirds.web.Dom.download(
+            new dom.Blob(
+              js.Array(z.asInstanceOf[dom.BlobPart]),
+              new dom.BlobPropertyBag { `type` = "application/zip" }
+            ),
+            s"${safeName(root.title)}.zip"
           )
         )
         .recoverWith { case e => Dialog.alert(s"書き出せませんでした: ${Bytes.message(e)}") }

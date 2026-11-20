@@ -2,21 +2,8 @@
 import org.scalajs.dom
 import skiwi.web.*
 
-// 画面内の確認・入力・選択・お知らせ（Dialog.confirm などで開く）
-case class State(input: ElementRef[dom.HTMLElement] = ElementRef(), box: ElementRef[dom.HTMLElement] = ElementRef())
-
-def initState() = State()
-
-def mounted(s: State): Unit =
-  watch(Dialog.current)((_, d) => d.foreach { r =>
-    dom.window.setTimeout(() => {
-      if (r.kind == "prompt") s.input.foreach { el => el.focus(); el.asInstanceOf[scala.scalajs.js.Dynamic].select() }
-      else s.box.foreach { b =>
-        val sel = if (r.kind == "choose") "[data-testid=dialog-choice]" else "[data-testid=dialog-ok]"
-        Option(b.querySelector(sel)).foreach(_.asInstanceOf[dom.HTMLElement].focus())
-      }
-    }, 0)
-  })
+// 画面内の確認・入力・選択・お知らせ（Dialog.confirm などで開く）.
+// 開いたら、入力欄（文字を選択）・最初の選択肢・OK のどれかにフォーカスする（v-focus）
 
 def onKey(e: dom.KeyboardEvent): Unit = Dialog.current.v.foreach { d =>
   // IME変換中のEnterは確定に使われるので無視する
@@ -35,20 +22,20 @@ def okClass(d: DialogReq): String = if (d.danger) "ok danger" else "ok"
 
 <template>
   <div v-for="d in list" class="backdrop" @mousedown="onBg(event)" @keydown="onKey(event.asInstanceOf[org.scalajs.dom.KeyboardEvent])">
-    <div ref="s.box" class="dialog" role="dialog" aria-modal="true" data-testid="app-dialog">
+    <div class="dialog" role="dialog" aria-modal="true" data-testid="app-dialog">
       <p class="message">{{ d.message }}</p>
       <div v-if='d.kind == "choose"' class="choices">
-        <button v-for="o in d.options" class="choice" data-testid="dialog-choice" @click="Dialog.pick(d, o.value)">
+        <button v-for="o in d.options" class="choice" data-testid="dialog-choice" v-focus="d.options.headOption.contains(o)" @click="Dialog.pick(d, o.value)">
           <span>{{ o.label }}</span><small v-if="o.detail.nonEmpty">{{ o.detail.getOrElse("") }}</small>
         </button>
       </div>
       <template v-if='d.kind == "prompt"'>
-        <textarea v-if="d.multiline" ref="s.input" v-model="d.value" rows="6" :placeholder="d.placeholder"></textarea>
-        <input v-else ref="s.input" v-model="d.value" type="text" :placeholder="d.placeholder">
+        <textarea v-if="d.multiline" v-model="d.value" v-focus.select rows="6" :placeholder="d.placeholder"></textarea>
+        <input v-else v-model="d.value" type="text" v-focus.select :placeholder="d.placeholder">
       </template>
       <div class="buttons">
         <button v-if='d.kind != "alert"' @click="Dialog.cancel(d)">キャンセル</button>
-        <button v-if='d.kind != "choose"' :class="okClass(d)" data-testid="dialog-ok" @click="Dialog.ok(d)">{{ d.okLabel }}</button>
+        <button v-if='d.kind != "choose"' :class="okClass(d)" data-testid="dialog-ok" v-focus='d.kind != "prompt"' @click="Dialog.ok(d)">{{ d.okLabel }}</button>
       </div>
     </div>
   </div>

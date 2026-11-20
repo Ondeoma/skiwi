@@ -1,6 +1,7 @@
 <script lang="scala">
+import sbirds.web.Dom
 import org.scalajs.dom
-import skiwi.web.{Api, Nav, Ui}
+import skiwi.web.{Api, Ui}
 import skiwi.web.editor.PageLinks
 
 import scala.concurrent.Future
@@ -18,8 +19,8 @@ case class Section(item: GuestPage, depth: Int, num: String, content: js.Any)
 
 case class Progress(done: Int, total: Int)
 
-case class State(children: RV[Boolean] = RV(!Nav.query("children").contains("0")),
-                 toc: RV[Boolean] = RV(!Nav.query("toc").contains("0")),
+case class State(children: RV[Boolean] = RV(!Router.query.v.get("children").contains("0")),
+                 toc: RV[Boolean] = RV(!Router.query.v.get("toc").contains("0")),
                  loading: RV[Boolean] = RV(true),
                  progress: RV[Progress] = RV(Progress(0, 0)),
                  error: RV[String] = RV(""),
@@ -33,7 +34,7 @@ def mounted(s: State, props: Props): Unit = {
   pageTitle(s.docTitle.mapC(t => if (t.isEmpty) "PDF" else s"$t - PDF"))
   load(s, props).foreach { _ =>
     // 自動で印刷画面を開く（図・数式の描画を少し待つ）
-    if (s.error.v.isEmpty && !Nav.query("auto").contains("0")) dom.window.setTimeout(() => dom.window.print(), 1200)
+    if (s.error.v.isEmpty && !Router.query.v.get("auto").contains("0")) dom.window.setTimeout(() => dom.window.print(), 1200)
   }
 }
 
@@ -103,14 +104,10 @@ def load(s: State, props: Props): Future[Unit] = {
 
 def setOpt(s: State, props: Props, k: String, v: Boolean): Unit = {
   if (k == "children") { s.children := v; load(s, props) } else s.toc := v
-  val u = new dom.URL(dom.window.location.href)
-  u.searchParams.set("children", if (s.children.v) "1" else "0")
-  u.searchParams.set("toc", if (s.toc.v) "1" else "0")
-  u.searchParams.set("auto", "0")
-  Nav.replaceQuiet(u.pathname + u.search + u.hash)
+  def flag(b: Boolean) = Some(if (b) "1" else "0")
+  Router.setQuery("children" -> flag(s.children.v), "toc" -> flag(s.toc.v), "auto" -> Some("0"))
 }
 
-def checked(e: dom.Event): Boolean = e.target.asInstanceOf[dom.HTMLInputElement].checked
 
 def printNow(): Unit = dom.window.print()
 
@@ -137,8 +134,8 @@ def secTitle(x: Section): String = x.item.icon.fold("")(_ + " ") + x.item.displa
   <div class="print-root">
     <div class="bar no-print" data-testid="print-bar">
       <b>🖨 PDF・印刷</b>
-      <label><input type="checkbox" :checked="s.children.v" data-testid="print-children" @change='setOpt(s, props, "children", checked(event))'> 子ページも含める</label>
-      <label><input type="checkbox" :checked="s.toc.v" data-testid="print-toc" @change='setOpt(s, props, "toc", checked(event))'> 目次を付ける</label>
+      <label><input type="checkbox" :checked="s.children.v" data-testid="print-children" @change='setOpt(s, props, "children", Dom.checked(event))'> 子ページも含める</label>
+      <label><input type="checkbox" :checked="s.toc.v" data-testid="print-toc" @change='setOpt(s, props, "toc", Dom.checked(event))'> 目次を付ける</label>
       <span class="muted">{{ status(s) }}</span>
       <button class="primary" :disabled="s.loading.v || s.error.v.nonEmpty" data-testid="print-run" @click="printNow()">印刷 / PDFに保存</button>
       <span class="muted small">印刷画面の「送信先」で「PDFに保存」を選んでください</span>

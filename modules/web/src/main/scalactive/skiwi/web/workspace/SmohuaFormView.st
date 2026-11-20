@@ -27,7 +27,7 @@ def initState() = State()
 private val smohua = Integrations.smohua
 
 private def detail(props: Props, kind: String) =
-  Api.request(dom.HttpMethod.GET, s"/api/integrations/smohua/items/${Api.seg(props.formId)}/${Api.seg(kind)}", redirectOn401 = false).map(Api.as[Json])
+  Api.call(dom.HttpMethod.GET, s"/api/integrations/smohua/items/${Api.seg(props.formId)}/${Api.seg(kind)}", redirectOn401 = false).map(Api.as[Json])
 
 /** 回答の値の表示（文字・数・複数の選択） */
 def text(j: Json): String =
@@ -56,7 +56,7 @@ def parseAnswers(j: Json, qs: List[Question]): List[Answer] =
 
 def fail(s: State, e: Throwable): Unit = {
   s.error := (e match {
-    case ApiError(404, _, _) => "フォームが見つからないか、見る権限がありません"
+    case ApiError(404, _) => "フォームが見つからないか、見る権限がありません"
     case other               => other.getMessage
   })
   s.phase := "error"

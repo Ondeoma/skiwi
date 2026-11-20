@@ -1,4 +1,5 @@
 <script lang="scala">
+import sbirds.web.Dom
 import skiwi.web.*
 import skiwi.web.model.*
 import skiwi.web.parts.*
@@ -17,7 +18,8 @@ case class State(st: RV[Option[PageLockState]] = RV(None),
                  busy: RV[Boolean] = RV(false),
                  q: RV[String] = RV(""),
                  found: RV[List[DirectoryEntry]] = RV(Nil),
-                 search: Debounced = new Debounced(250))
+                 search: DebouncedFn[() => Unit] = useDebounce[() => Unit](250)(_()),
+                 latest: LatestFn = useLatest())
 
 def initState() = State()
 
@@ -32,7 +34,7 @@ def mounted(s: State, props: Props): Unit =
 
 // 編集できる人の追加（ユーザーのみ）
 def onSearch(s: State, value: String): Unit =
-  s.search.run(latest => DialogsApi.users(value).foreach(r => if (latest()) s.found := r))
+  s.search(() => s.latest(DialogsApi.users(value)).foreach(s.found := _))
 
 def addEditor(s: State, d: DirectoryEntry): Unit = {
   if (!s.editors.v.exists(_.id == d.id)) s.editors := s.editors.v :+ LockEditor(d.id, d.name)
@@ -99,7 +101,7 @@ def ownerNote(p: Props): String = p.ownerName.fold("・所有者")(n => s"・所
             <li v-for="e in s.editors" :key="e.id" data-testid="lock-editor">👤 {{ e.name }}<button class="x" title="外す" @click="s.editors := s.editors.v.filterNot(_.id == e.id)">×</button></li>
             <li v-if="s.editors.v.isEmpty" class="muted">（指定なし）</li>
           </ul>
-          <input v-model="s.q" placeholder="名前・メールで検索して追加" data-testid="lock-editor-search" @input="onSearch(s, Dlg.value(event))">
+          <input v-model="s.q" placeholder="名前・メールで検索して追加" data-testid="lock-editor-search" @input="onSearch(s, Dom.value(event))">
           <ul v-if="s.found.v.nonEmpty" class="found">
             <li v-for="d in s.found.v.take(8)" :key="d.id"><button data-testid="lock-editor-add" @click="addEditor(s, d)">👤 {{ d.name }} <small class="muted">{{ d.detail.getOrElse("") }}</small></button></li>
           </ul>

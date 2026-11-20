@@ -1,8 +1,10 @@
 <script lang="scala">
+import skiwi.web.Nav
+import sbirds.web.Dom
 import io.circe.Json
 import io.github.ondeoma.scalactive.reactive.Computed
 import org.scalajs.dom
-import skiwi.web.{Choice, Debounced, Dialog, Prefs, Store, Ui}
+import skiwi.web.{Choice, Dialog, Prefs, Store}
 import skiwi.web.parts.HelpLink
 
 import scala.collection.mutable
@@ -50,8 +52,7 @@ final class State(props: Props) {
   val formsOpen: RV[Boolean] = RV(false)
   /** 開いているセルの選択の一覧（複数選択・関連） */
   val pop: RV[Option[String]] = RV(None)
-  val saver: Debounced = new Debounced(400)
-  var onVis: js.Function1[dom.Event, Unit] = null
+  val saver: DebouncedFn[() => Unit] = useDebounce[() => Unit](400)(_())
 
   // ---- 計算した値 ----
   val views: CRV[List[DbView]] = Computed.make(() => if (props.embedded && local.v.nonEmpty) local.v else db.v.fold(List.empty[DbView])(_.views))
@@ -152,12 +153,9 @@ def mounted(s: State, props: Props): Unit = {
   }
   watch(children, false)((_, _) => if (s.db.v.isDefined) load(s, props))
   // ほかの画面（項目のページ）で変えた値を反映する
-  s.onVis = (_: dom.Event) => if (dom.document.visibilityState == "visible") load(s, props)
-  dom.document.addEventListener("visibilitychange", s.onVis)
+  useEventListener[dom.Event](dom.document, "visibilitychange")(_ => if (dom.document.visibilityState == "visible") load(s, props))
+  ()
 }
-
-def unmounted(s: State, props: Props): Unit =
-  if (s.onVis != null) dom.document.removeEventListener("visibilitychange", s.onVis)
 
 def canEdit(s: State): Boolean = s.db.v.exists(_.canEdit)
 
@@ -169,7 +167,7 @@ def ready(s: State): Boolean = s.db.v.isDefined && s.view.v.isDefined
 
 /** 定義の保存（列・ビュー）。閲覧のみの人のビューの変更は、この画面だけ */
 def saveSoon(s: State, props: Props): Unit =
-  if (canEdit(s) && s.db.v.isDefined) s.saver.run(_ => save(s, props))
+  if (canEdit(s) && s.db.v.isDefined) s.saver(() => save(s, props))
 
 def save(s: State, props: Props): Unit = s.db.v.foreach { cur =>
   DbApi.save(props.pageId, cur.props, cur.views).onComplete {
@@ -265,7 +263,7 @@ def onTab(s: State, props: Props): Unit = if (canEdit(s) || props.embedded) view
 def exportCsv(s: State, props: Props): Unit = if (s.db.v.isDefined) {
   val name = Store.byId(props.pageId).map(_.title).filter(_.nonEmpty).getOrElse("データベース")
   val csv = Db.toCsv(s.visibleProps.v, s.rows.v, s.ctx.v)
-  Ui.download(s"$name.csv", new dom.Blob(js.Array(csv), new dom.BlobPropertyBag { `type` = "text/csv;charset=utf-8" }))
+  sbirds.web.Dom.download(new dom.Blob(js.Array(csv), new dom.BlobPropertyBag { `type` = "text/csv;charset=utf-8" }), s"$name.csv")
 }
 
 /** CSV を取り込む: 1行目は列名（取り込み方は Db.planCsvImport） */
@@ -577,7 +575,7 @@ def addToColumn(s: State, props: Props, c: Column): Unit =
 
 // ---------------------------------------------------------------- そのほか
 
-def rowHref(props: Props, r: DbRow): String = DbDom.pageHref(props.wid, r.page.id)
+def rowHref(props: Props, r: DbRow): String = Nav.pageHref(props.wid, r.page.id)
 
 
 def iconOf(r: DbRow): String = r.page.iconOr
@@ -588,7 +586,7 @@ def tagClass(color: Option[String]): String = color.fold("tag")(c => s"tag c-$c"
 
 def embTitle(props: Props): String = Store.byId(props.pageId).map(_.title).filter(_.nonEmpty).getOrElse("データベース")
 
-def embHref(props: Props): String = DbDom.pageHref(props.wid, props.pageId)
+def embHref(props: Props): String = Nav.pageHref(props.wid, props.pageId)
 
 def tabClass(s: State, v: DbView): String = if (s.view.v.exists(_.id == v.id)) "on" else ""
 
@@ -606,7 +604,7 @@ def convertBack(s: State, props: Props): Unit =
     <p v-if="s.error.v.nonEmpty" class="error">{{ s.error }}</p>
     <template v-else-if="ready(s)">
       <div v-if="props.embedded" class="emb-head">
-        <a :href="embHref(props)" class="emb-title" data-testid="db-embed-title" @click="DbDom.link(event, embHref(props))">📊 {{ embTitle(props) }} ↗</a>
+        <a :href="embHref(props)" class="emb-title" data-testid="db-embed-title" @click="Nav.link(event, embHref(props))">📊 {{ embTitle(props) }} ↗</a>
         <span class="muted small">（ここでのビューの変更は、この場所だけに保存されます）</span>
       </div>
       <div class="views" role="tablist">
@@ -623,24 +621,24 @@ def convertBack(s: State, props: Props): Unit =
 
       <div v-if="s.filterOpen" class="filters" data-testid="db-filters">
         <div v-for="fi in filters(s).zipWithIndex" :key="fi._2" class="frow">
-          <select @change="setFilterProp(s, props, fi._2, DbDom.value(event))">
+          <select @change="setFilterProp(s, props, fi._2, Dom.value(event))">
             <option v-for="o in fieldOptions(s)" :key="o._1" :value="o._1" :selected="o._1 == fi._1.prop">{{ o._2 }}</option>
           </select>
           <template v-if="Db.needsValue(fi._1.op)">
-            <select v-if='typeOf(s, fi._1.prop) == "select" || typeOf(s, fi._1.prop) == "multi_select"' data-testid="db-filter-value" @change="setFilter(s, props, fi._2, _.copy(value = Some(DbDom.value(event))))">
+            <select v-if='typeOf(s, fi._1.prop) == "select" || typeOf(s, fi._1.prop) == "multi_select"' data-testid="db-filter-value" @change="setFilter(s, props, fi._2, _.copy(value = Some(Dom.value(event))))">
               <option value="" :selected="fi._1.value.forall(_.isEmpty)">（選ぶ）</option>
               <option v-for="o in propOf(s, fi._1.prop).fold(List.empty[DbOption])(_.opts)" :key="o.id" :value="o.id" :selected="fi._1.value.contains(o.id)">{{ o.name }}</option>
             </select>
-            <select v-else-if='typeOf(s, fi._1.prop) == "checkbox"' @change="setFilter(s, props, fi._2, _.copy(value = Some(DbDom.value(event))))">
+            <select v-else-if='typeOf(s, fi._1.prop) == "checkbox"' @change="setFilter(s, props, fi._2, _.copy(value = Some(Dom.value(event))))">
               <option value="true" :selected='fi._1.value.contains("true")'>✓ あり</option><option value="false" :selected='fi._1.value.contains("false")'>なし</option>
             </select>
-            <select v-else-if='typeOf(s, fi._1.prop) == "person"' @change="setFilter(s, props, fi._2, _.copy(value = Some(DbDom.value(event))))">
+            <select v-else-if='typeOf(s, fi._1.prop) == "person"' @change="setFilter(s, props, fi._2, _.copy(value = Some(Dom.value(event))))">
               <option value="" :selected="fi._1.value.forall(_.isEmpty)">（選ぶ）</option><option value="@me" :selected='fi._1.value.contains("@me")'>自分</option>
               <option v-for="u in d(s).users.toList" :key="u._1" :value="u._1" :selected="fi._1.value.contains(u._1)">{{ u._2 }}</option>
             </select>
-            <input v-else :type="filterInputType(s, fi._1.prop)" :value='fi._1.value.getOrElse("")' data-testid="db-filter-input" @change="setFilter(s, props, fi._2, _.copy(value = Some(DbDom.value(event))))">
+            <input v-else :type="filterInputType(s, fi._1.prop)" :value='fi._1.value.getOrElse("")' data-testid="db-filter-input" @change="setFilter(s, props, fi._2, _.copy(value = Some(Dom.value(event))))">
           </template>
-          <select @change="setFilter(s, props, fi._2, _.copy(op = DbDom.value(event)))">
+          <select @change="setFilter(s, props, fi._2, _.copy(op = Dom.value(event)))">
             <option v-for="o in Db.opsFor(typeOf(s, fi._1.prop))" :key="o._1" :value="o._1" :selected="o._1 == fi._1.op">{{ o._2 }}</option>
           </select>
           <button class="ghost" title="条件を外す" @click="removeFilter(s, props, fi._2)">×</button>
@@ -649,29 +647,29 @@ def convertBack(s: State, props: Props): Unit =
           <button class="ghost" data-testid="db-filter-add" @click="addFilter(s, props)">＋ 条件を追加</button>
           <span class="spacer"></span>
           並べ替え:
-          <select data-testid="db-sort" @change="setSort(s, props, DbDom.value(event))">
+          <select data-testid="db-sort" @change="setSort(s, props, Dom.value(event))">
             <option value="" :selected="sortValue(s).isEmpty">手動（ページの並び）</option>
             <option v-for="o in sortOptions(s)" :key="o._1" :value="o._1" :selected="o._1 == sortValue(s)">{{ o._2 }}</option>
           </select>
         </div>
         <div v-if='vw(s).tpe == "board"' class="frow">
           列に分ける項目:
-          <select data-testid="db-group-by" @change="patchView(s, props, _.copy(groupBy = orNone(DbDom.value(event))))">
+          <select data-testid="db-group-by" @change="patchView(s, props, _.copy(groupBy = orNone(Dom.value(event))))">
             <option value="" :selected="vw(s).groupBy.isEmpty">（選ぶ）</option>
             <option v-for="p in selectProps(s)" :key="p.id" :value="p.id" :selected="vw(s).groupBy.contains(p.id)">{{ p.name }}</option>
           </select>
         </div>
         <div v-if='vw(s).tpe == "table" || vw(s).tpe == "list"' class="frow">
           グループ化:
-          <select data-testid="db-group" @change="patchView(s, props, _.copy(group = orNone(DbDom.value(event))))">
+          <select data-testid="db-group" @change="patchView(s, props, _.copy(group = orNone(Dom.value(event))))">
             <option value="" :selected="vw(s).group.isEmpty">しない</option>
             <option v-for="p in groupableProps(s)" :key="p.id" :value="p.id" :selected="vw(s).group.contains(p.id)">{{ p.name }}</option>
           </select>
-          <label v-if='vw(s).tpe == "table"' class="chk"><input type="checkbox" :checked="!vw(s).subItems.contains(false)" data-testid="db-subitems" @change="patchView(s, props, _.copy(subItems = Some(DbDom.checked(event))))"> サブ項目を親の下に表示</label>
+          <label v-if='vw(s).tpe == "table"' class="chk"><input type="checkbox" :checked="!vw(s).subItems.contains(false)" data-testid="db-subitems" @change="patchView(s, props, _.copy(subItems = Some(Dom.checked(event))))"> サブ項目を親の下に表示</label>
         </div>
         <div v-if='vw(s).tpe == "gallery"' class="frow">
           表紙:
-          <select data-testid="db-cover" @change="patchView(s, props, _.copy(cover = Some(DbDom.value(event))))">
+          <select data-testid="db-cover" @change="patchView(s, props, _.copy(cover = Some(Dom.value(event))))">
             <option value="content" :selected='vw(s).cover.forall(_ == "content")'>本文の最初の画像</option>
             <option value="none" :selected='vw(s).cover.contains("none")'>なし</option>
             <option v-for="p in urlProps(s)" :key="p.id" :value="p.id" :selected="vw(s).cover.contains(p.id)">URL の列: {{ p.name }}</option>
@@ -679,19 +677,19 @@ def convertBack(s: State, props: Props): Unit =
         </div>
         <div v-if='vw(s).tpe == "timeline"' class="frow">
           開始:
-          <select data-testid="db-tl-start" @change="patchView(s, props, _.copy(startProp = orNone(DbDom.value(event))))">
+          <select data-testid="db-tl-start" @change="patchView(s, props, _.copy(startProp = orNone(Dom.value(event))))">
             <option value="" :selected="vw(s).startProp.isEmpty">（選ぶ）</option>
             <option v-for="p in dateProps(s)" :key="p.id" :value="p.id" :selected="vw(s).startProp.contains(p.id)">{{ p.name }}</option>
           </select>
           終了:
-          <select data-testid="db-tl-end" @change="patchView(s, props, _.copy(endProp = orNone(DbDom.value(event))))">
+          <select data-testid="db-tl-end" @change="patchView(s, props, _.copy(endProp = orNone(Dom.value(event))))">
             <option value="" :selected="vw(s).endProp.isEmpty">（なし: 1日だけ）</option>
             <option v-for="p in dateProps(s)" :key="p.id" :value="p.id" :selected="vw(s).endProp.contains(p.id)">{{ p.name }}</option>
           </select>
         </div>
         <div v-if='vw(s).tpe == "calendar"' class="frow">
           日付の項目:
-          <select data-testid="db-date-prop" @change="patchView(s, props, _.copy(dateProp = orNone(DbDom.value(event))))">
+          <select data-testid="db-date-prop" @change="patchView(s, props, _.copy(dateProp = orNone(Dom.value(event))))">
             <option value="" :selected="vw(s).dateProp.isEmpty">（選ぶ）</option>
             <option v-for="p in dateProps(s)" :key="p.id" :value="p.id" :selected="vw(s).dateProp.contains(p.id)">{{ p.name }}</option>
           </select>
@@ -730,7 +728,7 @@ def convertBack(s: State, props: Props): Unit =
                   <span class="tcell" :style='"padding-left: " + (x.depth * 1.3) + "rem"'>
                     <button v-if="s.nest.v &amp;&amp; x.depth == 0 &amp;&amp; hasSubs(s, x.row.page.id)" class="ghost twisty" :title='if (s.openSubs.v(x.row.page.id)) "サブ項目を閉じる" else "サブ項目を開く"' data-testid="db-sub-toggle" @click="toggleSubs(s, x.row.page.id)">{{ if (s.openSubs.v(x.row.page.id)) "▾" else "▸" }}</button>
                     <span v-else-if="s.nest.v &amp;&amp; x.depth == 0" class="twisty-space"></span>
-                    <a :href="rowHref(props, x.row)" class="rlink" @click="DbDom.link(event, rowHref(props, x.row))">{{ iconOf(x.row) }} {{ x.row.page.displayTitle }}</a>
+                    <a :href="rowHref(props, x.row)" class="rlink" @click="Nav.link(event, rowHref(props, x.row))">{{ iconOf(x.row) }} {{ x.row.page.displayTitle }}</a>
                     <button v-if="s.nest.v &amp;&amp; x.depth == 0 &amp;&amp; x.row.page.canEdit" class="ghost add-sub" title="サブ項目を追加" data-testid="db-sub-add" @click="addSub(s, props, x.row)">＋</button>
                   </span>
                 </td>
@@ -743,13 +741,13 @@ def convertBack(s: State, props: Props): Unit =
             </template>
             <tr class="calc" data-testid="db-calc-row">
               <td>
-                <select class="calc-sel" title="集計" @change='setCalc(s, props, "title", DbDom.value(event))'>
+                <select class="calc-sel" title="集計" @change='setCalc(s, props, "title", Dom.value(event))'>
                   <option value="" :selected='calcOf(s, "title").isEmpty'>{{ if (calcOf(s, "title").nonEmpty) "" else "集計" }}</option><option value="count" :selected='calcOf(s, "title") == "count"'>件数</option>
                 </select>
                 <span class="calc-v">{{ calcText(s, "title", g.items) }}</span>
               </td>
               <td v-for="p in s.visibleProps" :key="p.id">
-                <select class="calc-sel" title="集計" data-testid="db-calc" @change="setCalc(s, props, p.id, DbDom.value(event))">
+                <select class="calc-sel" title="集計" data-testid="db-calc" @change="setCalc(s, props, p.id, Dom.value(event))">
                   <option value="" :selected="calcOf(s, p.id).isEmpty">{{ if (calcOf(s, p.id).nonEmpty) "（なし）" else "集計" }}</option>
                   <option v-for="f in Db.calcsFor(p.tpe)" :key="f" :value="f" :selected="calcOf(s, p.id) == f">{{ Db.CalcLabel(f) }}</option>
                 </select>
@@ -774,7 +772,7 @@ def convertBack(s: State, props: Props): Unit =
         <template v-for="g in s.groups" :key="g.key">
           <div v-if="s.tableGroup.v.isDefined" class="lgh"><span :class="tagClass(g.color)">{{ g.label }}</span><span class="muted small">{{ g.items.size }}</span></div>
           <div v-for="x in g.items" :key="x.row.page.id" class="litem" data-testid="db-list-item">
-            <a :href="rowHref(props, x.row)" class="rlink" @click="DbDom.link(event, rowHref(props, x.row))">{{ iconOf(x.row) }} {{ x.row.page.displayTitle }}</a>
+            <a :href="rowHref(props, x.row)" class="rlink" @click="Nav.link(event, rowHref(props, x.row))">{{ iconOf(x.row) }} {{ x.row.page.displayTitle }}</a>
             <span class="lprops">
               <template v-for="p in listProps(s)" :key="p.id">
                 <DbCell v-if="shown(s, p, x.row)" :prop="p" :value="cellVal(s, p, x.row)" :users="d(s).users" :ctx="Some(s.ctx.v)" :editable="false" :compact="true" :wid="props.wid" />
@@ -787,7 +785,7 @@ def convertBack(s: State, props: Props): Unit =
 
       <!-- ギャラリー -->
       <div v-else-if='vw(s).tpe == "gallery"' class="gallery" data-testid="db-gallery">
-        <a v-for="r in s.rows" :key="r.page.id" :href="rowHref(props, r)" class="gcard" data-testid="db-gallery-card" @click="DbDom.link(event, rowHref(props, r))">
+        <a v-for="r in s.rows" :key="r.page.id" :href="rowHref(props, r)" class="gcard" data-testid="db-gallery-card" @click="Nav.link(event, rowHref(props, r))">
           <div v-if='!vw(s).cover.contains("none")' class="gcover">
             <img v-if="coverOf(s, r).isDefined" :src='coverOf(s, r).getOrElse("")' alt="" loading="lazy">
             <span v-else class="gexcerpt">{{ r.meta.flatMap(_.excerpt).getOrElse("") }}</span>
@@ -814,7 +812,7 @@ def convertBack(s: State, props: Props): Unit =
           @dragover="over(s, event, c.option.id)" @dragleave="s.dropCol := None" @drop="dropOn(s, props, event, c.option.id)">
           <div class="bhead"><span :class="tagClass(Some(c.option.color))">{{ c.option.name }}</span><span class="muted small">{{ c.rows.size }}</span></div>
           <div v-for="r in c.rows" :key="r.page.id" class="card" :draggable="draggable(r)" data-testid="db-card" @dragstart="s.dragRow := Some(r.page.id)" @dragend="s.dragRow := None">
-            <a :href="rowHref(props, r)" class="rlink" @click="DbDom.link(event, rowHref(props, r))">{{ iconOf(r) }} {{ r.page.displayTitle }}</a>
+            <a :href="rowHref(props, r)" class="rlink" @click="Nav.link(event, rowHref(props, r))">{{ iconOf(r) }} {{ r.page.displayTitle }}</a>
             <template v-for="p in cardProps(s)" :key="p.id">
               <div v-if="shown(s, p, r)" class="cprop">
                 <DbCell :prop="p" :value="cellVal(s, p, r)" :users="d(s).users" :ctx="Some(s.ctx.v)" :editable="false" :compact="true" :wid="props.wid" />
@@ -844,7 +842,7 @@ def convertBack(s: State, props: Props): Unit =
             <div class="cm-sub">選択肢</div>
             <div v-for="o in cp.opts" :key="o.id" class="opt">
               <span :class="tagClass(Some(o.color))" @click="renameOption(s, props, cp, o)">{{ o.name }}</span>
-              <select title="色" @change="colorOption(s, props, cp, o, DbDom.value(event))">
+              <select title="色" @change="colorOption(s, props, cp, o, Dom.value(event))">
                 <option v-for="c in Db.Colors" :key="c" :value="c" :selected="c == o.color">{{ Db.ColorLabel(c) }}</option>
               </select>
               <button class="ghost" title="削除" @click="deleteOption(s, props, cp, o)">×</button>

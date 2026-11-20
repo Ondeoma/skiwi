@@ -8,8 +8,8 @@ import skiwi.web.views.*
 import skiwi.web.workspace.*
 
 // 画面全体の枠. /w/... （ワークスペース・ページ）は WorkspaceView が自分で URL を見て描く
-// （RouterComponent はクエリ文字列が変わっても画面を作り直すため、編集中のページを作り直さないように外に置く）.
-// それ以外の画面は RouterComponent で切り替える.
+// （ページの移動で編集中のページを作り直さないように外に置く）.
+// それ以外の画面は RouterComponent で切り替える（クエリ文字列だけの変化では作り直さない. 使い方の検索語・PDF の設定を URL に残すため）.
 
 def opt(r: io.github.ondeoma.scalactive.facades.URLPatternResult, key: String): Option[String] =
   r.pathname.groups.get(key).filter(v => v != null && !scala.scalajs.js.isUndefined(v) && v.nonEmpty)
@@ -51,7 +51,7 @@ def mounted(): Unit = {
     Option(dom.window.sessionStorage.getItem("skiwi.returnTo")).foreach { back =>
       if (back.startsWith("/") && !back.startsWith("//")) {
         dom.window.sessionStorage.removeItem("skiwi.returnTo")
-        if (dom.window.location.pathname == "/") Nav.replace(back)
+        if (dom.window.location.pathname == "/") Router.replace(back)
       }
     }
   }
@@ -63,7 +63,7 @@ def progressStyle = Store.progress.mapC(_.fold("width: 0%")(p => s"width: ${if (
 
 <template>
   <WorkspaceView v-if="inWorkspace" />
-  <RouterComponent v-else :routes="routes" />
+  <RouterComponent v-else :routes="routes" :reloadOnQueryChange="false" />
   <PagePicker />
   <CommandPalette />
   <ShortcutsDialog />

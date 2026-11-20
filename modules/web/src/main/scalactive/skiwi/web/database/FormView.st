@@ -1,4 +1,5 @@
 <script lang="scala">
+import sbirds.web.Dom
 import io.circe.Json
 import io.circe.syntax.*
 import org.scalajs.dom
@@ -110,12 +111,12 @@ def testid(q: Q): String = s"form-input-${q.f.label}"
               <input v-else-if='q.f.`type` == "date"' v-model="q.text" type="date" :data-testid="testid(q)">
               <input v-else-if='q.f.`type` == "url"' v-model="q.text" type="url" placeholder="https://" :data-testid="testid(q)">
               <label v-else-if='q.f.`type` == "checkbox"' class="chk"><input v-model="q.check" type="checkbox"> はい</label>
-              <select v-else-if='q.f.`type` == "select"' :data-testid="testid(q)" @change="q.text := DbDom.value(event)">
+              <select v-else-if='q.f.`type` == "select"' :data-testid="testid(q)" @change="q.text := Dom.value(event)">
                 <option value="" :selected="q.text.v.isEmpty">（選んでください）</option>
                 <option v-for="o in q.f.options" :key="o.id" :value="o.id" :selected="q.text.v == o.id">{{ o.name }}</option>
               </select>
               <div v-else-if='q.f.`type` == "multi_select"' class="multi">
-                <label v-for="o in q.f.options" :key="o.id" class="chk"><input type="checkbox" :checked="q.multi.v.contains(o.id)" @change="toggleMulti(q, o.id, DbDom.checked(event))"> {{ o.name }}</label>
+                <label v-for="o in q.f.options" :key="o.id" class="chk"><input type="checkbox" :checked="q.multi.v.contains(o.id)" @change="toggleMulti(q, o.id, Dom.checked(event))"> {{ o.name }}</label>
               </div>
               <p v-if="q.err.v.nonEmpty" class="error small">{{ q.err }}</p>
             </div>

@@ -79,7 +79,7 @@ object AdminApi {
       )
     )
 
-  def removeOauthClient(): Future[Unit] = Api.del("/api/admin/integrations/skea/client")
+  def removeOauthClient(): Future[Unit] = Api.delete("/api/admin/integrations/skea/client")
 
   // ---------------------------------------------------------------- エージェント専用アカウント
 
@@ -95,6 +95,6 @@ object AdminApi {
     Api.post[CreatedTokenDto](s"/api/admin/agents/${Api.seg(id)}/keys", req.asJson)
 
   def revokeAgentKey(id: UUID, keyId: UUID): Future[Unit] =
-    Api.del(s"/api/admin/agents/${Api.seg(id)}/keys/${Api.seg(keyId)}")
+    Api.delete(s"/api/admin/agents/${Api.seg(id)}/keys/${Api.seg(keyId)}")
 
 }

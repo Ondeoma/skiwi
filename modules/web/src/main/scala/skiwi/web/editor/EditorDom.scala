@@ -126,7 +126,7 @@ object EditorDom {
     val onKey: js.Function1[dom.KeyboardEvent, Unit] = e =>
       if (
         (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase == "a" && !e.defaultPrevented &&
-        !skiwi.web.Ui.isTyping(e.target) && dom.document.querySelector("[role=dialog], [aria-modal=true]") == null
+        !sbirds.web.Dom.isTyping(e) && dom.document.querySelector("[role=dialog], [aria-modal=true]") == null
       ) {
         val target = el()
         if (target.isConnected) {

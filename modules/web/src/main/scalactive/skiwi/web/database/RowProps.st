@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.Nav
 import skiwi.shared.Titles
 import io.circe.Json
 import skiwi.web.Dialog
@@ -47,7 +48,7 @@ def visible(s: State): Boolean = s.data.v.exists(_.database.exists(_.props.nonEm
 
 def onUser(s: State, id: String, name: String): Unit = s.data.v.foreach(d => s.data := Some(d.copy(users = d.users + (id -> name))))
 
-def dbHref(props: Props, d: PageProps): String = DbDom.pageHref(props.wid, d.database.fold("")(_.pageId))
+def dbHref(props: Props, d: PageProps): String = Nav.pageHref(props.wid, d.database.fold("")(_.pageId))
 
 def dbTitle(d: PageProps): String = Titles.display(d.database.map(_.title))
 
@@ -60,7 +61,7 @@ def editable(d: PageProps, p: DbProp): Boolean = d.canEdit && !Db.Computed(p.`ty
   <div v-if="visible(s)" class="rowprops" data-testid="row-props">
     <template v-for="d in s.data.v.toList">
       <div class="from">
-        <a :href="dbHref(props, d)" @click="DbDom.link(event, dbHref(props, d))">📊 {{ dbTitle(d) }}</a> の項目
+        <a :href="dbHref(props, d)" @click="Nav.link(event, dbHref(props, d))">📊 {{ dbTitle(d) }}</a> の項目
       </div>
       <div v-for="p in shownProps(d)" :key="p.id" class="prop" data-testid="row-prop">
         <span class="name">{{ Db.icon(p.`type`) }} {{ p.name }}</span>

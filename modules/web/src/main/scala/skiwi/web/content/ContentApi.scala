@@ -14,19 +14,19 @@ object ContentApi {
 
   /** ページの本文（ProseMirror JSON）. 読めなければ None */
   def pageContent(id: String): Future[Option[Json]] =
-    okOrNull(Api.request(dom.HttpMethod.GET, s"/api/pages/${Api.seg(id)}/content", redirectOn401 = false))
+    okOrNull(Api.call(dom.HttpMethod.GET, s"/api/pages/${Api.seg(id)}/content", redirectOn401 = false))
       .map(_.flatten.flatMap(_.hcursor.downField("content").focus).filterNot(_.isNull))
 
   /** 空のページに本文を入れる（取り込み・複製）. state: io の encodeJson / encodeHtml の結果 */
   def importContent(id: String, state: Json): Future[Unit] =
-    Api.request(dom.HttpMethod.POST, s"/api/pages/${Api.seg(id)}/import", Some(state), redirectOn401 = false).map(_ =>
+    Api.call(dom.HttpMethod.POST, s"/api/pages/${Api.seg(id)}/import", Some(state), redirectOn401 = false).map(_ =>
       ()
     )
 
   def uploadAttachment(pageId: String, file: dom.File): Future[Attachment] = {
     val fd = new dom.FormData()
     fd.append("file", file, file.name)
-    Api.request(
+    Api.call(
       dom.HttpMethod.POST,
       s"/api/pages/${Api.seg(pageId)}/attachments",
       Some(fd),

@@ -10,7 +10,7 @@ import scala.scalajs.js
 case class Props(chapter: Option[String])
 
 case class State(docs: RV[Option[HelpDocs]] = RV(None),
-                 q: RV[String] = RV(Nav.query("q").getOrElse("")),
+                 q: RV[String] = RV(Router.query.v.getOrElse("q", "")),
                  hits: RV[List[HelpHit]] = RV(Nil),
                  sideOpen: RV[Boolean] = RV(false),
                  body: ElementRef[dom.HTMLElement] = ElementRef())
@@ -27,16 +27,13 @@ def mounted(s: State, props: Props): Unit = {
   // 検索語を URL に残す（戻るで検索結果に戻れる）。画面は作り直さない
   watch(s.q, false) { (_, v) =>
     s.docs.v.foreach(d => s.hits := d.search(v))
-    val u = new dom.URL(dom.window.location.href)
-    if (Option(u.searchParams.get("q")).getOrElse("") != v.trim) {
-      if (v.trim.nonEmpty) u.searchParams.set("q", v.trim) else u.searchParams.delete("q")
-      Nav.replaceQuiet(u.pathname + u.search + u.hash)
-    }
+    if (Router.query.v.getOrElse("q", "") != v.trim) Router.setQuery("q" -> Some(v.trim).filter(_.nonEmpty))
   }
   // 同じ章の中の移動（# の変化）では画面が作り直されないので、ここで見出しへ移動する。章を移ったら検索を閉じる
-  watch(Router.href, false) { (_, _) =>
+  // （検索語の変化（クエリ文字列だけの変化）では何もしない）
+  watch(Router.current.mapC(l => l.path + l.hash), false) { (_, _) =>
     s.sideOpen := false
-    if (Nav.query("q").isEmpty && s.q.v.nonEmpty) s.q := ""
+    if (Router.query.v.get("q").isEmpty && s.q.v.nonEmpty) s.q := ""
     scrollToHash(s)
   }
 }
@@ -95,7 +92,7 @@ def onBodyClick(e: dom.Event): Unit = {
       if (href.startsWith("#")) {
         e.preventDefault()
         val l = dom.window.location
-        Nav.replace(l.pathname + l.search + href)
+        Router.replace(l.pathname + l.search + href)
       } else if (href.startsWith("/")) {
         e.preventDefault()
         Nav.go(href)

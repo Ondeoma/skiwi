@@ -189,7 +189,7 @@ object DialogsApi {
 
   import Api.*
 
-  private def put0(url: String, body: Json): Future[Unit] = exec(dom.HttpMethod.PUT, url, Some(body))
+  private def put0(url: String, body: Json): Future[Unit] = send(dom.HttpMethod.PUT, url, Some(body))
 
   // ---- 共有設定
   private def strip(es: List[AclEntry]): Json = es.map(e =>
@@ -239,7 +239,7 @@ object DialogsApi {
   def enableShare(pageId: String, opts: Json): Future[PublicShare] =
     put[PublicShare](s"/api/pages/${Api.seg(pageId)}/share", opts)
 
-  def disableShare(pageId: String): Future[Unit] = del(s"/api/pages/${Api.seg(pageId)}/share")
+  def disableShare(pageId: String): Future[Unit] = delete(s"/api/pages/${Api.seg(pageId)}/share")
 
   /** 公開版を作り直す（現在の内容を公開する） */
   def publish(pageId: String, note: Option[String]): Future[PublicShare] =
@@ -252,7 +252,7 @@ object DialogsApi {
     get[ReleaseDetail](s"/api/pages/${Api.seg(pageId)}/share/releases/${Api.seg(rid)}")
 
   def setReleaseNote(pageId: String, rid: String, note: Option[String]): Future[Unit] =
-    exec(
+    send(
       dom.HttpMethod.PATCH,
       s"/api/pages/${Api.seg(pageId)}/share/releases/${Api.seg(rid)}",
       Some(Json.obj("note" -> note.asJson))
@@ -297,7 +297,7 @@ object DialogsApi {
       Json.obj("reason" -> reason.asJson, "editors" -> editors.asJson)
     )
 
-  def unlock(id: String): Future[Unit] = del(s"/api/pages/${Api.seg(id)}/lock")
+  def unlock(id: String): Future[Unit] = delete(s"/api/pages/${Api.seg(id)}/lock")
 
   // ---- Webhook
   val WebhookEvents: List[(String, String)] = List(
@@ -319,7 +319,7 @@ object DialogsApi {
   /** fields: 変える項目だけ */
   def updateWebhook(id: String, fields: Json): Future[Webhook] = patch[Webhook](s"/api/webhooks/${Api.seg(id)}", fields)
 
-  def removeWebhook(id: String): Future[Unit] = del(s"/api/webhooks/${Api.seg(id)}")
+  def removeWebhook(id: String): Future[Unit] = delete(s"/api/webhooks/${Api.seg(id)}")
 
   def testWebhook(id: String): Future[WebhookTest] = post[WebhookTest](s"/api/webhooks/${Api.seg(id)}/test")
 
@@ -333,7 +333,7 @@ object DialogsApi {
   def updateAutomation(id: String, body: Json): Future[Automation] =
     patch[Automation](s"/api/automations/${Api.seg(id)}", body)
 
-  def removeAutomation(id: String): Future[Unit] = del(s"/api/automations/${Api.seg(id)}")
+  def removeAutomation(id: String): Future[Unit] = delete(s"/api/automations/${Api.seg(id)}")
 
   def dbProps(pageId: String): Future[List[DbProp]] =
     get[DbProps](s"/api/pages/${Api.seg(pageId)}/database").map(_.props)
@@ -353,7 +353,7 @@ object DialogsApi {
 
   def rotateInbound(id: String): Future[InboundHook] = post[InboundHook](s"/api/inbound-hooks/${Api.seg(id)}/rotate")
 
-  def removeInbound(id: String): Future[Unit] = del(s"/api/inbound-hooks/${Api.seg(id)}")
+  def removeInbound(id: String): Future[Unit] = delete(s"/api/inbound-hooks/${Api.seg(id)}")
 
   // ---- 定期バックアップ（管理者のみ）
   def backups(wsId: String): Future[BackupList] = get[BackupList](s"/api/admin/workspaces/${Api.seg(wsId)}/backups")
@@ -362,9 +362,9 @@ object DialogsApi {
     put[BackupConfig](s"/api/admin/workspaces/${Api.seg(wsId)}/backups/config", c.asJson)
 
   def runBackup(wsId: String): Future[Unit] =
-    exec(dom.HttpMethod.POST, s"/api/admin/workspaces/${Api.seg(wsId)}/backups", Some(Json.obj()))
+    send(dom.HttpMethod.POST, s"/api/admin/workspaces/${Api.seg(wsId)}/backups", Some(Json.obj()))
 
-  def removeBackup(id: String): Future[Unit] = del(s"/api/admin/backups/${Api.seg(id)}")
+  def removeBackup(id: String): Future[Unit] = delete(s"/api/admin/backups/${Api.seg(id)}")
 
   def backupDownloadUrl(id: String): String = s"/api/admin/backups/${Api.seg(id)}/download"
 

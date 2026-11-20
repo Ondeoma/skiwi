@@ -2,7 +2,7 @@
 import org.scalajs.dom
 import skiwi.web.{Opt, Ui}
 
-// オートコンプリート（セレクトボックスの代わり. 兄弟のプロジェクトの Combo と同じ）. 入力した文字で選択肢を絞り込み、上下キー・Enter で選ぶ.
+// オートコンプリート（セレクトボックスの代わり. sbirds-lib の Combo に、testid・かなの区別なしの絞り込み・IME の考慮を足したもの）. 入力した文字で選択肢を絞り込み、上下キー・Enter で選ぶ.
 // bind を渡すとその値を読み書きし、渡さなければ value を初期値にする. 選ぶと onChange に値を渡す.
 // 選択肢が後から読み込まれるときは live（mapC など）で渡す.
 case class Props(options: List[Opt] = Nil,
@@ -75,9 +75,6 @@ def typed(s: State, e: dom.Event): Unit = {
   if (!s.open.v) s.open := true
 }
 
-/** 外をクリックしたとき（選択肢のクリックが先に届くよう少し待つ） */
-def blur(s: State): Unit = dom.window.setTimeout(() => s.open := false, 150)
-
 def itemClass(s: State, i: Int) = s.active.mapC(a => if (a == i) "opt active" else "opt")
 def cls(props: Props): String = "combo" + (if (props.small) " small" else "") + (if (props.disabled) " disabled" else "")
 def indexed(s: State, props: Props) = filtered(s, props).mapC(_.zipWithIndex)
@@ -85,11 +82,11 @@ def selIcon(s: State, props: Props) = selected(s, props).mapC(_.map(_.icon).getO
 </script>
 
 <template>
-  <div :class="cls(props)">
+  <div :class="cls(props)" v-click-outside="s.open := false">
     <span class="lead">{{ selIcon(s, props) }}</span>
     <input ref="s.input" type="text" :value="shown(s, props)" :placeholder="props.placeholder" :disabled="props.disabled" autocomplete="off"
       :data-testid="props.testid" role="combobox" :aria-expanded="s.open.mapC(_.toString)"
-      @focus="openList(s, props)" @click="openList(s, props)" @input="typed(s, event)" @keydown="key(s, props, event)" @blur="blur(s)">
+      @focus="openList(s, props)" @click="openList(s, props)" @input="typed(s, event)" @keydown="key(s, props, event)">
     <span class="caret">▾</span>
     <div v-if="s.open" class="list" role="listbox">
       <div v-for="oi in indexed(s, props)" :class="itemClass(s, oi._2)" role="option" @mousedown.prevent="choose(s, props, oi._1)">

@@ -1,7 +1,7 @@
 <script lang="scala">
 import skiwi.web.parts.PageIcon
 import skiwi.web.Nav
-import skiwi.web.Ui
+import skiwi.web.{Prefs, Ui}
 
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 
@@ -13,7 +13,7 @@ case class State(items: RV[Option[List[RecentItem]]] = RV(None))
 def initState() = State()
 
 /** visited / edited（このブラウザに保存） */
-val kind: RV[String] = WsPrefs.stored("skiwi.recentKind", r => if (r.contains("edited")) "edited" else "visited")
+val kind: RV[String] = Prefs.stored("skiwi.recentKind", r => if (r.contains("edited")) "edited" else "visited")
 
 def load(s: State): Unit = {
   s.items := None

@@ -1,6 +1,6 @@
 <script lang="scala">
 import org.scalajs.dom
-import skiwi.web.{Debounced, Host, Store}
+import skiwi.web.{Host, Store}
 import skiwi.web.model.*
 import skiwi.web.workspace.WorkspaceApi
 
@@ -10,10 +10,10 @@ import scala.scalajs.js
 // リンクするページを選ぶ（Host.pickPage で開く）. 空欄のときは開いているワークスペースのページ、入力するとすべてのワークスペースから検索する.
 case class State(q: RV[String] = RV(""),
                  selected: RV[Int] = RV(0),
-                 input: ElementRef[dom.HTMLInputElement] = ElementRef(),
                  found: RV[List[Page]] = RV(Nil),
                  loading: RV[Boolean] = RV(false),
-                 search: Debounced = new Debounced(200))
+                 search: DebouncedFn[() => Unit] = useDebounce[() => Unit](200)(_()),
+                 latest: LatestFn = useLatest())
 
 def initState() = State()
 
@@ -29,25 +29,30 @@ def mounted(s: State): Unit = {
     s.q := ""
     s.found := Nil
     s.selected := 0
-    nextTick().foreach(_ => s.input.foreach(_.focus()))
   })
   watch(s.q)((_, v) => {
     s.selected := 0
     val query = v.trim
     if (query.isEmpty) {
       s.search.cancel()
+      s.latest.cancel()
       s.found := Nil
     } else {
       s.loading := true
-      s.search.run { latest =>
-        WorkspaceApi.searchPages(query).map(r => if (latest()) s.found := r.map(_.page))
-          .onComplete(_ => if (latest()) s.loading := false)
+      s.search { () =>
+        s.latest(WorkspaceApi.searchPages(query)).onComplete { r =>
+          r.foreach(ps => s.found := ps.map(_.page))
+          s.loading := false
+        }
       }
     }
   })
 }
 
-def unmounted(s: State): Unit = s.search.cancel()
+def unmounted(s: State): Unit = {
+  s.search.cancel()
+  s.latest.cancel()
+}
 
 def pick(s: State, i: Int): Unit = items(s).lift(i).foreach(p => Host.pagePicker.v.foreach(_.trySuccess(Some(p))))
 
@@ -72,7 +77,7 @@ def notFound(s: State): Boolean = s.q.v.trim.nonEmpty && !s.loading.v && items(s
     <div class="modal" role="dialog" aria-modal="true" aria-label="ページへのリンク" data-testid="page-picker">
       <header>
         <h2>ページへのリンク</h2>
-        <input ref="s.input" v-model="s.q" type="search" placeholder="ページ名で検索（すべてのワークスペース）" data-testid="page-picker-search">
+        <input v-model="s.q" type="search" v-focus placeholder="ページ名で検索（すべてのワークスペース）" data-testid="page-picker-search">
       </header>
       <ul class="list">
         <li v-if="s.q.v.trim.isEmpty" class="hint">このワークスペースの最近更新したページ</li>

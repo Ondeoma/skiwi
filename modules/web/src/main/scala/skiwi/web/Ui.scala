@@ -16,12 +16,6 @@ object Ui {
       if (c >= 'ァ' && c <= 'ヶ') (c - 0x60).toChar else c
     )
 
-  /** キー操作の対象が文字の入力欄・エディタか（ショートカットを効かせない） */
-  def isTyping(t: dom.EventTarget): Boolean = t match {
-    case el: dom.HTMLElement => el.isContentEditable || Set("INPUT", "TEXTAREA", "SELECT").contains(el.tagName)
-    case _ => false
-  }
-
   /** クリップボードへコピーし、copied を key にして 1.5 秒後に戻す */
   def copy[K](text: String, copied: RV[Option[K]], key: K): Unit =
     dom.window.navigator.clipboard.writeText(text).`then`[Unit](_ => {
@@ -39,20 +33,8 @@ object Ui {
       )
       .asInstanceOf[String]
 
-  /** ファイルを保存させる */
-  def download(filename: String, data: dom.Blob): Unit = {
-    val url = dom.URL.createObjectURL(data)
-    val a = dom.document.createElement("a").asInstanceOf[dom.HTMLAnchorElement]
-    a.href = url
-    a.asInstanceOf[js.Dynamic].download = filename
-    a.click()
-    dom.window.setTimeout(() => dom.URL.revokeObjectURL(url), 1000)
-  }
-
+  /** 文字をファイルとして保存させる */
   def downloadText(filename: String, text: String, mime: String = "text/plain;charset=utf-8"): Unit =
-    download(filename, new dom.Blob(js.Array(text), new dom.BlobPropertyBag { `type` = mime }))
+    sbirds.web.Dom.download(new dom.Blob(js.Array(text), new dom.BlobPropertyBag { `type` = mime }), filename)
 
 }
-
-/** オートコンプリート（parts/Combo.st）の選択肢. icon は前に付ける文字、hint は右に小さく出す説明（絞り込みにも使う） */
-final case class Opt(value: String, label: String, icon: String = "", hint: String = "")

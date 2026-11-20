@@ -57,7 +57,7 @@ final class Integration(val name: String) {
     case Some(f) if !force => f
     case _ =>
       val f =
-        Api.request(dom.HttpMethod.GET, s"/api/integrations/${Api.seg(name)}", redirectOn401 = false).map(Api.as[Json])
+        Api.call(dom.HttpMethod.GET, s"/api/integrations/${Api.seg(name)}", redirectOn401 = false).map(Api.as[Json])
           .map { s => setStatus(Some(s)); Option(s) }
           .recover { case _ => loading = None; None }
       loading = Some(f)
@@ -82,7 +82,7 @@ final class Integration(val name: String) {
       val need = keys.distinct.filter(k => !inflight(k) && !cache.get(k).exists(_._1 + Ttl > now))
       need.grouped(Batch).foreach { chunk =>
         inflight ++= chunk
-        Api.request(
+        Api.call(
           dom.HttpMethod.POST,
           s"/api/integrations/${Api.seg(name)}/lookup",
           Some(Json.obj("keys" -> chunk.asJson)),
@@ -125,7 +125,7 @@ final class Integration(val name: String) {
   }
 
   /** 連携を解除する */
-  def disconnect(): Future[Unit] = Api.del(s"/api/integrations/${Api.seg(name)}/connection").flatMap(_ => reload())
+  def disconnect(): Future[Unit] = Api.delete(s"/api/integrations/${Api.seg(name)}/connection").flatMap(_ => reload())
 
   /** エディタ（JS）へ渡す口（frontend/src/ui/host.ts の HostIntegration） */
   lazy val jsApi: js.Dynamic = js.Dynamic.literal(

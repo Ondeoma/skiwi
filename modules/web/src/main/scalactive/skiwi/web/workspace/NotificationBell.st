@@ -11,9 +11,7 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 case class State(unread: RV[Int] = RV(0),
                  items: RV[List[Notif]] = RV(Nil),
                  open: RV[Boolean] = RV(false),
-                 decided: RV[Map[Long, String]] = RV(Map.empty),
-                 root: ElementRef[dom.HTMLElement] = ElementRef(),
-                 ls: Listeners = new Listeners)
+                 decided: RV[Map[Long, String]] = RV(Map.empty))
 
 def initState() = State()
 
@@ -25,17 +23,11 @@ def refresh(s: State): Unit =
 
 def mounted(s: State): Unit = {
   refresh(s)
-  // 裏に回っているタブでは取りに行かない（表に戻ったときに visibilitychange で取り直す）
-  s.ls.timer(60000)(if (dom.document.visibilityState == "visible") refresh(s))
-  s.ls.on[dom.Event](dom.document, "visibilitychange")(_ => if (dom.document.visibilityState == "visible") refresh(s))
-  s.ls.on[dom.Event](dom.window, WsCommand.Event)(e => if (WsCommand.name(e) == "notifications") toggle(s))
-  // 外側をクリックしたら閉じる
-  s.ls.on[dom.MouseEvent](dom.document, "mousedown") { e =>
-    if (s.open.v && !s.root.get.exists(_.contains(e.target.asInstanceOf[dom.Node]))) s.open := false
-  }
+  // 裏に回っているタブでは取りに行かない（表に戻ったときにすぐ取り直す）
+  useVisiblePolling(60000)(refresh(s))
+  useEventListener[dom.Event](dom.window, WsCommand.Event)(e => if (WsCommand.name(e) == "notifications") toggle(s))
+  ()
 }
-
-def unmounted(s: State): Unit = s.ls.clear()
 
 def toggle(s: State): Unit = {
   s.open := !s.open.v
@@ -84,7 +76,7 @@ def roleLabel(n: Notif): String = NoticeText.roleLabel(n.role)
 </script>
 
 <template>
-  <div ref="s.root" class="bell-wrap">
+  <div class="bell-wrap" v-click-outside="if (s.open.v) s.open := false">
     <button class="bell" :title="bellTitle(s)" data-testid="bell" @click="toggle(s)">
       🔔<span class="lbl">通知</span><span v-if="s.unread.v > 0" class="count" data-testid="bell-count">{{ if (s.unread.v > 99) "99+" else s.unread.v.toString }}</span>
     </button>

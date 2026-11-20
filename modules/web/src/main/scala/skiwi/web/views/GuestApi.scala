@@ -53,11 +53,25 @@ final case class GuestRelease(publishedAt: String, note: String = "") derives Co
 
 final case class PageContent(content: Json = Json.Null, text: String = "") derives Codec.AsObject
 
+/** 公開前のページ（startsAt: 公開の開始日時） */
+final case class NotStarted(startsAt: Option[String]) extends Exception("not_started")
+
 object GuestApi {
 
   private def base(token: String): String = s"/api/public/${Api.enc(token)}"
 
-  def tree(token: String): Future[GuestTree] = Api.get[GuestTree](base(token), redirectOn401 = false)
+  /** 公開前（403 not_started）は、公開の開始日時（startsAt）を持つ NotStarted で失敗する */
+  def tree(token: String): Future[GuestTree] =
+    Api.raw(dom.HttpMethod.GET, base(token)).flatMap { res =>
+      if (res.status != 403) Api.respond(res, redirectOn401 = false).map(Api.as[GuestTree])
+      else res.text().toFuture.flatMap { t =>
+        val c = io.circe.parser.parse(t).toOption.map(_.hcursor)
+        val err = c.flatMap(_.get[String]("error").toOption).getOrElse(res.statusText)
+        Future.failed(
+          if (err == "not_started") NotStarted(c.flatMap(_.get[String]("startsAt").toOption)) else ApiError(403, err)
+        )
+      }
+    }
 
   /** 更新履歴（公開日時と変更点のメモ） */
   def releases(token: String): Future[List[GuestRelease]] =
@@ -72,7 +86,7 @@ object GuestApi {
 
   /** 正しければ true. 回数超過などは例外 */
   def unlock(token: String, password: String): Future[Boolean] =
-    Api.request(
+    Api.call(
       dom.HttpMethod.POST,
       s"${base(token)}/unlock",
       Some(Json.obj("password" -> password.asJson)),

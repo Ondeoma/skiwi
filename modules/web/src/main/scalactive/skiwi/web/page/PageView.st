@@ -1,4 +1,6 @@
 <script lang="scala">
+import skiwi.web.Nav
+import sbirds.web.Dom
 import skiwi.shared.Titles
 import io.circe.*
 import io.circe.syntax.*
@@ -17,7 +19,7 @@ import scala.scalajs.js
 case class Props(wid: String, pid: String)
 
 case class State(title: RV[String] = RV(""),
-                 titleDeb: Debounced = new Debounced(400),
+                 titleDeb: DebouncedFn[() => Unit] = useDebounce[() => Unit](400)(_()),
                  /** サーバーが接続中に通知する権限（共有設定の変更で変わる）. 未通知ならページ一覧の権限 */
                  liveRole: RV[Option[String]] = RV(None),
                  /** 表示モード（view）/ 編集モード（edit） */
@@ -78,7 +80,7 @@ def setMode(s: State, m: String): Unit = {
 /** 「E」で編集モード（入力欄・エディタ内の入力は除く） */
 def onKey(s: State, props: Props, e: dom.KeyboardEvent): Unit = {
   val composing = e.asInstanceOf[js.Dynamic].isComposing.asInstanceOf[js.UndefOr[Boolean]].getOrElse(false)
-  if (!composing && !e.metaKey && !e.ctrlKey && !e.altKey && !Ui.isTyping(e.target) && e.key.toLowerCase == "e" &&
+  if (!composing && !e.metaKey && !e.ctrlKey && !e.altKey && !sbirds.web.Dom.isTyping(e) && e.key.toLowerCase == "e" &&
       canEdit(s, props) && s.mode.v == "view") {
     e.preventDefault()
     setMode(s, "edit")
@@ -87,7 +89,7 @@ def onKey(s: State, props: Props, e: dom.KeyboardEvent): Unit = {
 
 def onTitleInput(s: State, props: Props, e: dom.Event): Unit = {
   s.title := e.target.asInstanceOf[dom.HTMLInputElement].value
-  s.titleDeb.run { _ =>
+  s.titleDeb { () =>
     Store.rename(props.pid, s.title.v).failed.foreach(e => Dialog.alert(s"保存できませんでした: ${e.getMessage}"))
   }
 }
@@ -135,7 +137,6 @@ def stopWatch(s: State, props: Props): Unit = {
   s.watchMenu := false
 }
 
-def checked(e: dom.Event): Boolean = e.target.asInstanceOf[dom.HTMLInputElement].checked
 
 def watchInheritedNote(w: WatchState): String = w.inherited.fold("") { i =>
   val what = if (i.edits && i.comments) "更新とコメント" else if (i.edits) "更新" else "コメント"
@@ -195,7 +196,7 @@ def relocate(s: State, props: Props): Unit =
     Api.page(props.pid).andThen {
       case scala.util.Success(p) if p.workspaceId != props.wid =>
         val l = dom.window.location
-        Nav.replace(s"${Nav.pageHref(p.workspaceId, p.id)}${l.search}${l.hash}")
+        Router.replace(s"${Nav.pageHref(p.workspaceId, p.id)}${l.search}${l.hash}")
     }.failed.foreach {
       // 権限なし・削除済み・存在しない
       case e: ApiError if e.status == 404 || e.status == 403 => s.denied := true
@@ -365,18 +366,12 @@ def watchToolbar(s: State): Unit = if (!s.toolbarWatching.v) s.toolbarEl.foreach
 
 // ---------------------------------------------------------------- マウント
 
-def listen(s: State, target: dom.EventTarget, name: String)(f: dom.Event => Unit): Unit = {
-  val h: js.Function1[dom.Event, Unit] = f
-  target.addEventListener(name, h)
-  s.cleanups := s.cleanups.v :+ (() => target.removeEventListener(name, h))
-}
-
 def mounted(s: State, props: Props): Unit = {
   // 既定は表示モード（誤って書き換えない・リンクや目次をそのまま使える）. 新規作成直後（?edit=1）と無題のページは編集モードで開く
-  if (Nav.query("edit").contains("1")) s.mode := "edit"
+  if (Router.query.v.get("edit").contains("1")) s.mode := "edit"
   // 通知・メールの「権限の申請」から開いたときは共有画面を開く
-  s.sharing := Nav.query("access").contains("requests")
-  s.commentFocus := Nav.query("comment")
+  s.sharing := Router.query.v.get("access").contains("requests")
+  s.commentFocus := Router.query.v.get("comment")
   if (s.commentFocus.v.isDefined) s.commentsOpen := true
 
   val page = Store.pages.mapC(_.find(_.id == props.pid))
@@ -386,7 +381,7 @@ def mounted(s: State, props: Props): Unit = {
       if (Option(dom.document.activeElement).forall(_.id != "page-title")) s.title := p.title
     }
   }
-  listen(s, dom.document, "keydown")(e => onKey(s, props, e.asInstanceOf[dom.KeyboardEvent]))
+  useEventListener[dom.Event](dom.document, "keydown")(e => onKey(s, props, e.asInstanceOf[dom.KeyboardEvent]))
 
   // ウォッチ・コメント・被リンク・閲覧の記録
   PageApi.watch(props.pid).foreach(w => s.watchState := Some(w))
@@ -399,15 +394,15 @@ def mounted(s: State, props: Props): Unit = {
   s.cssApplier := Some(CustomCss.applier())
   applyCss(s)
   watch(computed { appliedCss(s) }, false)((_, _) => applyCss(s))
-  listen(s, dom.window, "skiwi:css-changed")(_ => loadCss(s, props))
+  useEventListener[dom.Event](dom.window, "skiwi:css-changed")(_ => loadCss(s, props))
 
   // ほかの画面からの依頼（ホワイトボードへのコメント・コマンドパレット）
-  listen(s, dom.window, "skiwi:wb-comment") { e =>
+  useEventListener[dom.Event](dom.window, "skiwi:wb-comment") { e =>
     val id = e.asInstanceOf[dom.CustomEvent].detail.asInstanceOf[js.Dynamic].id
     s.commentDraft := Some(CommentDraft("wb", boardId = Some(String.valueOf(id))))
     s.commentsOpen := true
   }
-  listen(s, dom.window, "skiwi:command") { e =>
+  useEventListener[dom.Event](dom.window, "skiwi:command") { e =>
     String.valueOf(e.asInstanceOf[dom.CustomEvent].detail) match {
       case "comments" => s.commentsOpen := true
       case "edit-page" if canEdit(s, props) => setMode(s, "edit")
@@ -491,9 +486,9 @@ def crumbIcon(c: Page): String = c.icon.getOrElse(if (c.isDatabase) "📊" else 
         >{{ if (s.watchState.v.exists(watchOn)) "🔔" else "🔕" }}<span class="lbl"> {{ s.watchState.v.fold("")(watchLabel) }}</span></button>
         <div v-if="s.watchMenu" class="pop watch-pop" data-testid="watch-menu" @mouseleave="s.watchMenu := false">
           <p class="wp-title">このページの通知</p>
-          <label><input type="checkbox" :checked="s.watchState.v.exists(w => effWatch(w)._1)" data-testid="watch-edits" @change='setWatchKind(s, props, "edits", checked(event))'> 本文の更新</label>
-          <label><input type="checkbox" :checked="s.watchState.v.exists(w => effWatch(w)._2)" data-testid="watch-comments" @change='setWatchKind(s, props, "comments", checked(event))'> コメント</label>
-          <label><input type="checkbox" :checked="s.watchState.v.exists(w => w.watching && w.subtree)" :disabled="!s.watchState.v.exists(_.watching)" data-testid="watch-subtree" @change="setWatchOpts(s, props, subtree = Some(checked(event)))"> 子ページも含める</label>
+          <label><input type="checkbox" :checked="s.watchState.v.exists(w => effWatch(w)._1)" data-testid="watch-edits" @change='setWatchKind(s, props, "edits", Dom.checked(event))'> 本文の更新</label>
+          <label><input type="checkbox" :checked="s.watchState.v.exists(w => effWatch(w)._2)" data-testid="watch-comments" @change='setWatchKind(s, props, "comments", Dom.checked(event))'> コメント</label>
+          <label><input type="checkbox" :checked="s.watchState.v.exists(w => w.watching && w.subtree)" :disabled="!s.watchState.v.exists(_.watching)" data-testid="watch-subtree" @change="setWatchOpts(s, props, subtree = Some(Dom.checked(event)))"> 子ページも含める</label>
           <p v-if="s.watchState.v.exists(w => w.inherited.isDefined && !w.watching)" class="wp-note" data-testid="watch-inherited">{{ s.watchState.v.fold("")(watchInheritedNote) }}</p>
           <p v-else-if="s.watchState.v.exists(_.inherited.isDefined)" class="wp-note">{{ s.watchState.v.fold("")(watchOverrideNote) }}</p>
           <button v-if="s.watchState.v.exists(_.watching)" class="wp-stop" data-testid="watch-stop" @click="stopWatch(s, props)">ウォッチをやめる</button>

@@ -4,7 +4,7 @@ import io.circe.Json
 import org.scalajs.dom
 import skiwi.web.content.{Bytes, ContentApi}
 import skiwi.web.views.{GuestApi, GuestPage}
-import skiwi.web.{Api, Nav, Palette, Ui}
+import skiwi.web.{Api, Nav, Palette}
 
 import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 import scala.scalajs.js
@@ -95,7 +95,7 @@ object EditorLib {
           case _ => js.Array[js.Any]()
         }.toJSPromise,
       unfurl = (url: String) =>
-        Api.request(dom.HttpMethod.GET, s"/api/unfurl${Api.query("url" -> Some(url))}", redirectOn401 = false)
+        Api.call(dom.HttpMethod.GET, s"/api/unfurl${Api.query("url" -> Some(url))}", redirectOn401 = false)
           .map(_.fold[js.Any](null)(toJs)).recover { case _ => null }.toJSPromise,
 
       // ---- 画面の部品
@@ -141,7 +141,8 @@ object EditorLib {
         val stop = EditorDom.onThemeChange(d => f(d))
         (() => stop()): js.Function0[Unit]
       },
-      download = (filename: String, blob: dom.Blob) => Ui.download(filename.replaceAll("[\\\\/:*?\"<>|]", "_"), blob),
+      download = (filename: String, blob: dom.Blob) =>
+        sbirds.web.Dom.download(blob, filename.replaceAll("[\\\\/:*?\"<>|]", "_")),
       ymd = (d: js.Date) => skiwi.web.database.Formula.ymd(d),
       toBase64 = (u: Uint8Array) => Bytes.toBase64(u),
       blobToDataUrl = (b: dom.Blob) => Bytes.dataUrl(b).toJSPromise,

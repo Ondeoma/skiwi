@@ -1,4 +1,5 @@
 <script lang="scala">
+import sbirds.web.Dom
 import io.circe.Json
 import io.circe.syntax.*
 import skiwi.web.*
@@ -126,11 +127,11 @@ def title(p: Props): String = s"📣 外部への通知（Webhook）— ${p.name
       <li v-for="h in s.hooks.v.getOrElse(Nil)" :key="h.id" :class='List("hook", "off" -> !h.enabled)' data-testid="webhook-item">
         <div class="h-head">
           <b>{{ h.name }}</b><span class="fmt">{{ Format.getOrElse(h.format, h.format) }}</span>
-          <label class="en"><input type="checkbox" :checked="h.enabled" data-testid="webhook-enabled" @change='update(s, props, h, "enabled" -> Dlg.checked(event).asJson)'> 有効</label>
+          <label class="en"><input type="checkbox" :checked="h.enabled" data-testid="webhook-enabled" @change='update(s, props, h, "enabled" -> Dom.checked(event).asJson)'> 有効</label>
         </div>
         <div class="url">{{ h.url }}</div>
         <div class="events">
-          <label v-for="ev in DialogsApi.WebhookEvents" :key="ev._1"><input type="checkbox" :checked="h.events.contains(ev._1)" @change="toggleEvent(s, props, h, ev._1, Dlg.checked(event))"> {{ ev._2 }}</label>
+          <label v-for="ev in DialogsApi.WebhookEvents" :key="ev._1"><input type="checkbox" :checked="h.events.contains(ev._1)" @change="toggleEvent(s, props, h, ev._1, Dom.checked(event))"> {{ ev._2 }}</label>
         </div>
         <div class="h-foot">
           <span class="muted small">{{ last(h) }}</span>

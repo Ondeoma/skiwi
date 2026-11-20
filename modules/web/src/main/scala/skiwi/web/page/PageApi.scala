@@ -117,7 +117,7 @@ object PageApi {
   def editComment(id: String, body: String): Future[PageComment] =
     Api.patch[PageComment](s"/api/comments/${Api.seg(id)}", Json.obj("body" -> body.asJson))
 
-  def removeComment(id: String): Future[Unit] = Api.del(s"/api/comments/${Api.seg(id)}")
+  def removeComment(id: String): Future[Unit] = Api.delete(s"/api/comments/${Api.seg(id)}")
 
   def resolveComment(id: String, resolved: Boolean): Future[PageComment] =
     Api.post[PageComment](s"/api/comments/${Api.seg(id)}/resolve", Json.obj("resolved" -> resolved.asJson))
@@ -132,7 +132,7 @@ object PageApi {
       Json.obj("labels" -> labels.asJson)
     ).map(_.hcursor.get[List[String]]("labels").getOrElse(Nil))
 
-  def visit(id: String): Future[Unit] = Api.exec(dom.HttpMethod.POST, s"/api/pages/${Api.seg(id)}/visit")
+  def visit(id: String): Future[Unit] = Api.send(dom.HttpMethod.POST, s"/api/pages/${Api.seg(id)}/visit")
 
   // ---------------------------------------------------------------- 閲覧権限の申請
 

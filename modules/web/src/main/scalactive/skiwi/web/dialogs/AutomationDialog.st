@@ -1,4 +1,5 @@
 <script lang="scala">
+import sbirds.web.Dom
 import io.circe.Json
 import io.circe.syntax.*
 import skiwi.web.*
@@ -43,7 +44,8 @@ case class State(rules: RV[Option[List[Automation]]] = RV(None),
                  dbProps: RV[List[DbProp]] = RV(Nil),
                  uq: RV[String] = RV(""),
                  ufound: RV[List[DirectoryEntry]] = RV(Nil),
-                 userSearch: Debounced = new Debounced(250))
+                 userSearch: DebouncedFn[() => Unit] = useDebounce[() => Unit](250)(_()),
+                 latest: LatestFn = useLatest())
 
 def initState() = State()
 
@@ -130,7 +132,7 @@ private def fill(s: State, t: AutoTrigger, a: AutoAction): Unit = {
 def pickUnder(s: State): Unit = Host.pickPage().foreach(_.foreach(p => s.tUnder := Some(p.id)))
 
 def onUserSearch(s: State, value: String): Unit =
-  s.userSearch.run(latest => DialogsApi.users(value).foreach(r => if (latest()) s.ufound := r))
+  s.userSearch(() => s.latest(DialogsApi.users(value)).foreach(s.ufound := _))
 
 def addUser(s: State, u: DirectoryEntry): Unit = {
   s.userNames := s.userNames.v + (u.id -> u.name)
@@ -370,7 +372,7 @@ def title(p: Props): String = s"⚙ 自動化ルール — ${p.name}"
             <ul class="chips">
               <li v-for="u in s.aUsers" :key="u">👤 {{ userName(s, u) }}<button type="button" class="x" @click="s.aUsers := s.aUsers.v.filterNot(_ == u)">×</button></li>
             </ul>
-            <input v-model="s.uq" placeholder="名前・メールで検索して追加" data-testid="automation-user-search" @input="onUserSearch(s, Dlg.value(event))">
+            <input v-model="s.uq" placeholder="名前・メールで検索して追加" data-testid="automation-user-search" @input="onUserSearch(s, Dom.value(event))">
             <ul v-if="s.ufound.v.nonEmpty" class="found"><li v-for="u in s.ufound" :key="u.id"><button type="button" data-testid="automation-user-add" @click="addUser(s, u)">👤 {{ u.name }}</button></li></ul>
           </div>
         </template>

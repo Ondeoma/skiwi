@@ -1,4 +1,6 @@
 <script lang="scala">
+import skiwi.web.Nav
+import sbirds.web.Dom
 import skiwi.shared.Titles
 import io.circe.Json
 import io.circe.syntax.*
@@ -24,7 +26,6 @@ case class Props(prop: DbProp,
 
 case class State(editing: RV[Boolean] = RV(false),
                  draft: RV[String] = RV(""),
-                 input: ElementRef[dom.HTMLInputElement] = ElementRef(),
                  localPop: RV[Option[String]] = RV(None),
                  relQ: RV[String] = RV(""))
 
@@ -44,7 +45,6 @@ def raw(props: Props): String = props.value match {
 def startText(s: State, props: Props): Unit = if (props.editable) {
   s.draft := raw(props)
   s.editing := true
-  dom.window.setTimeout(() => s.input.foreach { i => i.focus(); i.select() }, 0)
 }
 
 def commitText(s: State, props: Props): Unit = if (s.editing.v) {
@@ -133,10 +133,10 @@ def relRows(s: State, props: Props): List[RelatedRow] = {
 def relTitle(props: Props, id: String): String =
   target(props).flatMap(_.rows.find(_.id == id)).map(_.title).filter(_.nonEmpty).getOrElse("（見られない項目）")
 
-def relHref(props: Props, id: String): Option[String] = target(props).map(_ => DbDom.pageHref(props.wid, id))
+def relHref(props: Props, id: String): Option[String] = target(props).map(_ => Nav.pageHref(props.wid, id))
 
 def openRel(props: Props, e: dom.Event, id: String): Unit = relHref(props, id) match {
-  case Some(h) => DbDom.link(e, h)
+  case Some(h) => Nav.link(e, h)
   case None => e.preventDefault()
 }
 
@@ -156,11 +156,11 @@ def dateValue(props: Props): String = props.value match {
 <template>
   <div :class="cellClass(props)" data-testid="db-cell">
     <!-- チェック -->
-    <input v-if='props.prop.`type` == "checkbox"' type="checkbox" :checked="Val.truthy(props.value)" :disabled="!props.editable" @change="props.onUpdate(Json.fromBoolean(DbDom.checked(event)))">
+    <input v-if='props.prop.`type` == "checkbox"' type="checkbox" :checked="Val.truthy(props.value)" :disabled="!props.editable" @change="props.onUpdate(Json.fromBoolean(Dom.checked(event)))">
 
     <!-- 選択 -->
     <template v-else-if='props.prop.`type` == "select"'>
-      <select v-if="props.editable" class="sel" data-testid="db-select" @change="setSelect(props, DbDom.value(event))">
+      <select v-if="props.editable" class="sel" data-testid="db-select" @change="setSelect(props, Dom.value(event))">
         <option value="" :selected="selected(props).isEmpty">（なし）</option>
         <option v-for="o in props.prop.opts" :key="o.id" :value="o.id" :selected="selected(props) == o.id">{{ o.name }}</option>
       </select>
@@ -172,7 +172,7 @@ def dateValue(props: Props): String = props.value match {
       <span v-for="o in multiTags(props)" :key="o.id" :class="tagClass(o.color)">{{ o.name }}</span>
       <button v-if="props.editable" class="add" title="選ぶ" @click='toggle(s, props, "multi")'>＋</button>
       <div v-if='isOpen(s, props, "multi")' class="pop" @mouseleave="close(s, props)">
-        <label v-for="o in props.prop.opts" :key="o.id"><input type="checkbox" :checked="arr(props).contains(o.id)" @change="toggleIn(props, o.id, DbDom.checked(event))"> <span :class="tagClass(o.color)">{{ o.name }}</span></label>
+        <label v-for="o in props.prop.opts" :key="o.id"><input type="checkbox" :checked="arr(props).contains(o.id)" @change="toggleIn(props, o.id, Dom.checked(event))"> <span :class="tagClass(o.color)">{{ o.name }}</span></label>
         <p v-if="props.prop.opts.isEmpty" class="muted">選択肢がありません（列の設定で追加）</p>
       </div>
     </template>
@@ -183,7 +183,7 @@ def dateValue(props: Props): String = props.value match {
       <button v-if="props.editable" class="add" :title="relAddTitle(props)" :disabled="target(props).isEmpty" data-testid="db-rel-add" @click='toggle(s, props, "rel")'>＋</button>
       <div v-if='isOpen(s, props, "rel") &amp;&amp; target(props).isDefined' class="pop rel-pop" data-testid="db-rel-pop" @mouseleave="close(s, props)">
         <input v-model="s.relQ" placeholder="🔍 項目を検索" class="rq">
-        <label v-for="r in relRows(s, props)" :key="r.id"><input type="checkbox" :checked="arr(props).contains(r.id)" @change="toggleIn(props, r.id, DbDom.checked(event))"> {{ r.icon.getOrElse("📄") }} {{ Titles.display(r.title) }}</label>
+        <label v-for="r in relRows(s, props)" :key="r.id"><input type="checkbox" :checked="arr(props).contains(r.id)" @change="toggleIn(props, r.id, Dom.checked(event))"> {{ r.icon.getOrElse("📄") }} {{ Titles.display(r.title) }}</label>
         <p v-if="relRows(s, props).isEmpty" class="muted">項目がありません（「{{ targetTitle(props) }}」）</p>
       </div>
     </template>
@@ -201,12 +201,12 @@ def dateValue(props: Props): String = props.value match {
     </template>
 
     <!-- 日付 -->
-    <input v-else-if='props.prop.`type` == "date" &amp;&amp; props.editable' type="date" class="date" :value="dateValue(props)" @change="setSelect(props, DbDom.value(event))">
+    <input v-else-if='props.prop.`type` == "date" &amp;&amp; props.editable' type="date" class="date" :value="dateValue(props)" @change="setSelect(props, Dom.value(event))">
     <span v-else-if='props.prop.`type` == "date"'>{{ raw(props) }}</span>
 
     <!-- テキスト・数値・URL -->
     <template v-else>
-      <input v-if="s.editing" v-model="s.draft" ref="s.input" class="inp" :type="inputType(props)" :inputmode="inputMode(props)" data-testid="db-input" @blur="commitText(s, props)" @keydown="onKey(s, props, event)">
+      <input v-if="s.editing" v-model="s.draft" v-focus.select class="inp" :type="inputType(props)" :inputmode="inputMode(props)" data-testid="db-input" @blur="commitText(s, props)" @keydown="onKey(s, props, event)">
       <span v-else :class="txtClass(props)" :tabindex='if (props.editable) "0" else "-1"' data-testid="db-text" @click="startText(s, props)" @keydown="onTextKey(s, props, event)">
         <a v-if='props.prop.`type` == "url" &amp;&amp; urlOk(props)' :href="raw(props)" target="_blank" rel="noopener" @click.stop="()">{{ raw(props) }}</a>
         <template v-else>{{ raw(props) }}</template>

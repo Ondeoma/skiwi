@@ -10,14 +10,12 @@ import scala.scalajs.concurrent.JSExecutionContext.Implicits.queue
 // メニューは外側のクリック（.menu-bg）・Esc で閉じる.
 case class Props(sideOpen: Reactive[Boolean], shortcut: String, onOpenSide: Unit => Unit)
 
-case class State(menuOpen: RV[Boolean] = RV(false), avatarOpen: RV[Boolean] = RV(false), ls: Listeners = new Listeners)
+case class State(menuOpen: RV[Boolean] = RV(false), avatarOpen: RV[Boolean] = RV(false))
 
 def initState() = State()
 
 def mounted(s: State): Unit =
-  s.ls.on[org.scalajs.dom.KeyboardEvent](org.scalajs.dom.document, "keydown")(e => if (e.key == "Escape") s.menuOpen := false)
-
-def unmounted(s: State): Unit = s.ls.clear()
+  useEventListener[org.scalajs.dom.KeyboardEvent](org.scalajs.dom.document, "keydown")(e => if (e.key == "Escape") s.menuOpen := false)
 
 def logout(): Unit = Api.logout().onComplete(r => org.scalajs.dom.window.location.href = r.getOrElse("/"))
 

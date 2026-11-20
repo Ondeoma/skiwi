@@ -1,4 +1,5 @@
 <script lang="scala">
+import sbirds.web.Dom
 import skiwi.web.*
 import skiwi.web.model.*
 import skiwi.web.parts.*
@@ -33,7 +34,8 @@ case class State(loading: RV[Boolean] = RV(true),
                  entries: RV[List[Entry]] = RV(Nil),
                  query: RV[String] = RV(""),
                  found: RV[List[DirectoryEntry]] = RV(Nil),
-                 search: Debounced = new Debounced(250),
+                 search: DebouncedFn[() => Unit] = useDebounce[() => Unit](250)(_()),
+                 latest: LatestFn = useLatest(),
                  // 閲覧・編集できる人（権限の継承・グループを展開した結果. 保存済みの設定で計算する）
                  audience: RV[Option[List[AudienceEntry]]] = RV(None),
                  audienceOpen: RV[Boolean] = RV(false),
@@ -111,10 +113,10 @@ def decide(s: State, r: AccessRequest, action: String, role: Option[String]): Un
 
 def onSearch(s: State, value: String): Unit = {
   val q = value.trim
-  if (q.isEmpty) { s.search.cancel(); s.found := Nil }
-  else s.search.run { latest =>
-    Api.directory(q).foreach { r =>
-      if (latest()) s.found := r.filterNot(d => s.entries.v.exists(_.principalId == d.id))
+  if (q.isEmpty) { s.search.cancel(); s.latest.cancel(); s.found := Nil }
+  else s.search { () =>
+    s.latest(Api.directory(q)).foreach { r =>
+      s.found := r.filterNot(d => s.entries.v.exists(_.principalId == d.id))
     }
   }
 }
@@ -202,7 +204,7 @@ def pubInherited(s: State): Option[InheritedShare] = s.pub.v.flatMap(_.inherited
         </label>
 
         <div class="search">
-          <input v-model="s.query" placeholder="ユーザー名・メール・グループ名で追加…" @input="onSearch(s, Dlg.value(event))">
+          <input v-model="s.query" placeholder="ユーザー名・メール・グループ名で追加…" @input="onSearch(s, Dom.value(event))">
           <ul v-if="s.found.v.nonEmpty" class="found">
             <li v-for="d in s.found" :key="d.id" @click="add(s, d)">
               {{ icon(d.principalType) }} {{ d.name }} <span class="muted">{{ d.detail.getOrElse("") }}</span>
@@ -226,7 +228,7 @@ def pubInherited(s: State): Option[InheritedShare] = s.pub.v.flatMap(_.inherited
                 :min="today"
                 title="この日の終わりに権限が外れます（空欄で無期限）"
                 data-testid="acl-expiry"
-                @change="e.expiresAt := Dlg.endOf(Dlg.value(event))"
+                @change="e.expiresAt := Dlg.endOf(Dom.value(event))"
               >
               <span v-if="e.expiresAt.v.isEmpty" class="muted small">無期限</span>
             </td>

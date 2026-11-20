@@ -14,8 +14,7 @@ case class Props(html: String, label: String = "")
 
 case class State(frame: ElementRef[dom.HTMLIFrameElement] = ElementRef(),
                  height: RV[Int] = RV(0),
-                 key: String = scala.util.Random.alphanumeric.take(10).mkString,
-                 listener: RV[Option[js.Function1[dom.MessageEvent, Unit]]] = RV(None))
+                 key: String = scala.util.Random.alphanumeric.take(10).mkString)
 
 def initState() = State()
 
@@ -31,7 +30,7 @@ def doc(p: Props, s: State): String =
 if(window.ResizeObserver){new ResizeObserver(s).observe(document.documentElement)}window.addEventListener('load',s);s();})();$closeScript</body></html>"""
 
 def mounted(s: State): Unit = {
-  val f: js.Function1[dom.MessageEvent, Unit] = (e: dom.MessageEvent) =>
+  val f = (e: dom.MessageEvent) =>
     s.frame.foreach { fr =>
       if (e.source == fr.contentWindow) {
         val d = e.data.asInstanceOf[js.Dynamic]
@@ -39,8 +38,8 @@ def mounted(s: State): Unit = {
           s.height := math.min(math.max(d.h.asInstanceOf[Double], 0), 5000).toInt
       }
     }
-  s.listener := Some(f)
-  dom.window.addEventListener("message", f)
+  useEventListener[dom.MessageEvent](dom.window, "message")(f)
+  ()
 }
 
 /** 枠が読み込まれたら HTML を渡す（枠は最初の1回だけ書き込む） */
@@ -48,8 +47,6 @@ def loaded(p: Props, s: State): Unit =
   s.frame.foreach(fr => Option(fr.contentWindow).foreach(_.postMessage(js.Dynamic.literal(skiwiSandbox = 1, doc = doc(p, s)), "*")))
 
 def src(p: Props): String = s"/sandbox.html?v=${Integer.toHexString(p.html.hashCode)}"
-
-def unmounted(s: State): Unit = s.listener.v.foreach(f => dom.window.removeEventListener("message", f))
 
 def title(p: Props): String = if (p.label.isEmpty) "埋め込みHTML" else p.label
 </script>

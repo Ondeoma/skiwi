@@ -1,13 +1,11 @@
 <script lang="scala">
 import org.scalajs.dom
 import skiwi.web.{Backdrop, Ui}
-import skiwi.web.workspace.Listeners
 
 import scala.scalajs.js
 
 // キーボードショートカットの一覧.「?」（入力中以外）または ⌘K の「ショートカット一覧」で開く
-case class State(open: RV[Boolean] = RV(false), q: RV[String] = RV(""), input: ElementRef[dom.HTMLInputElement] = ElementRef(),
-                 ls: Listeners = new Listeners)
+case class State(open: RV[Boolean] = RV(false), q: RV[String] = RV(""))
 
 def initState() = State()
 
@@ -80,23 +78,20 @@ def groups(s: State): List[Group] = {
 def show(s: State): Unit = {
   s.q := ""
   s.open := true
-  nextTick().foreach(_ => s.input.foreach(_.focus()))(using scala.scalajs.concurrent.JSExecutionContext.Implicits.queue)
 }
 
 def mounted(s: State): Unit = {
-  s.ls.on[dom.KeyboardEvent](dom.document, "keydown") { e =>
+  useEventListener[dom.KeyboardEvent](dom.document, "keydown") { e =>
     if (!e.asInstanceOf[js.Dynamic].isComposing.asInstanceOf[Boolean]) {
       if (s.open.v && e.key == "Escape") s.open := false
-      else if (!Ui.isTyping(e.target) && e.key == "?" && !e.metaKey && !e.ctrlKey) {
+      else if (!sbirds.web.Dom.isTyping(e) && e.key == "?" && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
         if (s.open.v) s.open := false else show(s)
       }
     }
   }
-  s.ls.on[dom.Event](dom.window, "skiwi:shortcuts")(_ => show(s))
+  useEventListener[dom.Event](dom.window, "skiwi:shortcuts")(_ => show(s))
 }
-
-def unmounted(s: State): Unit = s.ls.clear()
 </script>
 
 <template>
@@ -104,7 +99,7 @@ def unmounted(s: State): Unit = s.ls.clear()
     <div class="dialog" role="dialog" aria-label="キーボードショートカット" data-testid="shortcuts">
       <header>
         <h2>⌨️ キーボードショートカット</h2>
-        <input ref="s.input" v-model="s.q" type="search" placeholder="絞り込み（例: 見出し）" data-testid="shortcuts-filter">
+        <input v-model="s.q" type="search" v-focus placeholder="絞り込み（例: 見出し）" data-testid="shortcuts-filter">
         <a href="/help" target="_blank" rel="noopener" class="manual" @click="s.open := false">📖 使い方（マニュアル）</a>
         <button class="x" title="閉じる（Esc）" @click="s.open := false">✕</button>
       </header>

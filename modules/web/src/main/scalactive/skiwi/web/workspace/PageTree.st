@@ -16,7 +16,7 @@ import scala.scalajs.js
 // 開いているメニュー・アイコン選択・ドラッグ・名前の変更・開閉は、ツリー全体（再帰した各階層）で共有する（同時に1つだけ）.
 case class Props(nodes: Reactive[List[TreeNode]], wid: String, depth: Int)
 
-case class State(ls: Listeners = new Listeners)
+case class State()
 
 def initState() = State()
 
@@ -37,17 +37,15 @@ val draft: RV[String] = RV("")
 def mounted(s: State, props: Props): Unit =
   // メニューの外をクリック・Esc で閉じる（いちばん上の階層だけが受け持つ）
   if (props.depth == 0) {
-    s.ls.on[dom.MouseEvent](dom.document, "mousedown") { e =>
+    useEventListener[dom.MouseEvent](dom.document, "mousedown") { e =>
       val inside = e.target match {
         case el: dom.Element => el.closest(".tree-menu, [data-testid=tree-menu]") != null
         case _ => false
       }
       if (menuFor.v.isDefined && !inside) menuFor := None
     }
-    s.ls.on[dom.KeyboardEvent](dom.document, "keydown")(e => if (e.key == "Escape") menuFor := None)
+    useEventListener[dom.KeyboardEvent](dom.document, "keydown")(e => if (e.key == "Escape") menuFor := None)
   }
-
-def unmounted(s: State): Unit = s.ls.clear()
 
 def toggle(id: String): Unit = collapsed := (if (collapsed.v(id)) collapsed.v - id else collapsed.v + id)
 

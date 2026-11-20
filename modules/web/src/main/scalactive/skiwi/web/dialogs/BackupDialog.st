@@ -16,8 +16,7 @@ case class State(enabled: RV[Boolean] = RV(false),
                  list: RV[Option[List[Backup]]] = RV(None),
                  storage: RV[Boolean] = RV(true),
                  error: RV[String] = RV(""),
-                 saved: RV[Boolean] = RV(false),
-                 timer: RV[Option[Int]] = RV(None))
+                 saved: RV[Boolean] = RV(false))
 
 def initState() = State()
 
@@ -38,10 +37,9 @@ def load(s: State, p: Props): Unit = DialogsApi.backups(p.wid).onComplete {
 // 実行中があれば数秒ごとに読み直す
 def mounted(s: State, props: Props): Unit = {
   load(s, props)
-  s.timer := Some(dom.window.setInterval(() => if (s.list.v.exists(_.exists(_.status == "running"))) load(s, props), 3000))
+  useInterval(3000)(if (s.list.v.exists(_.exists(_.status == "running"))) load(s, props))
+  ()
 }
-
-def unmounted(s: State): Unit = s.timer.v.foreach(dom.window.clearInterval)
 
 def save(s: State, p: Props): Unit = {
   s.error := ""

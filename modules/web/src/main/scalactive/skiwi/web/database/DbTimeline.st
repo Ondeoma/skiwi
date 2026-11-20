@@ -1,4 +1,5 @@
 <script lang="scala">
+import skiwi.web.Nav
 import io.circe.Json
 import org.scalajs.dom
 
@@ -131,7 +132,7 @@ def gridStyle(props: Props): String = s"width: ${days(props) * colW(props)}px"
 
 def colStyle(props: Props): String = s"width: ${colW(props)}px"
 
-def href(props: Props, r: DbRow): String = DbDom.pageHref(props.wid, r.page.id)
+def href(props: Props, r: DbRow): String = Nav.pageHref(props.wid, r.page.id)
 
 </script>
 
@@ -148,7 +149,7 @@ def href(props: Props, r: DbRow): String = DbDom.pageHref(props.wid, r.page.id)
       <div class="tl-wrap">
         <div class="tl-names">
           <div class="tl-hrow"></div>
-          <div v-for="it in items(props)" :key="it.row.page.id" class="tl-name"><a :href="href(props, it.row)" class="rlink" @click="DbDom.link(event, href(props, it.row))">{{ it.row.page.displayTitle }}</a></div>
+          <div v-for="it in items(props)" :key="it.row.page.id" class="tl-name"><a :href="href(props, it.row)" class="rlink" @click="Nav.link(event, href(props, it.row))">{{ it.row.page.displayTitle }}</a></div>
         </div>
         <div class="tl-grid" :style="gridStyle(props)">
           <div class="tl-hrow">

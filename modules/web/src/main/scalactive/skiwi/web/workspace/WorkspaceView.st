@@ -1,7 +1,7 @@
 <script lang="scala">
 import skiwi.web.parts.{Combo, PageIcon}
 import org.scalajs.dom
-import skiwi.web.{Debounced, Dialog, Nav, Opt, Store, Ui}
+import skiwi.web.{Dialog, Nav, Opt, Prefs, Store, Ui}
 import skiwi.web.dialogs.*
 import skiwi.web.model.*
 import skiwi.web.page.PageView
@@ -20,7 +20,8 @@ case class State(wid: RV[String] = RV(""),
                  results: RV[Option[List[SearchResult]]] = RV(None),
                  wsHits: RV[List[WorkspaceHit]] = RV(Nil),
                  searching: RV[Boolean] = RV(false),
-                 search: Debounced = new Debounced(300),
+                 search: DebouncedFn[() => Unit] = useDebounce[() => Unit](300)(_()),
+                 latest: LatestFn = useLatest(),
                  searchInput: ElementRef[dom.HTMLInputElement] = ElementRef(),
                  // 検索の絞り込み（ラベル・更新日・状態・自分が作成・自分が所有者）
                  filterOpen: RV[Boolean] = RV(false),
@@ -41,18 +42,17 @@ case class State(wid: RV[String] = RV(""),
                  automationsOpen: RV[Boolean] = RV(false),
                  inboundOpen: RV[Boolean] = RV(false),
                  backupOpen: RV[Boolean] = RV(false),
-                 wsGuestHtmlOpen: RV[Boolean] = RV(false),
-                 ls: Listeners = new Listeners)
+                 wsGuestHtmlOpen: RV[Boolean] = RV(false))
 
 def initState() = State()
 
 val NewWs = "__new__"
 
 /** 検索範囲: ws（このワークスペース）/ all（このブラウザに保存） */
-val scope: RV[String] = WsPrefs.stored("skiwi.searchScope", r => if (r.contains("all")) "all" else "ws")
+val scope: RV[String] = Prefs.stored("skiwi.searchScope", r => if (r.contains("all")) "all" else "ws")
 
 /** お気に入りの開閉（このブラウザに保存） */
-val favOpen: RV[Boolean] = WsPrefs.stored("skiwi.favOpen", r => !r.contains("0"), (v: Boolean) => Some(if (v) "1" else "0"))
+val favOpen: RV[Boolean] = Prefs.stored("skiwi.favOpen", r => !r.contains("0"), (v: Boolean) => Some(if (v) "1" else "0"))
 
 val shortcut = if (Ui.isMac) "⌘ + \\" else "Ctrl + \\"
 val paletteKey = if (Ui.isMac) "⌘K" else "Ctrl+K"
@@ -74,13 +74,13 @@ def mounted(s: State): Unit = {
   watch(Router.href)((_, _) => if (SideMenu.narrow.v) SideMenu.open := false)
   watch(scope)((_, _) => runSearch(s))
   watch(computed((s.fDays.v, s.fMine.v, s.fStatus.v, s.fOwnerMe.v)))((_, _) => runSearch(s))
-  s.ls.on[dom.KeyboardEvent](dom.document, "keydown")(e => onKey(e))
-  s.ls.on[dom.Event](dom.window, WsCommand.Event)(e => onCommand(s, WsCommand.name(e)))
+  useEventListener[dom.KeyboardEvent](dom.document, "keydown")(e => onKey(e))
+  useEventListener[dom.Event](dom.window, WsCommand.Event)(e => onCommand(s, WsCommand.name(e)))
 }
 
 def unmounted(s: State): Unit = {
-  s.ls.clear()
   s.search.cancel()
+  s.latest.cancel()
 }
 
 def load(wid: String): Unit = {
@@ -101,14 +101,18 @@ def filterCount(s: State): Int =
 
 def labelOptions: List[String] = Store.pages.v.flatMap(_.labelList).distinct.sortWith(WsText.jaLess)
 
-def onSearch(s: State): Unit = s.search.run(doSearch(s))
+def onSearch(s: State): Unit = s.search(() => doSearch(s))
 
-def runSearch(s: State): Unit = s.search.now(doSearch(s))
+def runSearch(s: State): Unit = {
+  s.search.cancel()
+  doSearch(s)
+}
 
-/** latest(): 古い応答で新しい結果を上書きしない */
-def doSearch(s: State)(latest: () => Boolean): Unit = {
+/** 古い応答で新しい結果を上書きしない（s.latest） */
+def doSearch(s: State): Unit = {
   val q = s.query.v.trim
   if (q.isEmpty && filterCount(s) == 0) {
+    s.latest.cancel()
     s.results := None
     s.wsHits := Nil
   } else {
@@ -117,19 +121,18 @@ def doSearch(s: State)(latest: () => Boolean): Unit = {
       status = Option(s.fStatus.v).filter(_.nonEmpty), ownerMe = s.fOwnerMe.v)
     val pagesF = WorkspaceApi.searchPages(q, Option.when(scope.v == "ws")(s.wid.v), f)
     val wssF = if (q.nonEmpty) WorkspaceApi.searchWorkspaces(q) else Future.successful(Nil)
-    pagesF.zip(wssF).map { case (ps, ws) =>
-      if (latest()) {
-        s.results := Some(ps)
-        s.wsHits := ws
-      }
-    }.recoverWith { case e => if (latest()) Dialog.alertError("検索できませんでした", e) else Future.successful(()) }
-      .andThen(_ => if (latest()) s.searching := false)
+    s.latest(pagesF.zip(wssF)).map { case (ps, ws) =>
+      s.results := Some(ps)
+      s.wsHits := ws
+    }.recoverWith { case e => Dialog.alertError("検索できませんでした", e) }
+      .andThen(_ => s.searching := false)
   }
 }
 
 def clearSearch(s: State): Unit = {
   s.query := ""
   s.search.cancel()
+  s.latest.cancel()
   if (filterCount(s) > 0) runSearch(s)
   else {
     s.results := None
@@ -186,7 +189,7 @@ def createWorkspaceFlow(): Unit =
 /** ワークスペースの選択肢（お気に入りが先頭. 最後に「新しいワークスペースを作成」） */
 def wsOptions = Store.workspaces.mapC { ws =>
   val (fav, rest) = ws.partition(_.favorite)
-  fav.map(w => Opt(w.id, w.name, "★", "お気に入り")) ++ rest.map(w => Opt(w.id, w.name)) :+ Opt(NewWs, "新しいワークスペースを作成…", "＋")
+  fav.map(w => Opt(w.id, w.name, "★", hint = "お気に入り")) ++ rest.map(w => Opt(w.id, w.name)) :+ Opt(NewWs, "新しいワークスペースを作成…", "＋")
 }
 
 

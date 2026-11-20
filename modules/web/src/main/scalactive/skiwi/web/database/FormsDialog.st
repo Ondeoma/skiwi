@@ -1,4 +1,5 @@
 <script lang="scala">
+import sbirds.web.Dom
 import skiwi.web.{Dialog, Ui}
 import skiwi.web.parts.{HelpLink, Modal}
 
@@ -157,7 +158,7 @@ def addable(s: State, props: Props): List[DbProp] = answerable(props).filterNot(
       </div>
       <label class="row"><input v-model="s.requireLogin" type="checkbox" data-testid="form-login"> 回答にはログインが必要</label>
       <label v-if="s.requireLogin.v &amp;&amp; personProps(props).nonEmpty" class="row">回答者を記録する列:
-        <select @change="s.respondentProp := DbDom.value(event)">
+        <select @change="s.respondentProp := Dom.value(event)">
           <option value="" :selected="s.respondentProp.v.isEmpty">（記録しない）</option>
           <option v-for="p in personProps(props)" :key="p.id" :value="p.id" :selected="s.respondentProp.v == p.id">{{ p.name }}</option>
         </select>
