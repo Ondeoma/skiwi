@@ -491,10 +491,14 @@ class OperationsSpec extends DbSuite {
           s"/api/admin/workspaces/${ws.id}/backups/config",
           Some(Json.obj("enabled" -> true.asJson, "hour" -> 0.asJson, "keep" -> 2.asJson))
         )
-        n <- env.backups.runDue
-        _ = assertEquals(n, 1)
-        n2 <- env.backups.runDue
-        _ = assertEquals(n2, 0) // 今日の分は済んでいる
+        // runDue は DB にあるすべてのワークスペースが対象. テストの DB には前の実行のワークスペースも残っていて、
+        // 日付が変わるとそれらの分も作られるため、件数はこのワークスペースのバックアップで確かめる
+        _ <- env.backups.runDue
+        b1 <- env.backupSt.list(ws.id)
+        _ = assertEquals(b1.size, 1)
+        _ <- env.backups.runDue
+        b2 <- env.backupSt.list(ws.id)
+        _ = assertEquals(b2.size, 1) // 今日の分は済んでいる
         (_, l) <- call(Some(at), Method.GET, s"/api/admin/workspaces/${ws.id}/backups")
         b = l.hcursor.downField("backups").downArray
         _ = assertEquals(b.get[String]("status").toOption, Some("done"))
