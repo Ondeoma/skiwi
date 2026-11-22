@@ -53,7 +53,7 @@ skiwi は、チームのための Wiki です（ブロックエディタ・同�
 
 ## 開発
 
-必要なもの: JDK 21、sbt、Node.js、Docker。
+必要なもの: JDK 25、sbt、Node.js、Docker。
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --wait   # PostgreSQL+PGroonga (:54329)、ScalaS3 (:3900。初回はソースからイメージをビルド)、Mailpit (SMTP :1025、画面 :8025)

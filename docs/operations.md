@@ -47,7 +47,7 @@
 
 ### 2.1 共通
 - 時刻同期（chrony）、ホスト名解決、ファイアウォール（上表のポートを社内セグメントのみ許可）。
-- Java 21（`openjdk-21-jre-headless` または Temurin 21）。
+- Java 25（`openjdk-25-jre-headless` または Temurin 25）。
 
 ### 2.2 etcd（3台）
 1. etcd 3.5 を導入し、[etcd.env](../deploy/vm/etcd.env) を各ノード用に書き換えて配置。
