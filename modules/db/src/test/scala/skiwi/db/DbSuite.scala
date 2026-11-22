@@ -18,7 +18,7 @@ trait DbSuite extends CatsEffectSuite {
   protected def run(body: => IO[Unit]): IO[Unit] =
     if cfg.isEmpty then IO(assume(false, "TEST_DATABASE_URL not set")) else body
 
-  // for内のタプルパターン用（Scala 3.3は withFilter を要求する）
+  // for内のタプルパターン用（Scala 3 は withFilter を要求する）
   extension [A](io: IO[A]) {
     protected def withFilter(p: A => Boolean): IO[A] = io
   }

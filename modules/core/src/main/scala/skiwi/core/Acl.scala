@@ -49,7 +49,7 @@ object Acl {
               workspaceDefault: Option[Role],
               who: Set[Principal]): Option[(Role, Source)] = {
     def bestEntry(entries: List[AclEntry]): Option[AclEntry] =
-      entries.filter(e => who.contains(e.principal)).maxByOption(_.role)(summon[Ordering[Role]])
+      entries.filter(e => who.contains(e.principal)).maxByOption(_.role)(using summon[Ordering[Role]])
     @tailrec def go(rest: List[AclNode], depth: Int): Option[(Role, Source)] = rest match {
       case Nil =>
         bestEntry(workspaceAcl).map(e => e.role -> Source.WorkspaceEntry(e.principal))

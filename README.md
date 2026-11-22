@@ -41,7 +41,7 @@ skiwi は、チームのための Wiki です（ブロックエディタ・同�
 | `frontend/` | Vite。Scala.js の出力と、JS のまま残す部分（エディタ: Tiptap・ProseMirror・Yjs・Excalidraw・Mermaid を直接使う部分と、marked・mammoth・fflate などを呼ぶ小さな部分）、PWA の Service Worker（`public/sw.js`）をまとめてビルドする。Scala.js からは `window.skiwiLoad(名前)`（`src/bridge/`）で読み込む。エディタが使うライブラリに依らない処理は Scala.js の `skiwi.web.editor`（`window.__skiwiLib`、型は `src/lib.ts`） |
 | `deploy/` | Docker（試験用の3ノード構成。Patroni・HAProxy）と VM 構築用の設定のひな形 |
 
-技術: Scala 3.3 LTS、Cats Effect 3、http4s 1.0（マイルストーン版）、doobie、Flyway、PostgreSQL 17 + PGroonga、Scala.js + Scalactive、Tiptap・Yjs（TypeScript）。
+技術: Scala 3.9 LTS、Cats Effect 3、http4s 1.0（マイルストーン版）、doobie、Flyway、PostgreSQL 17 + PGroonga、Scala.js + Scalactive、Tiptap・Yjs（TypeScript）。
 
 ## 権限モデル
 - ワークスペース権限（ACL / 既定権限）→ ページACLが上書き。ページ単位で `view` / `edit`。

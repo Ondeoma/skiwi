@@ -230,9 +230,12 @@ class TaskSpec extends DbSuite {
               x.hcursor.get[Option[String]]("targetTitle").toOption.flatten
           ).toSet
       } yield {
-        assertEquals(reasons(forOwner), Set("deleted" -> Some("消したページ"), "missing" -> None))
+        assertEquals(reasons(forOwner), Set[(String, Option[String])]("deleted" -> Some("消したページ"), "missing" -> None))
         // 閲覧者: 秘密のページは「閲覧できない」（タイトルは出さない）。ゴミ箱のページは閲覧できたものなのでタイトルを出す
-        assertEquals(reasons(forViewer), Set("deleted" -> Some("消したページ"), "no_access" -> None, "missing" -> None))
+        assertEquals(
+          reasons(forViewer),
+          Set[(String, Option[String])]("deleted" -> Some("消したページ"), "no_access" -> None, "missing" -> None)
+        )
       }
     }
   }

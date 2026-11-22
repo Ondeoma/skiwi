@@ -28,7 +28,7 @@ object Main {
     Pwa.register()
     // 存在しない URL はトップへ. 開いた直後の URL も確かめるよう、RouterComponent を描く前に登録する
     Fallback.install(App.known)
-    App()(dom.document.body, AddMethod.appendS(IdSelector("app"))).init()
+    App()(using dom.document.body, AddMethod.appendS(IdSelector("app"))).init()
   }
 
 }
